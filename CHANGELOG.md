@@ -2,6 +2,26 @@
 
 本文件记录 deepseek-app 的重要变更，版本倒序排列。
 
+## 1.4.0-beta.3 (2026-11-17) — 会话自动标题
+
+> 只补齐 Anthropic / OpenAI 兼容模式下缺失的会话标题；**DeepSeek 官方模式零变化**（服务端原生 title 字段链路逐字未动），
+> 1.4.0-beta.2 的动效层与消息流同样未改。
+
+- 新增：自动生成会话标题（Anthropic / OpenAI 兼容模式）。首轮回答正常结束后异步触发一次，
+  走当前生效的服务类型（`{base}/v1/messages` 或 `{base}/v1/chat/completions`），非流式、不开 thinking
+- 参考 DSH（`dsh-session-title-first-prompt-llm`）实现，省 token 的三条约束：
+  1. **只喂首条用户消息**，并包成 JSON 数组（模型看到的是数据而非新指令，防提示词注入）；
+     `maxInputBytes = 2048` 硬上限，超出按字节截断
+  2. **最小 `max_tokens = 32`**，输出目标约 8–14 个中文字符 / 3–5 个英文单词，标题语言跟随消息语言
+  3. `timeoutMs = 8000` 硬超时，输出只取第一个非空行并剥掉强调外壳 / 引号 / 控制字符
+- 失败回退：超时、网络错误、非 2xx、空输出、`finish` 原因异常、清洗后为空 —— 任一情况都回退到
+  **本地截取首条消息前 20 字**（优先在句读处断开、剥掉「你好 / 请问 / 帮我」等语气前缀），回退后仍算成功，不给用户报错
+- 手动改名永不覆盖：沿用 `titleRequests` 的「只写一次」语义，同一会话只触发一次标题请求，
+  用户手动改名后自动标题再也不会覆盖（见 `src/services/chat/store.ts`）
+- 新增验收 `tests/test.auto-title.spec.mjs`：11 个场景（超时 / 500 / 空 / 脏输出 / `finish` 异常 / 手动改名 / DeepSeek 回归等）；
+  `rspack.config.ts` 支持 `DIST_OUT` 指定输出目录，测试另起标准构建、不影响 `dist/`
+- 版本号：versionCode 10 / versionName 1.4.0-beta.3（功能代码见 commit `551db39`）
+
 ## 1.4.0-beta.2 (2026-11-17) — 动效优化
 
 > 只优化「外壳」的交互动效（侧边栏、设置弹窗、按钮按压、列表切项、主题切换），**消息流一律不碰**：
