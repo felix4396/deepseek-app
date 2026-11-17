@@ -55,6 +55,23 @@ for c in "${CHANGES[@]}"; do [[ -n ${c// /} ]] || die 'changes 里有空字符�
 [[ -x ${AAPT2} ]] || die "aapt2 不可执行: ${AAPT2}"
 TAG="${TAG_PREFIX}${VER}"
 
+# --- 0.5) 记下本机 HEAD：GitHub Release 的 tag 必须钉在这个 commit 上 ---
+#   坑（已踩两次）：`gh release create` 不给 --target 时，gh 用「远端默认分支当前 sha」建 tag；
+#   如果本地 commit 还没 push，远端还是旧 sha → release tag 指向错误 commit。
+#   所以这里先固定 HEAD_SHA，后面用 --target + push 顺序 + 事后校验三重保险。
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+GH_BRANCH_NAME=${GH_BRANCH_NAME:-main}
+HEAD_SHA=''
+if HEAD_SHA=$(git -C "${ROOT_DIR}" rev-parse HEAD 2>/dev/null); then
+  [[ -n ${HEAD_SHA} ]] || { HEAD_SHA=''; warn '  ! 读不到 git HEAD，tag 指向将不做校验'; }
+else
+  HEAD_SHA=''
+  warn '  ! 当前目录不是可用的 git 仓库，GitHub Release 的 tag 指向将不做校验'
+fi
+# 只有拿到 HEAD 才把 --target 拼进命令（避免空值让 gh 报错）
+TARGET_ARGS=()
+if [[ -n ${HEAD_SHA} ]]; then TARGET_ARGS=(--target "${HEAD_SHA}"); fi
+
 # --- 1) 从 APK 自身读 versionCode / versionName（不信手填）---
 BADGING=$("${AAPT2}" dump badging "${APK_SRC}" 2>/dev/null) || die "aapt2 读取失败: ${APK_SRC}"
 VCODE=$(printf '%s\n' "${BADGING}" | sed -n "s/^package:.* versionCode='\([0-9]*\)'.*/\1/p" | head -1)
@@ -194,16 +211,64 @@ gh_publish(){
                        --notes-file "${NOTES_FILE}" --latest
   else
     GH_BRANCH='create'
+    # --target 必须显式给：否则 gh 用「远端默认分支当前 sha」建 tag，本地 commit 还没 push 时 tag 会指到旧 commit
     gh release create "${TAG}" "${NEW_APK}" --repo "${GH_REPO}" --title "${TAG}" \
+                       "${TARGET_ARGS[@]+"${TARGET_ARGS[@]}"}" \
                        --notes-file "${NOTES_FILE}" --latest
   fi
 }
 
+# 5.2.5) 建 Release 之前先把 main 推到远端（顺序不能反：先让远端追上本地 HEAD，再建 tag）
+push_main(){
+  if [[ -z ${HEAD_SHA} ]]; then
+    warn '  ! 跳过 push main（拿不到本机 HEAD）'
+    return 0
+  fi
+  info "git push origin HEAD:${GH_BRANCH_NAME}（让远端追上本地 ${HEAD_SHA:0:8}）"
+  if git -C "${ROOT_DIR}" push origin "HEAD:${GH_BRANCH_NAME}"; then
+    return 0
+  fi
+  warn "  ! push ${GH_BRANCH_NAME} 失败；仍会用 --target ${HEAD_SHA:0:8} 钉 tag，稍后校验会兜底"
+  return 1
+}
+
+# 5.2.6) 事后校验：远端 tag 的 sha 必须等于本机 HEAD，不一致立刻报错并强制更正 tag
+verify_tag_target(){
+  if [[ -z ${HEAD_SHA} ]]; then
+    return 0
+  fi
+  local remote_sha=''
+  # 附注对象 tag 读 ^{}，轻量 tag（gh 默认创建的形态）读不带 ^{} 的 ref，两者都试
+  remote_sha=$(git -C "${ROOT_DIR}" ls-remote origin "refs/tags/${TAG}^{}" 2>/dev/null | cut -f1 | head -1)
+  if [[ -z ${remote_sha} ]]; then
+    remote_sha=$(git -C "${ROOT_DIR}" ls-remote origin "refs/tags/${TAG}" 2>/dev/null | cut -f1 | head -1)
+  fi
+  if [[ -z ${remote_sha} ]]; then
+    warn "  ! 读不到远端 tag ${TAG} 的 sha，跳过 tag 指向校验（可用 gh release view ${TAG} --json targetCommitish 复核）"
+    return 0
+  fi
+  if [[ ${remote_sha} == "${HEAD_SHA}" ]]; then
+    info "tag ${TAG} → ${remote_sha:0:8}（与本机 HEAD 一致）"
+    return 0
+  fi
+  warn "  ⚠️ tag ${TAG} 指向 ${remote_sha:0:8}，但本机 HEAD 是 ${HEAD_SHA:0:8}：tag 指错了，立即更正"
+  if git -C "${ROOT_DIR}" push -f origin "${HEAD_SHA}:refs/tags/${TAG}"; then
+    warn "  ✅ 已强制更正 tag ${TAG} → ${HEAD_SHA:0:8}"
+    return 0
+  fi
+  warn "  ❌ 强制更正 tag 失败，请手动执行：git push -f origin ${HEAD_SHA}:refs/tags/${TAG}"
+  return 1
+}
+
 GH_OK=0
+TAG_BROKEN=0
 GH_BRANCH='skipped'
 if (( NO_GITHUB )); then
   info 'GitHub 已跳过（--no-github）'
 else
+  # 顺序铁律：先 push main（远端追上本地 HEAD），再建 Release。
+  # 反过来做会踩 tag 指向错误的老坑（gh 用远端默认分支 sha 建 tag）。
+  push_main || true
   make_notes
   info "notes 来源 ${NOTES_SRC}  → ${NOTES_FILE}"
   GH_ERR_FILE="${TMPD}/gh.err"
@@ -211,6 +276,11 @@ else
   if gh_publish 2>"${GH_ERR_FILE}"; then
     GH_OK=1
     info "GitHub Release OK（${GH_BRANCH} 分支）"
+    # 第三道保险：建完立刻核对 tag 指向，不等于本机 HEAD 就报错并强制更正
+    if ! verify_tag_target; then
+      TAG_BROKEN=1
+      printf '  ⚠️ tag %s 指向未修正，请人工处理（本机 HEAD %s）\n' "${TAG}" "${HEAD_SHA:0:8}" >&2
+    fi
   else
     GH_OK=0
     gh_err=$(cat "${GH_ERR_FILE}" 2>/dev/null || true)
@@ -233,5 +303,9 @@ elif (( GH_OK )); then
   printf '✅ GitHub Release https://github.com/%s/releases/tag/%s\n' "${GH_REPO}" "${TAG}"
 else
   printf '❌ GitHub Release 发布失败（见上方 gh 错误原文），dl.rose7.cn 已成功\n'
+fi
+if (( TAG_BROKEN )); then
+  printf '⚠️  tag %s 指向与本机 HEAD（%s）不一致且自动更正失败：请手动 git push -f origin %s:refs/tags/%s\n' \
+    "${TAG}" "${HEAD_SHA:0:8}" "${HEAD_SHA:0:8}" "${TAG}"
 fi
 exit 0

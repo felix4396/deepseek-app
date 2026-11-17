@@ -35,6 +35,20 @@ const REPLY = '动效验收用的 mock 回复。'
 /** 改动前的基线提交（1.4.0-beta.1）：用于「有没有新增动画属性 / 消息流是否被改动」的对照 */
 const BASE_COMMIT = process.env.MOTION_BASE || '68f9342'
 
+/**
+ * 【白名单】允许 transform / opacity 之外动画属性存在的文件（每条例外都必须写明理由）。
+ *
+ * src/components/session/Welcome.module.css
+ *   首页「快速 / 专家模式」分段切换控件（.modeSwitch）里两段标签（.modeOption）的
+ *   background-color / color 过渡（160ms）是**刻意保留的例外**：
+ *   - 颜色过渡只改绘制结果，不触发 layout / reflow，不会掉帧，不违反「只动 transform / opacity」的本意；
+ *   - 作用范围只在 .modeSwitch 内部的两个标签上，没有扩散到消息区（[8] 会守住 messages/chatInput）；
+ *   - 布局属性（width / height / top / left / margin 等）依旧全局禁止，见下方 LAYOUT 检查与白名单守卫。
+ */
+const EXTRA_ANIMATED_PROPS = new Map([
+  ['src/components/session/Welcome.module.css', new Set(['background-color', 'color'])],
+])
+
 const failures = []
 const evidence = []
 const ok = (message) => console.log(`  ok  ${message}`)
@@ -198,8 +212,15 @@ const staticChecks = () => {
       continue
     }
     const baseline = animatedProps(before)
+    // 白名单文件额外允许它自己声明的那几个「纯绘制」属性（见 EXTRA_ANIMATED_PROPS）
+    const allowed = EXTRA_ANIMATED_PROPS.get(relative) || new Set()
     for (const prop of animatedProps(readFileSync(file, 'utf8'))) {
-      if (['transform', 'opacity'].includes(prop) || baseline.has(prop) || ['ease', 'linear', 'both', 'none'].includes(prop)) {
+      if (
+        ['transform', 'opacity'].includes(prop) ||
+        baseline.has(prop) ||
+        ['ease', 'linear', 'both', 'none'].includes(prop) ||
+        allowed.has(prop)
+      ) {
         continue
       }
       introduced.push(`${relative} → ${prop}`)
@@ -208,7 +229,20 @@ const staticChecks = () => {
   if (introduced.length > 0) {
     bad(`新增了 transform/opacity 之外的动画属性：${introduced.join(' | ')}`)
   } else {
-    ok(`相对 ${BASE_COMMIT} 没有新增 transform/opacity 之外的动画属性`)
+    const whitelist = [...EXTRA_ANIMATED_PROPS.keys()]
+    ok(
+      `相对 ${BASE_COMMIT} 没有新增 transform/opacity 之外的动画属性${
+        whitelist.length > 0 ? `（白名单例外：${whitelist.join(', ')}）` : ''
+      }`
+    )
+  }
+
+  // 白名单只允许放宽「颜色」这类纯绘制属性：一旦有人往白名单里塞布局属性，这里立刻失败
+  for (const [file, props] of EXTRA_ANIMATED_PROPS) {
+    const layoutInWhitelist = [...props].filter((prop) => LAYOUT.test(prop))
+    if (layoutInWhitelist.length > 0) {
+      bad(`白名单 ${file} 里混入了布局属性（禁止）：${layoutInWhitelist.join(' | ')}`)
+    }
   }
 
   // 本次动效令牌驱动的 transition 明细（贴给报告用）
