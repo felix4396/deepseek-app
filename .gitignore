@@ -30,3 +30,8 @@ docs/ui/debug-*.png
 # 杂项
 .DS_Store
 *.log
+
+# 编辑器/脚本生成的备份文件（不提交）
+*.bak-wx-*
+*.bak
+*.bak.*

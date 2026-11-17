@@ -21,11 +21,10 @@ cd /root/deepseek-app
 
 - 优先：`CHANGELOG.md` 里 `## <版本号>` 那一段（到下个 `## ` 标题为止，版本号需精确匹配，`1.2.2` 不会命中 `1.2.20`）
 - 兜底：用命令行的 changes 参数生成「更新内容」列表
-- 末尾**统一追加**两行：
+- 末尾**统一追加**一行：
 
   ```
   APK 直链：https://dl.rose7.cn/apk/deepseek-chat-<ver>.apk
-  微信/QQ 内打不开，请复制链接到浏览器打开
   ```
 
 - 临时 notes 文件写在 `/tmp/relapk.XXXXXX/`，脚本退出时随临时目录一起删除。

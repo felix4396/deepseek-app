@@ -168,10 +168,9 @@ make_notes(){
       for c in "${CHANGES[@]}"; do printf -- '- %s\n' "${c}"; done
     } >"${NOTES_FILE}"
   fi
-  # 统一追加 APK 直链与微信/QQ 提示
+  # 统一追加 APK 直链
   {
     printf '\nAPK 直链：%s/apk/deepseek-chat-%s.apk\n' "${BASE_URL}" "${VER}"
-    printf '微信/QQ 内打不开，请复制链接到浏览器打开\n'
   } >>"${NOTES_FILE}"
   NOTES_SRC="${src}"
 }
