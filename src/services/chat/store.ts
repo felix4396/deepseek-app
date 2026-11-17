@@ -7,6 +7,7 @@ import { cancelUpload, describeUploadError, uploadAttachment, useUploads } from 
 import { getApiKey, getCurrentSpec, getModel } from '../api/apiConfig.js'
 import { requestGates } from '../api/providers.js'
 import { useSettings } from '../settings.js'
+import { generateSessionTitle } from './autoTitle.js'
 import { appendBranch, getVisibleMessages, normalizeSession, selectVersion } from './branches.js'
 import * as db from './db.js'
 import {
@@ -77,6 +78,14 @@ const toRequestBody = (
 
 /** 允许自动补标题的请求；手动重命名后取消本轮标题写入，包含主动清空标题的情况。 */
 const titleRequests = new Set<AbortController>()
+
+/**
+ * 自动标题（Anthropic / OpenAI 兼容模式）已经处理过的会话。
+ * 生成成功、失败回退、以及用户手动改名都会加进来，保证同一会话只触发一次、永不覆盖用户的名字。
+ */
+const autoTitleDone = new Set<string>()
+/** 正在请求中的自动标题任务：改名 / 删除 / 停止时取消，省掉无用的上游调用 */
+const autoTitleTasks = new Map<string, AbortController>()
 
 type ChatState = {
   ready: boolean
@@ -483,6 +492,9 @@ export const renameSession = (id: string, title: string) => {
   if (controller) {
     titleRequests.delete(controller)
   }
+  // 用户手动改名（含主动清空）：本轮原生标题写入取消，本地自动标题也不再触发或覆盖
+  autoTitleDone.add(id)
+  autoTitleTasks.get(id)?.abort()
   if (getSession(id)) {
     updateSession(id, (session) => ({ ...session, title }))
     persist(id)
@@ -514,6 +526,7 @@ const removeSessionData = async (id: string): Promise<boolean> => {
   deletingSessions.add(id)
   try {
     getStreamController(id)?.abort()
+    autoTitleTasks.get(id)?.abort()
     // 等本会话的流收尾，避免删除之后又被收尾保存写回来。
     await waitForIdle(id)
     if (epoch !== historyEpoch) {
@@ -523,6 +536,8 @@ const removeSessionData = async (id: string): Promise<boolean> => {
     if (epoch !== historyEpoch) {
       return true
     }
+    autoTitleDone.delete(id)
+    autoTitleTasks.delete(id)
     sessionLoads.delete(id)
     sessionAccess.delete(id)
     unsavedSessions.delete(id)
@@ -974,6 +989,57 @@ const waitForRetry = (attempt: number, signal: AbortSignal) =>
   })
 
 /**
+ * 首轮回答正常结束后补一个会话标题（只在没有原生标题的协议上做，见 autoTitle.ts）。
+ *
+ * 触发规则沿用现有的 titleRequests 语义：
+ * - 会话已有标题（含用户手动改名）→ 不触发、不覆盖；
+ * - 同一会话只触发一次（autoTitleDone），失败回退后也算处理过；
+ * - 异步执行，不阻塞 UI；失败只回退到本地截取，不向用户报错。
+ */
+const scheduleAutoTitle = (sessionId: string) => {
+  if (requestGates(getCurrentSpec()).title) {
+    // DeepSeek 官方模式：服务端在 message_delta 里返回 title，本地不生成
+    return
+  }
+  if (autoTitleDone.has(sessionId)) {
+    return
+  }
+  const session = getSession(sessionId)
+  if (!session || session.title) {
+    return
+  }
+  // 只喂第一条人类消息（不要问答对）
+  const first = session.messages.find((message) => message.role === 'user')
+  const text = first?.content?.trim() ?? ''
+  autoTitleDone.add(sessionId)
+  if (!text) {
+    return
+  }
+  const task = new AbortController()
+  autoTitleTasks.set(sessionId, task)
+  void generateSessionTitle(text, task.signal)
+    .then((title) => {
+      if (!title || task.signal.aborted) {
+        return
+      }
+      if (get().importingHistory || deletingSessions.has(sessionId)) {
+        return
+      }
+      // 「只写一次」：期间用户改名了就保留用户的标题
+      updateSession(sessionId, (current) => (current.title ? current : { ...current, title }))
+      persist(sessionId)
+    })
+    .catch(() => {
+      // 标题永远不影响对话：任何异常都吞掉
+    })
+    .finally(() => {
+      if (autoTitleTasks.get(sessionId) === task) {
+        autoTitleTasks.delete(sessionId)
+      }
+    })
+}
+
+/**
  * 请求并消费流：先补齐附件的 serverId，再发请求；流式增量按动画帧刷新内存，完成、失败或停止后落盘。
  * 补传失败时回复记为 upload 错误，可重试。
  * 服务端判定 file_id 失效时重新补传后重发，退避重试且次数有上限，超过则按原始报错收尾。
@@ -986,6 +1052,8 @@ const streamReply = async (sessionId: string, initial: AssistantMessage, request
   set((state) => ({ streaming: { ...state.streaming, [sessionId]: controller } }))
   let reply = initial
   let frame = 0
+  /** 本轮是否正常收尾（stop）：只有正常结束才补会话标题 */
+  let finished = false
   const flush = () => {
     cancelAnimationFrame(frame)
     frame = 0
@@ -1064,6 +1132,7 @@ const streamReply = async (sessionId: string, initial: AssistantMessage, request
           }
         }
         reply = settleReply(reply, 'done', Date.now())
+        finished = true
         break
       } catch (error) {
         if (controller.signal.aborted) {
@@ -1110,6 +1179,10 @@ const streamReply = async (sessionId: string, initial: AssistantMessage, request
         }
         break
       }
+    }
+    // 首轮回答正常结束后异步补标题（不阻塞 UI；没有原生标题的协议才走本地生成）
+    if (finished) {
+      scheduleAutoTitle(sessionId)
     }
   } finally {
     titleRequests.delete(controller)

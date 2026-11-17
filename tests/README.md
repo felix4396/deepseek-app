@@ -51,6 +51,30 @@ console error = 0；并输出截图到 `docs/ui/1.4.0-beta.1-*.png`。
 `mock-anthropic.mjs` 是 node 标准库实现的 mock 上游（默认监听 `123.207.199.196:60010`），回标准 Anthropic SSE，
 并把收到的每个请求（含请求体）记到 `/tmp/mock-anthropic-requests.jsonl` 供断言。
 
+## 会话自动标题验收（Anthropic / OpenAI 兼容模式）
+
+```bash
+cd /root/deepseek-app && node tests/test.auto-title.spec.mjs
+```
+
+被测页面是**标准构建**：脚本发现 `dist-standard/` 不存在时会自己用
+`DIST_OUT=dist-standard rspack build` 构建（不会动部署用的 `dist/`），再在 5294 上起静态服务；
+上游全部用 `page.route` 打桩，不连外网、不需要真实 IP。覆盖 9 条验收 + 2 条附加：
+
+| # | 场景 | 期望 |
+| --- | --- | --- |
+| 1 | mock 返回「如何配置代理」 | 标题变成该值；标题请求只发 1 次；走 `{base}/v1/messages`、`max_tokens=32`、非流式、无 thinking、只喂首条消息且包成 JSON 数组 |
+| 2 | mock 延迟 10s | 8s 放弃并回退为「这个网络问题怎么解决…」，期间 UI 可继续输入，迟到响应不覆盖 |
+| 3 | HTTP 500 | 回退到同一截取值 |
+| 4 | 返回空字符串 | 回退 |
+| 5 | 脏输出 `**标题**\n解释…` | 只取「标题」（星号被剥掉） |
+| 6 | `max_tokens` / `tool_use` | 视为失败并回退 |
+| 7 | 手动改名后再发一轮 | 标题保持用户改的名字，且不再发起标题请求 |
+| 8 | DeepSeek 官方模式 | 请求体仍带 `title:{enabled:true}`，无额外本地标题请求，标题保持为空 |
+| 9 | console error | = 0（浏览器对非 2xx 的 `Failed to load resource` 资源日志另计，口径同 `run-acceptance.mjs`） |
+| 10 | OpenAI 兼容模式 | 标题请求走 `{base}/v1/chat/completions`（system + 单条 user） |
+| 11 | 部署验证 | 对 5181（`DEPLOY_URL` 可覆盖）再跑一遍成功路径，不可达则跳过 |
+
 ## 交互动效验收（1.4.0-beta.2）
 
 ```bash

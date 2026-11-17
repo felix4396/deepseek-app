@@ -35,7 +35,8 @@ type ConfigOptions = {
 export const createConfig = ({
   apiOrigin = 'https://api.deepseek.com',
   internalBuild = process.env.INTERNAL_BUILD === '1',
-  outputPath = 'dist',
+  // 默认 dist；测试要在不影响部署产物（dist）的前提下另起一份标准构建时用 DIST_OUT 指定
+  outputPath = process.env.DIST_OUT || 'dist',
   devServer,
 }: ConfigOptions = {}): Configuration => ({
   mode: dev ? 'development' : 'production',

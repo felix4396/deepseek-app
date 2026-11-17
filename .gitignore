@@ -2,6 +2,8 @@
 node_modules/
 dist/
 dist-baseline/
+# 自动标题验收用的标准构建产物（DIST_OUT=dist-standard，脚本会自己重新构建）
+dist-standard/
 build/
 android/build/
 android/app/build/
