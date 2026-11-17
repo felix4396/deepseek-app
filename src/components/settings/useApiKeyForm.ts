@@ -4,8 +4,15 @@ import { classifyApiError } from '../../services/api/errors.js'
 import { setApiKey } from '../../services/api/apiConfig.js'
 import { useTranslate } from '../../i18n/index.js'
 
-/** 输入 API Key 后先用当前配置的 GET /models 校验，通过才写入当前配置 */
-export const useApiKeyForm = (onSaved?: () => void) => {
+/**
+ * 输入 API Key 后**立即写入本地配置**（点「确定」/ 回车即落盘），再用当前配置的 GET /models
+ * 校验；校验失败只提示错误，已保存的 Key 保留。
+ */
+export const useApiKeyForm = (
+  /** 校验通过：收起输入框；校验失败：保持在编辑态，让错误提示与待修正的 Key 都看得见 */
+  callbacks: { onSaved?: () => void; onFailed?: () => void } = {}
+) => {
+  const { onSaved, onFailed } = callbacks
   const t = useTranslate()
   const [value, setValue] = useState('')
   const [verifying, setVerifying] = useState(false)
@@ -32,15 +39,22 @@ export const useApiKeyForm = (onSaved?: () => void) => {
     if (!apiKey || verifying) {
       return
     }
+    // 先落盘、再校验：本地持久化绝不能依赖网络结果。
+    // 之前的顺序是先 await verifyApiKey 再 setApiKey，只要 GET /models 失败
+    // （离线、上游宕机、CORS/明文 HTTP 被拦、把校验地址填错…），Key 就一个字都不会写进
+    // localStorage，于是每次启动 ensureApiKey() 都判成「没配 Key」，设置页反复弹出、发送被拦。
+    setApiKey(apiKey)
     setVerifying(true)
     setFailure(null)
     try {
       await verifyApiKey(apiKey)
-      setApiKey(apiKey)
+      // 校验通过：收起输入框（已保存的 Key 以掩码显示）
       setValue('')
       onSaved?.()
     } catch (e) {
+      // 校验失败只提示，不回滚已保存的 Key，也不清空输入框，方便用户就地改正
       setFailure({ cause: e })
+      onFailed?.()
     } finally {
       setVerifying(false)
     }

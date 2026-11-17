@@ -29,7 +29,12 @@ import styles from './Settings.module.css'
 export const useApiKeyEditor = () => {
   const apiKey = useApiConfig((state) => state.apiKey)
   const [editing, setEditing] = useState(false)
-  const form = useApiKeyForm(() => setEditing(false))
+  // 保存成功收起输入框；校验失败留在编辑态，否则首次配置时 editing 本就是 false，
+  // 会直接切到掩码视图把错误提示一起藏掉（用户看到「已保存」却不知道校验没过）。
+  const form = useApiKeyForm({
+    onSaved: () => setEditing(false),
+    onFailed: () => setEditing(true),
+  })
   return { apiKey, editing, setEditing, form, showInput: !apiKey || editing }
 }
 
