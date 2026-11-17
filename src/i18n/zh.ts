@@ -170,8 +170,14 @@ export const zh = {
   settingsLocaleZhCN: '简体中文',
   settingsLocaleEnUS: 'English',
 
-  // ---------- 服务配置（API Key / 服务地址 / 模型） ----------
+  // ---------- 服务配置（服务类型 / API Key / 服务地址 / 模型） ----------
+  settingsProviderKindLabel: '服务类型',
+  settingsApiKeyLabel: 'API Key',
   settingsBaseUrlLabel: '服务地址',
+  settingsBaseUrlPlaceholder: '例如 https://your-gateway.example.com',
+  settingsModelPlaceholder: '例如 deepseek-v4.1-flash',
+  settingsBaseUrlRequired: '请先填写服务地址',
+  settingsTestLabel: '连通性测试',
   settingsModelLabel: '模型',
   settingsBaseUrlInvalid: '服务地址必须以 http:// 或 https:// 开头，并且是合法地址',
   settingsModelInvalid: '模型不能为空',
@@ -184,6 +190,8 @@ export const zh = {
   settingsTestNetwork: '无法连接：{message}（地址错误、服务未启动或被跨域策略拦截）',
   settingsTestBadJson: '返回的不是 JSON：{message}',
   settingsTestApiKeyRequired: '请先填写 API Key',
+  settingsTestHtml: '请求返回的是网页（HTTP {status}），不是接口数据；通常是服务地址的路径不匹配或服务异常',
+  upstreamReturnedHtml: '上游返回网页而非接口数据，通常是路径不匹配或服务异常',
 
   // ---------- 聊天背景 ----------
   settingsChatBackground: '聊天背景',

@@ -1,0 +1,100 @@
+// 兼容用例（1.2.3）：升级前的老用户只有 chat-demo:api-key / base-url / model，没有 provider-kind。
+// 升级后必须：按 deepseek 处理、路径不变、并且继续用他们已存的服务地址与模型（无感兼容）。
+//
+// 跑法：APP_URL=http://127.0.0.1:5181 node tests/test.legacy-config.spec.mjs
+import {
+  capturePaths,
+  closeSettings,
+  finish,
+  openApp,
+  openSettingsDataSection,
+  sendChat,
+  stubMessagesStream,
+  stubModels,
+} from './helpers.mjs'
+
+const name = 'test.legacy-config.spec.mjs'
+const LEGACY_BASE = 'https://legacy-relay.example.com'
+const LEGACY_MODEL = 'legacy-model'
+const { browser, page } = await openApp()
+const failures = []
+const waitFor = async (predicate, timeout = 15000) => {
+  const deadline = Date.now() + timeout
+  while (Date.now() < deadline) {
+    if (predicate()) {
+      return true
+    }
+    await page.waitForTimeout(100)
+  }
+  return false
+}
+try {
+  await stubModels(page)
+  await stubMessagesStream(page)
+
+  // 造一份 1.2.2 的本地存储：有 key、地址、模型，没有 kind
+  await page.evaluate(
+    ({ base, model }) => {
+      window.localStorage.setItem('chat-demo:api-key', 'sk-legacy-key')
+      window.localStorage.setItem('chat-demo:base-url', base)
+      window.localStorage.setItem('chat-demo:model', model)
+    },
+    { base: LEGACY_BASE, model: LEGACY_MODEL }
+  )
+  await page.reload({ waitUntil: 'domcontentloaded' })
+  await page.waitForTimeout(800)
+
+  const requests = capturePaths(page)
+
+  await openSettingsDataSection(page)
+  const kindLabel = await page
+    .getByRole('button', { name: /服务类型|Service type/ })
+    .first()
+    .innerText()
+  if (!/DeepSeek/.test(kindLabel)) {
+    failures.push(`老用户默认服务类型不是 DeepSeek 官方：${JSON.stringify(kindLabel.trim())}`)
+  } else {
+    console.log(`ok: 默认服务类型 = ${kindLabel.trim()}`)
+  }
+  await closeSettings(page)
+
+  await sendChat(page, '你好')
+  const hit = await (async () => {
+    await waitFor(() => requests.some((r) => r.method === 'POST' && r.path.endsWith('/messages')))
+    return requests.find((r) => r.method === 'POST' && r.path.endsWith('/messages'))
+  })()
+
+  if (!hit) {
+    failures.push('老配置下没有发出消息请求')
+  } else {
+    console.log(`ok: 消息路径 = ${hit.path}`)
+    if (hit.path !== '/anthropic/v1/messages') {
+      failures.push(`老配置下路径变了：${hit.path}`)
+    }
+    if (!hit.url.startsWith(`${LEGACY_BASE}/`)) {
+      failures.push(`老配置的服务地址被丢弃：${hit.url}`)
+    } else {
+      console.log(`ok: 仍在用老地址 ${LEGACY_BASE}`)
+    }
+    const body = JSON.parse(hit.postData ?? '{}')
+    if (body.model !== LEGACY_MODEL) {
+      failures.push(`老配置的模型被丢弃：${JSON.stringify(body.model)}`)
+    } else {
+      console.log(`ok: 仍在用老模型 ${LEGACY_MODEL}`)
+    }
+    if (!body.safety_check || !body.tools) {
+      failures.push('老用户（deepseek）请求体丢了 safety_check / tools')
+    }
+    // 自填地址（中转）不带 anthropic-version：中转的 CORS 白名单一般不允许，
+    // 带上会让浏览器预检失败，老用户升级后直接变成网络错误。
+    if (hit.headers['anthropic-version']) {
+      failures.push(`打自填地址时不应带 anthropic-version：${hit.headers['anthropic-version']}`)
+    } else {
+      console.log('ok: 自填地址不带 anthropic-version（CORS 安全）')
+    }
+  }
+} catch (error) {
+  failures.push(`用例异常：${error instanceof Error ? error.message : String(error)}`)
+} finally {
+  await finish(browser, name, failures)
+}

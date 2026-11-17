@@ -176,13 +176,19 @@ export type DeepseekReadUrlTool = {
   name: 'deepseek_read_url'
 }
 
+/**
+ * 请求体。DeepSeek 扩展字段（tools / safety_check / title / role:'latest_reminder'）
+ * 是否出现由当前服务类型的 ProviderSpec 决定：裸 Anthropic 协议不认这些字段，
+ * 多带一个就是 400，所以它们在这里都是可选的。
+ */
 export type CreateMessageRequest = {
   model: ChatModel
   system: string
   messages: MessageParam[]
-  thinking: { type: 'enabled' | 'disabled' }
-  tools: (DeepseekWebSearchTool | DeepseekReadUrlTool)[]
-  safety_check: { level: 'high' }
+  /** budget_tokens 只在真 Anthropic 协议下需要（spec.thinkingBudget） */
+  thinking: { type: 'enabled' | 'disabled'; budget_tokens?: number }
+  tools?: (DeepseekWebSearchTool | DeepseekReadUrlTool)[]
+  safety_check?: { level: 'high' }
   title?: { enabled: boolean }
 }
 

@@ -300,6 +300,27 @@ export const getContextRounds = (history: Message[]): [UserMessage, AssistantMes
  * 把会话转成请求的 messages：只保留「提问 + 有回答的回复」成对的轮次，最后接上本轮提问。
  * 失败或没有回答的轮次不进上下文。续写时末尾再带上本轮 assistant。
  */
+/**
+ * 把 `role:'latest_reminder'` 快照从 messages 里摘出来（相邻重复只留一条）。
+ * 不支持该扩展角色的协议（Anthropic）把内容折进 system 前缀，信息不丢。
+ */
+export const foldReminders = (
+  messages: MessageParam[]
+): { messages: MessageParam[]; reminders: string[] } => {
+  const reminders: string[] = []
+  const rest: MessageParam[] = []
+  for (const message of messages) {
+    if (message.role !== 'latest_reminder') {
+      rest.push(message)
+      continue
+    }
+    if (reminders[reminders.length - 1] !== message.content) {
+      reminders.push(message.content)
+    }
+  }
+  return { messages: rest, reminders }
+}
+
 export const toRequestMessages = (
   history: Message[],
   question: UserMessage,

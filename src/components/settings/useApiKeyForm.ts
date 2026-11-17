@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { ApiError, verifyApiKey } from '../../services/api/client.js'
 import { classifyApiError } from '../../services/api/errors.js'
-import { setApiKey } from '../../services/apiConfig.js'
+import { setApiKey } from '../../services/api/apiConfig.js'
 import { useTranslate } from '../../i18n/index.js'
 
 /** 输入 API Key 后先用当前配置的 GET /models 校验，通过才写入当前配置 */

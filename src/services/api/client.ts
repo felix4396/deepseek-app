@@ -1,5 +1,13 @@
 import { translate, type TranslationMessage } from '../../i18n/index.js'
-import { getMessagesBaseUrl, getModelsUrl, normalizeBaseUrl } from '../apiConfig.js'
+import {
+  getBaseUrl,
+  getCurrentSpec,
+  getMessagesBaseUrl,
+  getMessagesUrl,
+  getModelsUrl,
+  normalizeBaseUrl,
+} from './apiConfig.js'
+import type { ProviderSpec } from './providers.js'
 import { readMessageEvent } from './parseEvent.js'
 import { readServerSentEvents } from './sse.js'
 import type {
@@ -16,6 +24,9 @@ import type {
  */
 /** 引用 Files API 上传的图片、调用 Anthropic 兼容 Files API 时必须携带 */
 const FILES_BETA = 'files-api-2025-04-14'
+
+/** 上游把网页当接口数据返回（路径不匹配、网关报错页等） */
+export type ApiErrorCode = 'upstream_returned_html'
 
 export type ApiErrorKind =
   /** 非 2xx 响应 */
@@ -35,7 +46,9 @@ export class ApiError extends Error {
   constructor(
     readonly kind: ApiErrorKind,
     message: string | TranslationMessage,
-    readonly status?: number
+    readonly status?: number,
+    /** 机器可读的错误码，给需要精确分支的调用方用 */
+    readonly code?: ApiErrorCode
   ) {
     super(typeof message === 'string' ? message : translate(message.key, message.params))
     this.name = 'ApiError'
@@ -67,6 +80,14 @@ const readErrorResponse = async (
   return new ApiError(kind, message, response.status)
 }
 
+/**
+ * 上游返回了网页（text/html）：路径不匹配时网关常常 200 + 首页 HTML，
+ * 这种响应绝不能当成回答渲染，统一转成明确错误。检查在状态码判断之前，
+ * 避免 HTML 报错页的正文被当成错误信息展示。
+ */
+const isHtmlResponse = (response: Response): boolean =>
+  (response.headers.get('Content-Type') ?? '').toLowerCase().includes('text/html')
+
 export const request = async (url: string, init: RequestInit): Promise<Response> => {
   let response: Response
   try {
@@ -77,24 +98,77 @@ export const request = async (url: string, init: RequestInit): Promise<Response>
     }
     throw new ApiError('network', error instanceof Error ? error.message : String(error))
   }
+  if (isHtmlResponse(response)) {
+    throw new ApiError('protocol', { key: 'upstreamReturnedHtml' }, response.status, 'upstream_returned_html')
+  }
   if (!response.ok) {
     throw await readErrorResponse(response)
   }
   return response
 }
 
-const anthropicHeaders = (apiKey: string, beta: boolean): Record<string, string> => ({
-  // DeepSeek 兼容接口的鉴权方式，也可使用 Authorization: Bearer。
-  'x-api-key': apiKey,
-  // Files API 和通过 file_id 引用图片时必传；纯文本聊天无需携带。
-  ...(beta ? { 'anthropic-beta': FILES_BETA } : {}),
-})
+/** 没配服务地址时（Anthropic 协议必须自己填）先拦下，避免打到应用自身的相对路径 */
+const ensureBaseUrl = (): void => {
+  if (!getBaseUrl()) {
+    throw new ApiError('network', { key: 'settingsBaseUrlRequired' })
+  }
+}
 
-/** 用 GET /models 校验 API Key（不产生费用）；地址取当前配置的 baseUrl 根路径 */
+/**
+ * 鉴权头完全按当前服务类型的 spec.auth 决定：
+ * - 'x-api-key' → x-api-key + anthropic-version（Anthropic 风格，DeepSeek 官方同样接受）
+ * - 'bearer'    → Authorization: Bearer（预留给 openai 一类的协议）
+ * beta 为 true 时附带 Files API 的 anthropic-beta。
+ */
+const sameHost = (url: string, other: string): boolean => {
+  try {
+    return new URL(url).host === new URL(other).host
+  } catch {
+    return false
+  }
+}
+
+/**
+ * anthropic-version 只在打「官方端点」时带：协议要求它，官方 CORS 白名单也放行；
+ * 用户自填的中转大多只放行 x-api-key，带上会让浏览器预检失败（60010 实测）。
+ */
+const needsAnthropicVersion = (spec: ProviderSpec, baseUrl: string): boolean =>
+  Boolean(spec.anthropicVersion && spec.defaults?.baseUrl && sameHost(baseUrl, spec.defaults.baseUrl))
+
+/**
+ * 鉴权头完全按当前服务类型的 spec.auth 决定：
+ * - 'x-api-key' → x-api-key（官方端点另带 anthropic-version，Anthropic 风格）
+ * - 'bearer'    → Authorization: Bearer（预留给 openai 一类的协议）
+ * beta 为 true 时附带 Files API 的 anthropic-beta。
+ */
+export const authHeaders = (
+  apiKey: string,
+  options: { beta?: boolean; baseUrl?: string } = {}
+): Record<string, string> => {
+  const spec = getCurrentSpec()
+  const baseUrl = options.baseUrl ?? getBaseUrl()
+  const headers: Record<string, string> =
+    spec.auth === 'bearer'
+      ? { Authorization: `Bearer ${apiKey}` }
+      : {
+          'x-api-key': apiKey,
+          ...(needsAnthropicVersion(spec, baseUrl)
+            ? { 'anthropic-version': spec.anthropicVersion as string }
+            : {}),
+        }
+  if (options.beta) {
+    // Files API 和通过 file_id 引用图片时必传；纯文本聊天无需携带。
+    headers['anthropic-beta'] = FILES_BETA
+  }
+  return headers
+}
+
+/** 用 GET {paths.models} 校验 API Key（不产生费用）；地址与鉴权头都取当前 spec */
 export const verifyApiKey = async (apiKey: string, signal?: AbortSignal): Promise<void> => {
+  ensureBaseUrl()
   await request(getModelsUrl(), {
     method: 'GET',
-    headers: { Authorization: `Bearer ${apiKey}` },
+    headers: authHeaders(apiKey),
     signal,
   })
 }
@@ -114,9 +188,10 @@ export const uploadFile = async (
     form.append('purpose', purpose)
   }
   form.append('file', file)
+  ensureBaseUrl()
   const response = await request(`${getMessagesBaseUrl()}/files`, {
     method: 'POST',
-    headers: anthropicHeaders(apiKey, true),
+    headers: authHeaders(apiKey, { beta: true }),
     body: form,
     signal,
   })
@@ -125,9 +200,10 @@ export const uploadFile = async (
 
 /** DELETE /anthropic/v1/files/{file_id} */
 export const deleteFile = async (apiKey: string, fileId: string): Promise<void> => {
+  ensureBaseUrl()
   await request(`${getMessagesBaseUrl()}/files/${encodeURIComponent(fileId)}`, {
     method: 'DELETE',
-    headers: anthropicHeaders(apiKey, true),
+    headers: authHeaders(apiKey, { beta: true }),
   })
 }
 
@@ -147,10 +223,11 @@ export async function* streamMessage(
   body: CreateMessageRequest,
   signal: AbortSignal
 ): AsyncGenerator<MessageStreamEvent> {
-  const response = await request(`${getMessagesBaseUrl()}/messages`, {
+  ensureBaseUrl()
+  const response = await request(getMessagesUrl(), {
     method: 'POST',
     headers: {
-      ...anthropicHeaders(apiKey, hasFile(body)),
+      ...authHeaders(apiKey, { beta: hasFile(body) }),
       'Content-Type': 'application/json',
       Accept: 'text/event-stream',
     },
@@ -196,7 +273,7 @@ export type ProviderProbeResult = {
   status?: number
   /** 解析出的模型 id；空数组表示接口通但没给列表 */
   models: string[]
-  reason?: 'invalid' | 'timeout' | 'network' | 'http' | 'json'
+  reason?: 'invalid' | 'timeout' | 'network' | 'http' | 'json' | 'html'
   /** 原始错误信息（HTTP 与 JSON 情形） */
   message?: string
 }
@@ -237,8 +314,8 @@ const pickModelIds = (body: unknown): string[] => {
 }
 
 /**
- * 连通性测试：GET {baseUrl}/models 带 Bearer key（路径不带 apiPath）。
- * 超时、断网/跨域、非 2xx、非 JSON 分别给出可读原因，不抛异常。
+ * 连通性测试：GET {baseUrl}{paths.models}，鉴权头按当前 spec。
+ * 超时、断网/跨域、非 2xx、返回网页、非 JSON 分别给出可读原因，不抛异常。
  */
 export const probeProvider = async (
   config: { baseUrl: string; apiKey: string },
@@ -251,12 +328,15 @@ export const probeProvider = async (
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), timeoutMs)
   try {
-    const response = await fetch(`${baseUrl}/models`, {
+    const response = await fetch(`${baseUrl}${getCurrentSpec().paths.models}`, {
       method: 'GET',
-      headers: { Authorization: `Bearer ${config.apiKey}` },
+      headers: authHeaders(config.apiKey, { baseUrl }),
       signal: controller.signal,
     })
     const text = await response.text().catch(() => '')
+    if (isHtmlResponse(response)) {
+      return { ok: false, status: response.status, models: [], reason: 'html' }
+    }
     if (!response.ok) {
       let message = text || response.statusText
       try {

@@ -3,7 +3,7 @@ import type { TranslationMessage } from '../../i18n/index.js'
 import { ApiError } from '../api/client.js'
 import { classifyApiError } from '../api/errors.js'
 import { synthesize, TTS_SAMPLE_RATE } from '../api/speech.js'
-import { getApiKey } from '../apiConfig.js'
+import { getApiKey } from '../api/apiConfig.js'
 import { useSettings } from '../settings.js'
 
 /**

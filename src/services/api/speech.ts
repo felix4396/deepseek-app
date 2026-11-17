@@ -1,11 +1,11 @@
-import { getToolsBaseUrl } from '../apiConfig.js'
-import { ApiError, request } from './client.js'
+import { getBaseUrl, getToolsBaseUrl } from './apiConfig.js'
+import { ApiError, authHeaders, request } from './client.js'
 
 /**
  * 语音接口：
  * - ASR：POST /v1/tools/asr，multipart 上传 WAV / Ogg Opus，一次返回全文
  * - TTS：POST /v1/tools/tts，返回音频字节流（产出首帧后即返回 200）
- * 鉴权都用 Authorization: Bearer；地址每次从当前配置取 baseUrl，前缀固定 /v1/tools。
+ * 前缀与鉴权头都来自当前服务类型的 spec：baseUrl + paths.tools，鉴权按 spec.auth。
  */
 
 export type TtsVoice = 'stella' | 'tide'
@@ -23,7 +23,7 @@ export const transcribe = async (
   form.append('file', audio, 'recording.wav')
   const response = await request(`${getToolsBaseUrl()}/asr`, {
     method: 'POST',
-    headers: { Authorization: `Bearer ${apiKey}` },
+    headers: authHeaders(apiKey, { baseUrl: getBaseUrl() }),
     body: form,
     signal,
   })
@@ -54,7 +54,10 @@ export const synthesize = async (
 ): Promise<ReadableStream<Uint8Array>> => {
   const response = await request(`${getToolsBaseUrl()}/tts`, {
     method: 'POST',
-    headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+    headers: {
+      ...authHeaders(apiKey, { baseUrl: getBaseUrl() }),
+      'Content-Type': 'application/json',
+    },
     body: JSON.stringify({ text, voice_id: voice, format: 'pcm', filter_markdown: true }),
     signal,
   })

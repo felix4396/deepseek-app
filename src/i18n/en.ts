@@ -179,8 +179,14 @@ export const en = {
   settingsLocaleZhCN: 'Simplified Chinese',
   settingsLocaleEnUS: 'English',
 
-  // ---------- Service config (API Key / base URL / model) ----------
+  // ---------- Service config (provider kind / API Key / base URL / model) ----------
+  settingsProviderKindLabel: 'Service type',
+  settingsApiKeyLabel: 'API Key',
   settingsBaseUrlLabel: 'Service URL',
+  settingsBaseUrlPlaceholder: 'e.g. https://your-gateway.example.com',
+  settingsModelPlaceholder: 'e.g. deepseek-v4.1-flash',
+  settingsBaseUrlRequired: 'Enter a Service URL first',
+  settingsTestLabel: 'Connection test',
   settingsModelLabel: 'Model',
   settingsBaseUrlInvalid: 'Service URL must start with http:// or https:// and be a valid URL',
   settingsModelInvalid: 'Model cannot be empty',
@@ -193,6 +199,10 @@ export const en = {
   settingsTestNetwork: 'Cannot connect: {message} (wrong URL, service down, or blocked by CORS)',
   settingsTestBadJson: 'Response is not JSON: {message}',
   settingsTestApiKeyRequired: 'Enter an API Key first',
+  settingsTestHtml:
+    'The endpoint returned a web page (HTTP {status}) instead of API data; the path is usually wrong or the service is broken',
+  upstreamReturnedHtml:
+    'The upstream returned a web page instead of API data; the path is usually wrong or the service is broken',
 
   // ---------- Chat background ----------
   settingsChatBackground: 'Chat background',

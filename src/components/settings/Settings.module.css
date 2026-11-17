@@ -146,6 +146,11 @@
   max-width: min(285px, 100%);
 }
 
+/* 服务类型下拉：与其它行的控件同宽上限 */
+.providerSelect {
+  max-width: min(285px, 100%);
+}
+
 .theme {
   flex-shrink: 0;
   margin-top: 10px;

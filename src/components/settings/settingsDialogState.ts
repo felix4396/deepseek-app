@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import { getApiKey } from '../../services/apiConfig.js'
+import { getApiKey } from '../../services/api/apiConfig.js'
 
 /** 设置弹窗的分组：通用设置 / 数据管理 */
 export type SettingsSection = 'general' | 'data'

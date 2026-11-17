@@ -4,7 +4,8 @@ import { ApiError, streamMessage } from '../api/client.js'
 import type { CreateMessageRequest } from '../api/types.js'
 import { extractFileIds, getFileErrorCode, isRetryableApiError } from '../api/errors.js'
 import { cancelUpload, describeUploadError, uploadAttachment, useUploads } from '../attachments.js'
-import { getApiKey, getModel } from '../apiConfig.js'
+import { getApiKey, getCurrentSpec, getModel } from '../api/apiConfig.js'
+import { requestGates } from '../api/providers.js'
 import { useSettings } from '../settings.js'
 import { appendBranch, getVisibleMessages, normalizeSession, selectVersion } from './branches.js'
 import * as db from './db.js'
@@ -19,6 +20,7 @@ import { createLatestReminder } from './latestReminder.js'
 import {
   applyEvent,
   canContinueReply,
+  foldReminders,
   getContextRounds,
   settleReply,
   toRequestMessages,
@@ -53,6 +55,24 @@ const serverTools = (search: boolean): CreateMessageRequest['tools'] => {
     tools.push({ type: 'deepseek_web_search', name: 'deepseek_web_search' })
   }
   return tools
+}
+
+/**
+ * 按当前服务类型的 spec 组装 system 与 messages：
+ * 支持 latest_reminder 的协议（DeepSeek）原样发送快照行；
+ * 不支持的协议把快照内容折进 system 前缀，并从 messages 里删掉这些行。
+ */
+const toRequestBody = (
+  messages: ReturnType<typeof toRequestMessages>
+): { system: string; messages: ReturnType<typeof toRequestMessages> } => {
+  if (requestGates(getCurrentSpec()).latest_reminder) {
+    return { system: SYSTEM_PROMPT, messages }
+  }
+  const folded = foldReminders(messages)
+  return {
+    system: [SYSTEM_PROMPT, ...folded.reminders].join('\n'),
+    messages: folded.messages,
+  }
 }
 
 /** 允许自动补标题的请求；手动重命名后取消本轮标题写入，包含主动清空标题的情况。 */
@@ -988,23 +1008,35 @@ const streamReply = async (sessionId: string, initial: AssistantMessage, request
         reply = { ...reply, latestReminder }
         updateReply(sessionId, reply)
         persist(sessionId)
-        const messages = toRequestMessages(
-          prepared.history,
-          prepared.question,
-          prepared.prefix,
-          initial.thinking ?? false,
-          latestReminder
+        const spec = getCurrentSpec()
+        const gates = requestGates(spec)
+        const thinking = initial.thinking ?? false
+        const body = toRequestBody(
+          toRequestMessages(
+            prepared.history,
+            prepared.question,
+            prepared.prefix,
+            thinking,
+            latestReminder
+          )
         )
         const events = streamMessage(
           getApiKey(),
           {
             model: initial.model ?? getModel(),
-            system: SYSTEM_PROMPT,
-            messages,
-            thinking: { type: initial.thinking ? 'enabled' : 'disabled' },
-            safety_check: SAFETY_CHECK,
-            tools: serverTools(initial.search ?? false),
-            ...(titleRequests.has(controller) ? { title: { enabled: true } } : {}),
+            system: body.system,
+            messages: body.messages,
+            thinking: {
+              type: thinking ? 'enabled' : 'disabled',
+              // 真 Anthropic 协议开启 thinking 时必须给预算
+              ...(thinking && gates.thinking_budget && spec.thinkingBudget
+                ? { budget_tokens: spec.thinkingBudget }
+                : {}),
+            },
+            // 以下字段发不发只看 REQUEST_GATES：裸 Anthropic 上游多一个就是 400
+            ...(gates.safety_check ? { safety_check: SAFETY_CHECK } : {}),
+            ...(gates.tools ? { tools: serverTools(initial.search ?? false) } : {}),
+            ...(titleRequests.has(controller) && gates.title ? { title: { enabled: true } } : {}),
           },
           controller.signal
         )

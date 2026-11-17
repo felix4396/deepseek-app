@@ -15,6 +15,7 @@ declare const styles: {
   readonly "provinceSelect": string;
   readonly "citySelect": string;
   readonly "regionSelect": string;
+  readonly "providerSelect": string;
   readonly "theme": string;
   readonly "themeOptions": string;
   readonly "themeOption": string;
