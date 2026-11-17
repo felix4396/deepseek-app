@@ -192,6 +192,7 @@ export const en = {
   settingsTestTimeout: 'Connection timed out; check the URL and your network',
   settingsTestNetwork: 'Cannot connect: {message} (wrong URL, service down, or blocked by CORS)',
   settingsTestBadJson: 'Response is not JSON: {message}',
+  settingsTestApiKeyRequired: 'Enter an API Key first',
 
   // ---------- Chat background ----------
   settingsChatBackground: 'Chat background',

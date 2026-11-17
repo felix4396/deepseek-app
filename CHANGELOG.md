@@ -2,6 +2,16 @@
 
 本文件记录 deepseek-app 的重要变更，版本倒序排列。
 
+## 1.2.2 (2026-11-17)
+
+- 修复设置页「测试」按钮误报 `Invalid api key`：探测请求改用 API Key 输入框的当前值，而不是 store 里已保存（可能为空）的旧值，不必先点「确定」再测试（versionCode 5）
+- 未填写 API Key 时点「测试」会直接提示「请先填写 API Key」，不再发出空 `Authorization: Bearer` 请求
+- 新增 Playwright 回归测试 `tests/test.probe-auth.spec.mjs`、`tests/test.probe-nokey.spec.mjs`
+
+## 1.2.1 (2026-11-17)
+
+- 允许 Android WebView 混合内容，修复 http 上游地址无法连通的问题（versionCode 4）
+
 ## 1.2.0 (2026-11-17)
 
 - 新增聊天背景图功能：支持选择本地图片作为聊天背景，图片压缩至 1600px 上限后存入 IndexedDB，提供亮/暗主题遮罩保证可读性（versionCode 3）

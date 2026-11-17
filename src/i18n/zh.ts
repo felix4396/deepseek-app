@@ -183,6 +183,7 @@ export const zh = {
   settingsTestTimeout: '连接超时，请检查地址与网络后再试',
   settingsTestNetwork: '无法连接：{message}（地址错误、服务未启动或被跨域策略拦截）',
   settingsTestBadJson: '返回的不是 JSON：{message}',
+  settingsTestApiKeyRequired: '请先填写 API Key',
 
   // ---------- 聊天背景 ----------
   settingsChatBackground: '聊天背景',

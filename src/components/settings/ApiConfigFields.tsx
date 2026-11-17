@@ -29,7 +29,7 @@ type ApiKeyEditor = ReturnType<typeof useApiKeyEditor>
 export const ApiConfigFields = ({ editor }: { editor: ApiKeyEditor }) => (
   <>
     <ApiKeyField editor={editor} />
-    <BaseUrlField />
+    <BaseUrlField editor={editor} />
     <ModelField />
   </>
 )
@@ -101,11 +101,12 @@ const ApiKeyField = ({ editor }: { editor: ApiKeyEditor }) => {
 }
 
 /** 服务地址：失焦或回车保存，尾部「测试」按钮会先保存再请求 {baseUrl}/models */
-const BaseUrlField = () => {
+const BaseUrlField = ({ editor }: { editor: ApiKeyEditor }) => {
   const t = useTranslate()
   const stored = useApiConfig((state) => state.baseUrl)
   const [value, setValue] = useState(stored || DEFAULT_BASE_URL)
   const [error, setError] = useState<TranslationKey | null>(null)
+  const [keyError, setKeyError] = useState<TranslationKey | null>(null)
   const [testing, setTesting] = useState(false)
   const [probe, setProbe] = useState<ProviderProbeResult | null>(null)
 
@@ -136,6 +137,12 @@ const BaseUrlField = () => {
     return true
   }
 
+  /**
+   * 测试要用的 API Key：以输入框当前的受控值为准（用户打完字还没点「确定」时 store 里还是空的），
+   * 输入框没内容时回落到已保存的 Key。
+   */
+  const currentApiKey = (): string => editor.form.value.trim() || editor.apiKey
+
   const test = async () => {
     if (testing) {
       return
@@ -144,10 +151,18 @@ const BaseUrlField = () => {
     if (!save()) {
       return
     }
+    const apiKey = currentApiKey()
+    if (!apiKey) {
+      // 没有 Key 就发请求只会得到空鉴权的 401，直接在本地拦下
+      setKeyError('settingsTestApiKeyRequired')
+      setProbe(null)
+      return
+    }
+    setKeyError(null)
     setTesting(true)
     setProbe(null)
     try {
-      setProbe(await probeProvider({ baseUrl: value, apiKey: useApiConfig.getState().apiKey }))
+      setProbe(await probeProvider({ baseUrl: value, apiKey }))
     } finally {
       setTesting(false)
     }
@@ -189,6 +204,7 @@ const BaseUrlField = () => {
             {testing ? t('settingsTesting') : t('settingsTest')}
           </button>
         </div>
+        {keyError ? <div className={styles.error}>{t(keyError)}</div> : null}
         {error ? <div className={styles.error}>{t(error)}</div> : null}
         {probe ? <div className={styles.description}>{describeProbe(t, probe)}</div> : null}
       </div>
