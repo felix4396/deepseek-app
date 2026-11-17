@@ -16,11 +16,18 @@
   padding: 0 32px 64px;
 }
 
+.hero {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 100%;
+}
+
 .greeting {
   display: flex;
   align-items: center;
   justify-content: center;
-  margin-bottom: 21px;
+  margin-bottom: 16px;
   font-size: 24px;
   line-height: 32px;
   font-weight: 600;
@@ -28,11 +35,92 @@
   color: var(--dsw-alias-label-primary);
 }
 
+/* 快速 / 专家模式分段切换（纯视觉，不参与任何请求逻辑） */
+.modeSwitch {
+  display: flex;
+  align-items: stretch;
+  box-sizing: border-box;
+  width: min(280px, 68vw);
+  height: 40px;
+  margin-bottom: 20px;
+  padding: 4px;
+  border-radius: 999px;
+  background-color: var(--mode-switch-track, #f2f2f5);
+}
+
+.modeOption {
+  display: inline-flex;
+  flex: 1 1 0;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-width: 0;
+  height: 100%;
+  padding: 0 8px;
+  border: none;
+  border-radius: 999px;
+  background-color: transparent;
+  color: var(--mode-switch-label, #17171b);
+  font: inherit;
+  font-size: 13px;
+  line-height: 20px;
+  font-weight: 500;
+  white-space: nowrap;
+  cursor: pointer;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+  transition-property: background-color, color, transform;
+  transition-duration: 160ms, 160ms, var(--motion-duration-press, 110ms);
+  transition-timing-function: var(--ds-ease-in-out), var(--ds-ease-in-out),
+    var(--motion-ease-ios, cubic-bezier(0.32, 0.72, 0, 1));
+
+  /* 按压反馈：只动 transform（110ms），与项目动效规范一致 */
+  &:active {
+    transform: scale(0.98);
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--dsw-alias-brand-primary);
+    outline-offset: 1px;
+  }
+}
+
+.modeOptionSelected {
+  background-color: var(--mode-switch-selected-bg, #e8edff);
+  color: var(--mode-switch-selected-label, #4d6bfe);
+  font-weight: 600;
+}
+
+.modeLabel {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.modeIcon {
+  display: block;
+  flex-shrink: 0;
+}
+
+/* 深色主题下把轨道与选中底色换成低亮度版本，避免刺眼的浅灰/浅蓝块 */
+body[data-ds-dark-theme] .modeSwitch {
+  --mode-switch-track: rgba(255, 255, 255, 0.08);
+  --mode-switch-label: var(--dsw-alias-label-primary);
+}
+
+body[data-ds-dark-theme] .modeOptionSelected {
+  --mode-switch-selected-bg: rgba(77, 107, 254, 0.24);
+  --mode-switch-selected-label: var(--dsw-static-blue-400);
+}
+
 @media (max-width: 439px) {
   .greeting {
     font-size: 20px;
     line-height: 28px;
     font-weight: 500;
+  }
+
+  .modeOption {
+    font-size: 13px;
   }
 }
 
@@ -50,9 +138,14 @@
     padding: 0 16px env(safe-area-inset-bottom);
   }
 
-  .greeting {
+  .hero {
     flex-shrink: 0;
     margin: auto 0;
+  }
+
+  .greeting {
+    flex-shrink: 0;
+    margin: 0 0 14px;
   }
 
   .caveat {
