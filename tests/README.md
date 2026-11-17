@@ -68,3 +68,18 @@ cd /root/deepseek-app && node tests/test.motion.spec.mjs
 - 功能回归：侧边栏能点会话、设置能开能关、发消息正常（上游用 `page.route` 打桩，不需要真实 IP）
 
 被测页面默认是 `dist/`（内测构建产物）上的独立静态服务（端口 5292），可用 `APP_URL` / `DIST_DIR` / `PORT` 覆盖。
+
+## 「导入历史会话 → 从链接导入」（仅原生 APK）
+
+目标 ZIP 在 DeepSeek 官方 OBS 桶上、未开 CORS，浏览器 fetch 必被拦，因此该能力只在原生端通过
+`CapacitorHttp` 提供（`src/services/chat/history/urlImport.ts`）。三个 spec：
+
+| spec | 覆盖 | 跑法 |
+| --- | --- | --- |
+| `test.url-import-native.spec.mjs` | mock 原生桥（`window.androidBridge` + `Capacitor.PluginHeaders` + `nativePromise`），7 个用例：ArrayBuffer 数据走完 `importHistory`、base64 数据（Android 实测形态）、非 ZIP、Content-Length > 200MB、下载中取消、网络失败、超时 | `node tests/test.url-import-native.spec.mjs`（需 5181 上的 dist） |
+| `test.url-import-web.spec.mjs` | 网页端不渲染链接入口 + 提示替代做法；本地文件上传回归 | `node tests/test.url-import-web.spec.mjs` |
+| `test.url-import-device.spec.mjs` | 真机/模拟器：`CapacitorHttp.get` 返回的 `data` 类型实测 + 真实 UI 导入（需要模拟器、`adb`、5199 上的导出 ZIP） | `node tests/test.url-import-device.spec.mjs` |
+
+夹具 `archive-fixture.mjs` 用 fflate 生成最小导出 ZIP（manifest + 1 个会话 + index），格式与
+`src/services/chat/history/format.ts` 对齐。断言口径：会话数取 IndexedDB `chat-demo/sessions`，
+「走完链路」还要求 `sessionsStaging` / `filesStaging` 已清空（覆盖事务已提交）。

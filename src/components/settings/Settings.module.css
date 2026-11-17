@@ -115,6 +115,29 @@
   padding: 0 13px;
 }
 
+/* 「从链接导入」行（仅原生 App）：说明在上，地址输入 + 导入按钮占满下一行的整宽 */
+.linkCell {
+  flex-wrap: wrap;
+}
+
+.linkCell .text {
+  flex: 1 0 auto;
+  padding-right: 8px;
+}
+
+.linkActions {
+  display: flex;
+  flex: 1 1 100%;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.linkInput {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
 .locationCell {
   flex-wrap: wrap;
 }

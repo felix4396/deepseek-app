@@ -3,6 +3,9 @@ import type { zh } from './zh.js'
 export const en = {
   welcomeMessageChat250808: 'How can I help you?',
   contentCaveat: 'AI-generated, for reference only',
+  modeSwitchLabel: 'Chat mode',
+  modeFast: 'Fast mode',
+  modeExpert: 'Expert mode',
   expandSiderbarButton: 'Open sidebar',
   collapseSiderbarButton: 'Close sidebar',
   newChat: 'New chat',
@@ -119,6 +122,28 @@ export const en = {
     'Importing chat history replaces all local chats and attachments. Supports ZIP files exported from DeepSeek.',
   historyImportedOne: 'Imported 1 chat',
   historyImported: 'Imported {count} chats',
+  historyImportFromUrl: 'Import from link',
+  historyImportUrlStart: 'Import link',
+  historyImportUrlDescription:
+    'Paste the DeepSeek export ZIP link; the app downloads it directly (Android app only).',
+  historyImportUrlPlaceholder: 'https://…/deepseek_data.zip',
+  historyImportUrlDownloading: 'Downloading...',
+  historyImportUrlDownloadingHint:
+    'Downloading and importing. A ~20MB export can take tens of seconds; please keep this screen open.',
+  historyImportFromUrlFailed: 'Import from link failed: {message}',
+  historyImportUrlInvalid: 'Enter a link starting with http:// or https://',
+  historyImportUrlNativeOnly:
+    'Link import is unavailable on the web. Download the ZIP and upload it.',
+  historyImportUrlNetwork: 'Download failed. Check your network connection and try again.',
+  historyImportUrlTimeout: 'Download timed out. Check your network and try again.',
+  historyImportUrlHttp:
+    'The link returned an error status (HTTP {status}). Check that it is still valid.',
+  historyImportUrlTooLarge: 'The file exceeds the {size}MB limit and cannot be imported.',
+  historyImportUrlNotZip:
+    'Not a valid ZIP file. Check that the link points to a DeepSeek chat history export.',
+  historyImportUrlBadResponse: 'The download response could not be parsed. Please try again.',
+  historyImportUrlWebHint:
+    'The web app cannot download export links directly. Download the ZIP and upload it.',
   historyImportFailed:
     'File import failed. The file format may be invalid, or the ZIP file may use an older chat export format. Please export your chat history from DeepSeek again and retry the import.',
   historyExportFailed: 'Export failed: {message}',

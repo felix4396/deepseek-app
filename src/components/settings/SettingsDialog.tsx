@@ -15,6 +15,11 @@ import {
   exportHistory,
   importHistory,
 } from '../../services/chat/backup.js'
+import {
+  canImportFromUrl,
+  importHistoryFromUrl,
+  UrlImportCancelled,
+} from '../../services/chat/history/urlImport.js'
 import { useIsMobile } from '../../app/viewport.js'
 import { useChatStore } from '../../services/chat/store.js'
 import {
@@ -130,7 +135,7 @@ const SettingsContent = ({ visible }: { visible: boolean }) => {
           )}
         </div>
       </Modal>
-      {historyImport.file ? <ImportConfirm historyImport={historyImport} /> : null}
+      {historyImport.source ? <ImportConfirm historyImport={historyImport} /> : null}
       {historyDelete.opened ? <DeleteAllConfirm historyDelete={historyDelete} /> : null}
     </>
   )
@@ -254,13 +259,17 @@ const TtsVoiceSetting = () => {
   )
 }
 
-/** 覆盖导入的二次确认，叠在设置弹窗上 */
+/**
+ * 覆盖导入的二次确认，叠在设置弹窗上。
+ * 链接导入在这一步之后还要下载，所以下载期间弹窗不关闭、按钮显示「下载中...」，可随时取消。
+ */
 const ImportConfirm = ({
   historyImport,
 }: {
   historyImport: ReturnType<typeof useHistoryImport>
 }) => {
   const t = useTranslate()
+  const downloading = historyImport.downloading
   return (
     <Modal
       title={t('historyImportConfirmTitle')}
@@ -271,13 +280,20 @@ const ImportConfirm = ({
           <Button variant="outlined" size="m" autoFocus onClick={historyImport.cancel}>
             {t('cancel')}
           </Button>
-          <Button variant="dangerOutlined" size="m" onClick={() => void historyImport.confirm()}>
-            {t('historyImportConfirm')}
+          <Button
+            variant="dangerOutlined"
+            size="m"
+            disabled={downloading}
+            onClick={() => void historyImport.confirm()}
+          >
+            {t(downloading ? 'historyImportUrlDownloading' : 'historyImportConfirm')}
           </Button>
         </>
       }
     >
-      <div className={styles.importConfirmText}>{t('historyImportConfirmDescription')}</div>
+      <div className={styles.importConfirmText}>
+        {t(downloading ? 'historyImportUrlDownloadingHint' : 'historyImportConfirmDescription')}
+      </div>
     </Modal>
   )
 }
@@ -336,14 +352,35 @@ const ThemeSetting = () => {
 /** `reason` 为失败原因的文案 key，展示时按当前语言翻译后填入 `message` 参数。 */
 type Status = (TranslationMessage & { error?: boolean; reason?: TranslationKey }) | null
 
-/** 导出失败附带原因：预期的错误用对应文案作原因，其他错误用错误信息。 */
+/** 导入状态带来源：文件导入的提示只显示在「导入历史对话」行，链接导入只显示在「从链接导入」行。 */
+type ImportStatus = { target: 'file' | 'url'; message: Status }
+
+/** 失败附带原因：预期的错误用对应文案（连同其占位符参数）作原因，其他错误用错误信息。 */
 const errorStatus = (key: TranslationKey, error: unknown): Status => ({
   key,
   ...(error instanceof BackupError
-    ? { reason: error.key }
+    ? { reason: error.key, params: error.params }
     : { params: { message: error instanceof Error ? error.message : String(error) } }),
   error: true,
 })
+
+/** 说明文字：有状态就显示状态（失败标红），否则显示静态说明。 */
+const CellText = ({ status, description }: { status: Status; description?: string }) => {
+  const t = useTranslate()
+  if (!status && !description) {
+    return null
+  }
+  return (
+    <div className={clsx(styles.description, status?.error && styles.error)}>
+      {status
+        ? t(status.key, {
+            ...status.params,
+            ...(status.reason ? { message: t(status.reason, status.params) } : {}),
+          })
+        : description}
+    </div>
+  )
+}
 
 const SettingCell = ({
   label,
@@ -357,55 +394,122 @@ const SettingCell = ({
   status: Status
   action: ReactNode
   className?: string
-}) => {
-  const t = useTranslate()
-  return (
-    <div className={clsx(styles.cell, styles.row, className)}>
-      <div className={styles.text}>
-        <div className={styles.label}>{label}</div>
-        {status || description ? (
-          <div className={clsx(styles.description, status?.error && styles.error)}>
-            {status
-              ? t(status.key, status.reason ? { message: t(status.reason) } : status.params)
-              : description}
-          </div>
-        ) : null}
-      </div>
-      {action}
+}) => (
+  <div className={clsx(styles.cell, styles.row, className)}>
+    <div className={styles.text}>
+      <div className={styles.label}>{label}</div>
+      <CellText status={status} description={description} />
     </div>
-  )
-}
+    {action}
+  </div>
+)
 
-/** 选文件后先提示覆盖；确认后才检查文件并执行导入，任何错误都提示导入失败。 */
+/** 导入源：本地文件，或原生端的直链（先下载再走同一条导入链路）。 */
+type ImportSource = { kind: 'file'; file: File } | { kind: 'url'; url: string }
+
+/**
+ * 导入状态：选中来源后先提示覆盖，确认后才真正导入。
+ * 链接导入多一段下载：下载期间 modal 保持打开（按钮「下载中...」），取消后丢弃结果、界面立即恢复。
+ */
 const useHistoryImport = () => {
-  const [file, setFile] = useState<File | null>(null)
+  const [source, setSource] = useState<ImportSource | null>(null)
   const [busy, setBusy] = useState(false)
-  const [status, setStatus] = useState<Status>(null)
+  const [downloading, setDownloading] = useState(false)
+  const [status, setStatus] = useState<ImportStatus | null>(null)
+  const [url, setUrl] = useState('')
   const importing = useRef(false)
+  // 取消后仍可能有已发出的下载在跑：用自增的 run 标记作废旧结果，不影响新的一轮导入。
+  const run = useRef(0)
+  const abort = useRef<AbortController | null>(null)
 
-  const confirm = async () => {
-    if (!file || importing.current) {
-      return
-    }
-    importing.current = true
-    setFile(null)
-    setBusy(true)
-    setStatus(null)
-    try {
-      const count = await importHistory(file)
-      setStatus({ key: count === 1 ? 'historyImportedOne' : 'historyImported', params: { count } })
-    } catch {
-      setStatus({ key: 'historyImportFailed', error: true })
-    } finally {
+  const finish = (id: number) => {
+    if (run.current === id) {
       importing.current = false
       setBusy(false)
+      setDownloading(false)
     }
   }
 
-  return { file, busy, status, select: setFile, cancel: () => setFile(null), confirm }
+  const importFile = async (file: File) => {
+    try {
+      const count = await importHistory(file)
+      setStatus({
+        target: 'file',
+        message: { key: count === 1 ? 'historyImportedOne' : 'historyImported', params: { count } },
+      })
+    } catch {
+      setStatus({ target: 'file', message: { key: 'historyImportFailed', error: true } })
+    }
+  }
+
+  /** 下载 + 导入；取消后 (signal.aborted) 不提示、不写入。 */
+  const importLink = async (link: string) => {
+    const controller = new AbortController()
+    abort.current = controller
+    setDownloading(true)
+    try {
+      const count = await importHistoryFromUrl(link, { signal: controller.signal })
+      setSource(null)
+      setStatus({
+        target: 'url',
+        message: { key: count === 1 ? 'historyImportedOne' : 'historyImported', params: { count } },
+      })
+    } catch (error) {
+      if (controller.signal.aborted || error instanceof UrlImportCancelled) {
+        return
+      }
+      setSource(null)
+      setStatus({ target: 'url', message: errorStatus('historyImportFromUrlFailed', error) })
+    }
+  }
+
+  const confirm = async () => {
+    if (!source || importing.current) {
+      return
+    }
+    importing.current = true
+    const id = run.current
+    setBusy(true)
+    setStatus(null)
+    try {
+      if (source.kind === 'file') {
+        setSource(null)
+        await importFile(source.file)
+      } else {
+        await importLink(source.url)
+      }
+    } finally {
+      abort.current = null
+      finish(id)
+    }
+  }
+
+  /** 取消：关闭弹窗并丢弃结果（CapacitorHttp 不能 abort，只能不再采用它的返回值）。 */
+  const cancel = () => {
+    run.current += 1
+    importing.current = false
+    abort.current?.abort()
+    abort.current = null
+    setDownloading(false)
+    setBusy(false)
+    setSource(null)
+  }
+
+  return {
+    source,
+    busy,
+    downloading,
+    status,
+    url,
+    setUrl,
+    selectFile: (file: File) => setSource({ kind: 'file', file }),
+    selectUrl: () => setSource({ kind: 'url', url }),
+    cancel,
+    confirm,
+  }
 }
 
-/** 导入 = 覆盖：用选中文件替换本地全部会话与附件。 */
+/** 导入 = 覆盖：用选中文件或链接替换本地全部会话与附件。 */
 const ImportHistory = ({
   historyImport,
   disabled,
@@ -415,40 +519,101 @@ const ImportHistory = ({
 }) => {
   const t = useTranslate()
   const inputRef = useRef<HTMLInputElement>(null)
+  // 网页端没有原生 HTTP（导出桶无 CORS），不渲染链接入口，只在说明里给出替代做法。
+  const native = canImportFromUrl()
 
   return (
-    <SettingCell
-      label={t('historyImport')}
-      description={t('historyImportDescription')}
-      status={historyImport.status}
-      action={
-        <>
-          <Button
-            variant="outlined"
-            size="m"
-            className={clsx(styles.cellButton, styles.uploadButton)}
-            disabled={disabled}
-            onClick={() => inputRef.current?.click()}
-          >
-            <IconUploadOutline14 />
-            {t('upload')}
-          </Button>
+    <>
+      <SettingCell
+        label={t('historyImport')}
+        description={
+          native
+            ? t('historyImportDescription')
+            : `${t('historyImportDescription')} ${t('historyImportUrlWebHint')}`
+        }
+        status={historyImport.status?.target === 'file' ? historyImport.status.message : null}
+        action={
+          <>
+            <Button
+              variant="outlined"
+              size="m"
+              className={clsx(styles.cellButton, styles.uploadButton)}
+              disabled={disabled}
+              onClick={() => inputRef.current?.click()}
+            >
+              <IconUploadOutline14 />
+              {t('upload')}
+            </Button>
+            <input
+              ref={inputRef}
+              type="file"
+              accept=".zip,application/zip,application/x-zip-compressed"
+              hidden
+              onChange={(event) => {
+                const file = event.target.files?.[0]
+                event.target.value = ''
+                if (file) {
+                  historyImport.selectFile(file)
+                }
+              }}
+            />
+          </>
+        }
+      />
+      {native ? <ImportHistoryUrl historyImport={historyImport} disabled={disabled} /> : null}
+    </>
+  )
+}
+
+/** 原生专享：粘贴导出链接，由 App 下载 ZIP 后导入。 */
+const ImportHistoryUrl = ({
+  historyImport,
+  disabled,
+}: {
+  historyImport: ReturnType<typeof useHistoryImport>
+  disabled: boolean
+}) => {
+  const t = useTranslate()
+  const blocked = disabled || historyImport.url.trim() === ''
+  return (
+    <div className={clsx(styles.cell, styles.row, styles.linkCell)}>
+      <div className={styles.text}>
+        <div className={styles.label}>{t('historyImportFromUrl')}</div>
+        <CellText
+          status={historyImport.status?.target === 'url' ? historyImport.status.message : null}
+          description={t('historyImportUrlDescription')}
+        />
+      </div>
+      <div className={styles.linkActions}>
+        <div className={clsx(styles.apiKeyInput, styles.linkInput)}>
           <input
-            ref={inputRef}
-            type="file"
-            accept=".zip,application/zip,application/x-zip-compressed"
-            hidden
-            onChange={(event) => {
-              const file = event.target.files?.[0]
-              event.target.value = ''
-              if (file) {
-                historyImport.select(file)
+            type="url"
+            inputMode="url"
+            autoComplete="off"
+            spellCheck={false}
+            aria-label={t('historyImportFromUrl')}
+            placeholder={t('historyImportUrlPlaceholder')}
+            value={historyImport.url}
+            disabled={disabled}
+            onChange={(event) => historyImport.setUrl(event.currentTarget.value)}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter' && !blocked) {
+                historyImport.selectUrl()
               }
             }}
           />
-        </>
-      }
-    />
+        </div>
+        <Button
+          variant="outlined"
+          size="m"
+          className={clsx(styles.cellButton, styles.uploadButton)}
+          disabled={blocked}
+          onClick={() => historyImport.selectUrl()}
+        >
+          {t(historyImport.downloading ? 'historyImportUrlDownloading' : 'historyImportUrlStart')}
+        </Button>
+      </div>
+    </div>
   )
 }
 
