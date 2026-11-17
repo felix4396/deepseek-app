@@ -1,6 +1,38 @@
 # 端到端回归测试（Playwright）
 
-覆盖设置页「服务地址」那一行「测试」按钮的鉴权行为：
+## 真上游 + 真前端冒烟测试（**每次发版前必跑**）
+
+```bash
+cd /root/deepseek-app && E2E_API_KEY=sk-xxx node tests/e2e-real-upstream.spec.mjs
+```
+
+**为什么需要它**：此前 UI 用例全部用 `page.route` / mock 上游打桩，上游能力全部用 curl 验证，
+两条线从未交叉——「真上游的 SSE 能不能被真前端解析并渲染成文字」这件事一直没有自动化覆盖。
+发版前跑一次，等于给「真 key + 真 UI + 真上游」这条链路做一次完整握手。
+
+| 环境变量 | 默认值 | 说明 |
+| --- | --- | --- |
+| `E2E_API_KEY` | （必填） | 只通过环境变量传，绝不写进文件 |
+| `E2E_UPSTREAM_URL` | `http://123.207.199.196:60010` | 真上游地址 |
+| `E2E_MODEL` | `deepseek-v4.1-flash` | 模型 |
+| `E2E_APP_URL` | `http://100.113.135.55:5181` | 被测页面 |
+| `E2E_ROUNDS` | `2` | 首轮冷启动 + 次轮热路径，同时作为 TTFT 基线 |
+
+流程与断言：设置页**真实键盘输入** API Key → 保存（`chat-demo:api-key`）→ `GET {upstream}/v1/models`
+前置探针（非 200 直接判「上游不可用」）→ 发「你好」→ 记录 **请求发出 / 首个字节(TTFB) / 界面首次出字 /
+流结束** 四个时间点 → 断言助手文字长度 > 0、用户消息内容正确、流结束后 loading 消失、console error = 0
+（浏览器对非 2xx 的资源日志另计）。
+
+失败时按三层给证据，一眼区分是「上游没 flush / 格式不符」还是「前端没解析」：上游不可用（探针或
+`/v1/messages` 非 200）/ 上游格式不兼容（有字节但没有非空 `text_delta`）/ 前端解析渲染问题（有
+`text_delta` 但界面 0 字），并打印状态码、`Content-Type`、`Transfer-Encoding`、已收到的**原始 SSE 前 20 行**。
+
+⚠️ 跑之前确认上游 IP 没被绑到本机回环（内测构建验收会 `ip addr add 123.207.199.196/32 dev lo` 把请求
+打到 mock）。脚本会自检并直接失败；需要先 `ip addr del 123.207.199.196/32 dev lo`。同理，跑
+`test.internal-build.spec.mjs` 前要把它加回来。
+
+## 设置页「测试」按钮的鉴权
+
 
 - `test.probe-auth.spec.mjs`：只在 API Key 输入框里填 key（**不点「确定」**）后点「测试」，断言 `/models` 请求的
   `Authorization` 头 === `Bearer <输入框里的 key>`。修复前该用例失败（发的是 `Bearer` 空鉴权），修复后通过。
