@@ -1,11 +1,30 @@
+# 依赖与构建产物
 node_modules/
 dist/
+dist-baseline/
 build/
-.pnpm-store/
-.cache/
-*.log
-.DS_Store
+android/build/
+android/app/build/
+android/.gradle/
+android/app/src/main/assets/public/
+*.tsbuildinfo
+
+# 密钥与签名（严禁提交）
+android/keystore/
+*.keystore
+*.jks
+keystore.properties
+android/local.properties
 .env
 .env.*
-!.env.example
-tmp/
+*.apk
+*.aab
+
+# 测试夹具与临时脚本
+docs/acceptance/
+.build-*.sh
+deploy-check*.png
+
+# 杂项
+.DS_Store
+*.log
