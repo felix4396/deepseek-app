@@ -178,4 +178,18 @@ export const en = {
   latestReminderLanguage: 'English',
   settingsLocaleZhCN: 'Simplified Chinese',
   settingsLocaleEnUS: 'English',
+
+  // ---------- Service config (API Key / base URL / model) ----------
+  settingsBaseUrlLabel: 'Service URL',
+  settingsModelLabel: 'Model',
+  settingsBaseUrlInvalid: 'Service URL must start with http:// or https:// and be a valid URL',
+  settingsModelInvalid: 'Model cannot be empty',
+  settingsTest: 'Test',
+  settingsTesting: 'Testing…',
+  settingsTestOk: 'Connected (HTTP {status}); {count} models: {models}',
+  settingsTestOkEmpty: 'Connected (HTTP {status}) but no model list was returned',
+  settingsTestHttp: 'Request failed (HTTP {status}): {message}',
+  settingsTestTimeout: 'Connection timed out; check the URL and your network',
+  settingsTestNetwork: 'Cannot connect: {message} (wrong URL, service down, or blocked by CORS)',
+  settingsTestBadJson: 'Response is not JSON: {message}',
 } satisfies Record<keyof typeof zh, string>

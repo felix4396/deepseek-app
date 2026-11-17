@@ -1,0 +1,195 @@
+------------------------------------------------------------
+heavy-run  slice=dsh-heavy.slice  cap=4294967296  swapcap=2147483648
+------------------------------------------------------------
+BEFORE  (2026-11-17 17:15:39)
+                 total        used        free      shared  buff/cache   available
+  Mem:            15Gi       7.8Gi       4.5Gi       118Mi       3.5Gi       7.6Gi
+  Swap:          4.0Gi       2.0Gi       2.0Gi
+  PSI memory:
+    some  avg10=0.24  avg60=0.14  avg300=0.08  total=4159443713
+    full  avg10=0.24  avg60=0.13  avg300=0.07  total=3428185163
+  slice peak so far: 629219328 bytes
+------------------------------------------------------------
+PASS         | S1_home_fresh | 请求 method+路径 | (无请求)
+PASS         | S1_home_fresh | body 关键值(stream/model/tools/safety) | []
+PASS         | S1_home_fresh | console error | base=0 after=0；新增=(无)
+PASS         | S1_home_fresh | loaded.messageCount | base=0 after=0
+PASS         | S1_home_fresh | loaded.bubbleCount | base=0 after=0
+PASS         | S1_home_fresh | loaded.hasTextarea | base=true after=true
+PASS         | S1_home_fresh | loaded.sendButtonPresent | base=true after=true
+PASS         | S1_home_fresh | loaded.sendDisabled | base=false after=false
+PASS         | S1_home_fresh | loaded.modalOpen | base=true after=true
+PASS         | S1_home_fresh | loaded.提示文案 | (无)
+DIFF         | S1_home_fresh | loaded.DOM 结构 | +12 / -0 行；新增示例：<div .cell [class=cell-_85c1b]> ; <div .cell [class=cell-_85c1b]> ; <div .apiKey [class=apiKey-_85c1b]> ; <div .apiKey [class=apiKey-_85c1b]>
+PASS         | S2_settings | 请求 method+路径 | (无请求)
+PASS         | S2_settings | body 关键值(stream/model/tools/safety) | []
+PASS         | S2_settings | console error | base=0 after=0；新增=(无)
+PASS         | S2_settings | general.messageCount | base=0 after=0
+PASS         | S2_settings | general.bubbleCount | base=0 after=0
+PASS         | S2_settings | general.hasTextarea | base=true after=true
+PASS         | S2_settings | general.sendButtonPresent | base=true after=true
+PASS         | S2_settings | general.sendDisabled | base=false after=false
+PASS         | S2_settings | general.modalOpen | base=true after=true
+PASS         | S2_settings | general.提示文案 | (无)
+PASS         | S2_settings | data.messageCount | base=0 after=0
+PASS         | S2_settings | data.bubbleCount | base=0 after=0
+PASS         | S2_settings | data.hasTextarea | base=true after=true
+PASS         | S2_settings | data.sendButtonPresent | base=true after=true
+PASS         | S2_settings | data.sendDisabled | base=false after=false
+PASS         | S2_settings | data.modalOpen | base=true after=true
+PASS         | S2_settings | data.提示文案 | (无)
+PASS         | S2_settings | general.DOM 结构 | +0 / -0 行；新增示例：(无)
+DIFF         | S2_settings | data.DOM 结构 | +12 / -0 行；新增示例：<div .cell [class=cell-_85c1b]> ; <div .cell [class=cell-_85c1b]> ; <div .apiKey [class=apiKey-_85c1b]> ; <div .apiKey [class=apiKey-_85c1b]>
+PASS         | S2_settings | localStorage chat-demo:api-key | "string(len=32, masked)"
+PASS         | S2_settings | localStorage chat-demo:locale | "string(len=5)"
+PASS         | S3_session | 请求 method+路径 | (无请求)
+PASS         | S3_session | body 关键值(stream/model/tools/safety) | []
+PASS         | S3_session | console error | base=0 after=0；新增=(无)
+PASS         | S3_session | drawer.messageCount | base=0 after=0
+PASS         | S3_session | drawer.bubbleCount | base=0 after=0
+PASS         | S3_session | drawer.hasTextarea | base=true after=true
+PASS         | S3_session | drawer.sendButtonPresent | base=true after=true
+PASS         | S3_session | drawer.sendDisabled | base=false after=false
+PASS         | S3_session | drawer.modalOpen | base=false after=false
+PASS         | S3_session | drawer.提示文案 | (无)
+PASS         | S3_session | session.messageCount | base=20 after=20
+PASS         | S3_session | session.bubbleCount | base=20 after=20
+PASS         | S3_session | session.hasTextarea | base=true after=true
+PASS         | S3_session | session.sendButtonPresent | base=true after=true
+PASS         | S3_session | session.sendDisabled | base=false after=false
+PASS         | S3_session | session.modalOpen | base=false after=false
+PASS         | S3_session | session.提示文案 | (无)
+PASS         | S3_session | drawer.DOM 结构 | +0 / -0 行；新增示例：(无)
+PASS         | S3_session | session.DOM 结构 | +0 / -0 行；新增示例：(无)
+PASS         | S3_session | localStorage chat-demo:api-key | "string(len=32, masked)"
+PASS         | S3_session | localStorage chat-demo:locale | "string(len=5)"
+PASS         | S4_compose_send | 请求 method+路径 | POST api.deepseek.com/anthropic/v1/messages
+PASS         | S4_compose_send | 请求 body 顶层字段 | messages,model,safety_check,stream,system,thinking,title,tools
+PASS         | S4_compose_send | body 关键值(stream/model/tools/safety) | [{"stream":true,"model":"deepseek-flash","messageRoles":["latest_reminder","user"],"toolTypes":["deepseek_read_url"],"safetyCheckLevel":"high","systemIsArray":false,"thinkingType":"disabled","titleEna
+PASS         | S4_compose_send | 请求 header 名 | accept,accept-language,content-type,referer,sec-ch-ua,sec-ch-ua-mobile,sec-ch-ua-platform,user-agent,x-api-key
+PASS         | S4_compose_send | 响应状态码 | base=POST /anthropic/v1/messages->401 after=POST /anthropic/v1/messages->401
+PASS         | S4_compose_send | console error | base=1 after=1；新增=(无)
+PASS         | S4_compose_send | typed.messageCount | base=0 after=0
+PASS         | S4_compose_send | typed.bubbleCount | base=0 after=0
+PASS         | S4_compose_send | typed.hasTextarea | base=true after=true
+PASS         | S4_compose_send | typed.sendButtonPresent | base=true after=true
+PASS         | S4_compose_send | typed.sendDisabled | base=false after=false
+PASS         | S4_compose_send | typed.modalOpen | base=false after=false
+PASS         | S4_compose_send | typed.提示文案 | (无)
+PASS         | S4_compose_send | afterSend400ms.messageCount | base=1 after=1
+PASS         | S4_compose_send | afterSend400ms.bubbleCount | base=1 after=1
+PASS         | S4_compose_send | afterSend400ms.hasTextarea | base=true after=true
+PASS         | S4_compose_send | afterSend400ms.sendButtonPresent | base=true after=true
+PASS         | S4_compose_send | afterSend400ms.sendDisabled | base=false after=false
+PASS         | S4_compose_send | afterSend400ms.modalOpen | base=false after=false
+PASS         | S4_compose_send | afterSend400ms.提示文案 | API Key 无效或已被删除，请更换后重试 更换 API Key
+PASS         | S4_compose_send | settled.messageCount | base=1 after=1
+PASS         | S4_compose_send | settled.bubbleCount | base=1 after=1
+PASS         | S4_compose_send | settled.hasTextarea | base=true after=true
+PASS         | S4_compose_send | settled.sendButtonPresent | base=true after=true
+PASS         | S4_compose_send | settled.sendDisabled | base=false after=false
+PASS         | S4_compose_send | settled.modalOpen | base=false after=false
+PASS         | S4_compose_send | settled.提示文案 | API Key 无效或已被删除，请更换后重试 更换 API Key
+PASS         | S4_compose_send | typed.DOM 结构 | +0 / -0 行；新增示例：(无)
+PASS         | S4_compose_send | afterSend400ms.DOM 结构 | +0 / -0 行；新增示例：(无)
+PASS         | S4_compose_send | settled.DOM 结构 | +0 / -0 行；新增示例：(无)
+PASS         | S4_compose_send | localStorage chat-demo:api-key | "string(len=32, masked)"
+PASS         | S4_compose_send | localStorage chat-demo:locale | "string(len=5)"
+PASS         | S5_no_key_send | 请求 method+路径 | (无请求)
+PASS         | S5_no_key_send | body 关键值(stream/model/tools/safety) | []
+PASS         | S5_no_key_send | console error | base=0 after=0；新增=(无)
+PASS         | S5_no_key_send | onLoad.messageCount | base=0 after=0
+PASS         | S5_no_key_send | onLoad.bubbleCount | base=0 after=0
+PASS         | S5_no_key_send | onLoad.hasTextarea | base=true after=true
+PASS         | S5_no_key_send | onLoad.sendButtonPresent | base=true after=true
+PASS         | S5_no_key_send | onLoad.sendDisabled | base=false after=false
+PASS         | S5_no_key_send | onLoad.modalOpen | base=true after=true
+PASS         | S5_no_key_send | onLoad.提示文案 | (无)
+PASS         | S5_no_key_send | afterSend.messageCount | base=0 after=0
+PASS         | S5_no_key_send | afterSend.bubbleCount | base=0 after=0
+PASS         | S5_no_key_send | afterSend.hasTextarea | base=true after=true
+PASS         | S5_no_key_send | afterSend.sendButtonPresent | base=true after=true
+PASS         | S5_no_key_send | afterSend.sendDisabled | base=false after=false
+PASS         | S5_no_key_send | afterSend.modalOpen | base=true after=true
+PASS         | S5_no_key_send | afterSend.提示文案 | (无)
+DIFF         | S5_no_key_send | onLoad.DOM 结构 | +12 / -0 行；新增示例：<div .cell [class=cell-_85c1b]> ; <div .cell [class=cell-_85c1b]> ; <div .apiKey [class=apiKey-_85c1b]> ; <div .apiKey [class=apiKey-_85c1b]>
+DIFF         | S5_no_key_send | afterSend.DOM 结构 | +12 / -0 行；新增示例：<div .cell [class=cell-_85c1b]> ; <div .cell [class=cell-_85c1b]> ; <div .apiKey [class=apiKey-_85c1b]> ; <div .apiKey [class=apiKey-_85c1b]>
+PASS         | S6_offline | 请求 method+路径 | POST api.deepseek.com/anthropic/v1/messages
+PASS         | S6_offline | 请求 body 顶层字段 | messages,model,safety_check,stream,system,thinking,title,tools
+PASS         | S6_offline | body 关键值(stream/model/tools/safety) | [{"stream":true,"model":"deepseek-flash","messageRoles":["latest_reminder","user"],"toolTypes":["deepseek_read_url"],"safetyCheckLevel":"high","systemIsArray":false,"thinkingType":"disabled","titleEna
+PASS         | S6_offline | 请求 header 名 | accept,accept-language,content-type,referer,sec-ch-ua,sec-ch-ua-mobile,sec-ch-ua-platform,user-agent,x-api-key
+PASS         | S6_offline | console error | base=1 after=1；新增=(无)
+PASS         | S6_offline | settled.messageCount | base=1 after=1
+PASS         | S6_offline | settled.bubbleCount | base=1 after=1
+PASS         | S6_offline | settled.hasTextarea | base=true after=true
+PASS         | S6_offline | settled.sendButtonPresent | base=true after=true
+PASS         | S6_offline | settled.sendDisabled | base=false after=false
+PASS         | S6_offline | settled.modalOpen | base=false after=false
+PASS         | S6_offline | settled.提示文案 | 网络异常，请检查你的网络状况
+PASS         | S6_offline | settled.DOM 结构 | +0 / -0 行；新增示例：(无)
+PASS         | S6_offline | localStorage chat-demo:api-key | "string(len=32, masked)"
+PASS         | S6_offline | localStorage chat-demo:locale | "string(len=5)"
+PASS         | S7_upload_thinking_title | 请求 method+路径 | POST api.deepseek.com/anthropic/v1/files
+PASS         | S7_upload_thinking_title | body 关键值(stream/model/tools/safety) | [null]
+PASS         | S7_upload_thinking_title | 请求 header 名 | accept-language,anthropic-beta,content-type,referer,sec-ch-ua,sec-ch-ua-mobile,sec-ch-ua-platform,user-agent,x-api-key
+PASS         | S7_upload_thinking_title | 响应状态码 | base=POST /anthropic/v1/files->401 after=POST /anthropic/v1/files->401
+PASS         | S7_upload_thinking_title | console error | base=1 after=1；新增=(无)
+PASS         | S7_upload_thinking_title | thinkingOn.messageCount | base=0 after=0
+PASS         | S7_upload_thinking_title | thinkingOn.bubbleCount | base=0 after=0
+PASS         | S7_upload_thinking_title | thinkingOn.hasTextarea | base=true after=true
+PASS         | S7_upload_thinking_title | thinkingOn.sendButtonPresent | base=true after=true
+PASS         | S7_upload_thinking_title | thinkingOn.sendDisabled | base=false after=false
+PASS         | S7_upload_thinking_title | thinkingOn.modalOpen | base=false after=false
+PASS         | S7_upload_thinking_title | thinkingOn.提示文案 | (无)
+PASS         | S7_upload_thinking_title | afterUpload.messageCount | base=0 after=0
+PASS         | S7_upload_thinking_title | afterUpload.bubbleCount | base=0 after=0
+PASS         | S7_upload_thinking_title | afterUpload.hasTextarea | base=true after=true
+PASS         | S7_upload_thinking_title | afterUpload.sendButtonPresent | base=true after=true
+PASS         | S7_upload_thinking_title | afterUpload.sendDisabled | base=false after=false
+PASS         | S7_upload_thinking_title | afterUpload.modalOpen | base=false after=false
+PASS         | S7_upload_thinking_title | afterUpload.提示文案 | (无)
+PASS         | S7_upload_thinking_title | thinkingOn.DOM 结构 | +0 / -0 行；新增示例：(无)
+PASS         | S7_upload_thinking_title | afterUpload.DOM 结构 | +0 / -0 行；新增示例：(无)
+PASS         | S7_upload_thinking_title | localStorage chat-demo:api-key | "string(len=32, masked)"
+PASS         | S7_upload_thinking_title | localStorage chat-demo:thinking | "boolean"
+PASS         | S7_upload_thinking_title | localStorage chat-demo:locale | "string(len=5)"
+PASS         | S8_thinking_title | 请求 method+路径 | POST api.deepseek.com/anthropic/v1/messages
+PASS         | S8_thinking_title | 请求 body 顶层字段 | messages,model,safety_check,stream,system,thinking,title,tools
+PASS         | S8_thinking_title | body 关键值(stream/model/tools/safety) | [{"stream":true,"model":"deepseek-flash","messageRoles":["latest_reminder","user"],"toolTypes":["deepseek_read_url"],"safetyCheckLevel":"high","systemIsArray":false,"thinkingType":"enabled","titleEnab
+PASS         | S8_thinking_title | 请求 header 名 | accept,accept-language,content-type,referer,sec-ch-ua,sec-ch-ua-mobile,sec-ch-ua-platform,user-agent,x-api-key
+PASS         | S8_thinking_title | 响应状态码 | base=POST /anthropic/v1/messages->401 after=POST /anthropic/v1/messages->401
+PASS         | S8_thinking_title | console error | base=1 after=1；新增=(无)
+PASS         | S8_thinking_title | thinkingOn.messageCount | base=0 after=0
+PASS         | S8_thinking_title | thinkingOn.bubbleCount | base=0 after=0
+PASS         | S8_thinking_title | thinkingOn.hasTextarea | base=true after=true
+PASS         | S8_thinking_title | thinkingOn.sendButtonPresent | base=true after=true
+PASS         | S8_thinking_title | thinkingOn.sendDisabled | base=false after=false
+PASS         | S8_thinking_title | thinkingOn.modalOpen | base=false after=false
+PASS         | S8_thinking_title | thinkingOn.提示文案 | (无)
+PASS         | S8_thinking_title | afterSend.messageCount | base=1 after=1
+PASS         | S8_thinking_title | afterSend.bubbleCount | base=1 after=1
+PASS         | S8_thinking_title | afterSend.hasTextarea | base=true after=true
+PASS         | S8_thinking_title | afterSend.sendButtonPresent | base=true after=true
+PASS         | S8_thinking_title | afterSend.sendDisabled | base=false after=false
+PASS         | S8_thinking_title | afterSend.modalOpen | base=false after=false
+PASS         | S8_thinking_title | afterSend.提示文案 | API Key 无效或已被删除，请更换后重试 更换 API Key
+PASS         | S8_thinking_title | thinkingOn.DOM 结构 | +0 / -0 行；新增示例：(无)
+PASS         | S8_thinking_title | afterSend.DOM 结构 | +0 / -0 行；新增示例：(无)
+PASS         | S8_thinking_title | localStorage chat-demo:api-key | "string(len=32, masked)"
+PASS         | S8_thinking_title | localStorage chat-demo:thinking | "boolean"
+PASS         | S8_thinking_title | localStorage chat-demo:locale | "string(len=5)"
+INFO     | S3_session | 耗时 openSession.ms | base=111ms after=111ms ratio=1.00
+INFO     | S3_session | 耗时 scrollToBottom.scrollMs | base=0ms after=0ms ratio=0.00
+
+汇总：PASS=164 FAIL=0 DIFF=4 INFO=2
+------------------------------------------------------------
+AFTER   (2026-11-17 17:15:39)  duration=0s  exit=0
+                 total        used        free      shared  buff/cache   available
+  Mem:            15Gi       7.8Gi       4.5Gi       118Mi       3.5Gi       7.5Gi
+  Swap:          4.0Gi       2.0Gi       2.0Gi
+  peak memory in scope : 600.1 MiB (629219328 bytes)
+  slice memory.peak    : 629219328 bytes
+  PSI memory:
+    some  avg10=0.24  avg60=0.14  avg300=0.08  total=4159443713
+    full  avg10=0.24  avg60=0.13  avg300=0.07  total=3428185163
+------------------------------------------------------------

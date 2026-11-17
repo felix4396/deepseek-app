@@ -169,4 +169,18 @@ export const zh = {
   latestReminderLanguage: '中文',
   settingsLocaleZhCN: '简体中文',
   settingsLocaleEnUS: 'English',
+
+  // ---------- 服务配置（API Key / 服务地址 / 模型） ----------
+  settingsBaseUrlLabel: '服务地址',
+  settingsModelLabel: '模型',
+  settingsBaseUrlInvalid: '服务地址必须以 http:// 或 https:// 开头，并且是合法地址',
+  settingsModelInvalid: '模型不能为空',
+  settingsTest: '测试',
+  settingsTesting: '测试中…',
+  settingsTestOk: '连接成功（HTTP {status}），共 {count} 个模型：{models}',
+  settingsTestOkEmpty: '连接成功（HTTP {status}），但接口没有返回模型列表',
+  settingsTestHttp: '请求失败（HTTP {status}）：{message}',
+  settingsTestTimeout: '连接超时，请检查地址与网络后再试',
+  settingsTestNetwork: '无法连接：{message}（地址错误、服务未启动或被跨域策略拦截）',
+  settingsTestBadJson: '返回的不是 JSON：{message}',
 } as const

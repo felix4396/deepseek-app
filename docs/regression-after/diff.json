@@ -1,0 +1,1022 @@
+[
+ {
+  "area": "S1_home_fresh",
+  "item": "请求 method+路径",
+  "verdict": "PASS",
+  "detail": "(无请求)"
+ },
+ {
+  "area": "S1_home_fresh",
+  "item": "body 关键值(stream/model/tools/safety)",
+  "verdict": "PASS",
+  "detail": "[]"
+ },
+ {
+  "area": "S1_home_fresh",
+  "item": "console error",
+  "verdict": "PASS",
+  "detail": "base=0 after=0；新增=(无)"
+ },
+ {
+  "area": "S1_home_fresh",
+  "item": "loaded.messageCount",
+  "verdict": "PASS",
+  "detail": "base=0 after=0"
+ },
+ {
+  "area": "S1_home_fresh",
+  "item": "loaded.bubbleCount",
+  "verdict": "PASS",
+  "detail": "base=0 after=0"
+ },
+ {
+  "area": "S1_home_fresh",
+  "item": "loaded.hasTextarea",
+  "verdict": "PASS",
+  "detail": "base=true after=true"
+ },
+ {
+  "area": "S1_home_fresh",
+  "item": "loaded.sendButtonPresent",
+  "verdict": "PASS",
+  "detail": "base=true after=true"
+ },
+ {
+  "area": "S1_home_fresh",
+  "item": "loaded.sendDisabled",
+  "verdict": "PASS",
+  "detail": "base=false after=false"
+ },
+ {
+  "area": "S1_home_fresh",
+  "item": "loaded.modalOpen",
+  "verdict": "PASS",
+  "detail": "base=true after=true"
+ },
+ {
+  "area": "S1_home_fresh",
+  "item": "loaded.提示文案",
+  "verdict": "PASS",
+  "detail": "(无)"
+ },
+ {
+  "area": "S1_home_fresh",
+  "item": "loaded.DOM 结构",
+  "verdict": "DIFF",
+  "detail": "+12 / -0 行；新增示例：<div .cell [class=cell-_85c1b]> ; <div .cell [class=cell-_85c1b]> ; <div .apiKey [class=apiKey-_85c1b]> ; <div .apiKey [class=apiKey-_85c1b]>"
+ },
+ {
+  "area": "S2_settings",
+  "item": "请求 method+路径",
+  "verdict": "PASS",
+  "detail": "(无请求)"
+ },
+ {
+  "area": "S2_settings",
+  "item": "body 关键值(stream/model/tools/safety)",
+  "verdict": "PASS",
+  "detail": "[]"
+ },
+ {
+  "area": "S2_settings",
+  "item": "console error",
+  "verdict": "PASS",
+  "detail": "base=0 after=0；新增=(无)"
+ },
+ {
+  "area": "S2_settings",
+  "item": "general.messageCount",
+  "verdict": "PASS",
+  "detail": "base=0 after=0"
+ },
+ {
+  "area": "S2_settings",
+  "item": "general.bubbleCount",
+  "verdict": "PASS",
+  "detail": "base=0 after=0"
+ },
+ {
+  "area": "S2_settings",
+  "item": "general.hasTextarea",
+  "verdict": "PASS",
+  "detail": "base=true after=true"
+ },
+ {
+  "area": "S2_settings",
+  "item": "general.sendButtonPresent",
+  "verdict": "PASS",
+  "detail": "base=true after=true"
+ },
+ {
+  "area": "S2_settings",
+  "item": "general.sendDisabled",
+  "verdict": "PASS",
+  "detail": "base=false after=false"
+ },
+ {
+  "area": "S2_settings",
+  "item": "general.modalOpen",
+  "verdict": "PASS",
+  "detail": "base=true after=true"
+ },
+ {
+  "area": "S2_settings",
+  "item": "general.提示文案",
+  "verdict": "PASS",
+  "detail": "(无)"
+ },
+ {
+  "area": "S2_settings",
+  "item": "data.messageCount",
+  "verdict": "PASS",
+  "detail": "base=0 after=0"
+ },
+ {
+  "area": "S2_settings",
+  "item": "data.bubbleCount",
+  "verdict": "PASS",
+  "detail": "base=0 after=0"
+ },
+ {
+  "area": "S2_settings",
+  "item": "data.hasTextarea",
+  "verdict": "PASS",
+  "detail": "base=true after=true"
+ },
+ {
+  "area": "S2_settings",
+  "item": "data.sendButtonPresent",
+  "verdict": "PASS",
+  "detail": "base=true after=true"
+ },
+ {
+  "area": "S2_settings",
+  "item": "data.sendDisabled",
+  "verdict": "PASS",
+  "detail": "base=false after=false"
+ },
+ {
+  "area": "S2_settings",
+  "item": "data.modalOpen",
+  "verdict": "PASS",
+  "detail": "base=true after=true"
+ },
+ {
+  "area": "S2_settings",
+  "item": "data.提示文案",
+  "verdict": "PASS",
+  "detail": "(无)"
+ },
+ {
+  "area": "S2_settings",
+  "item": "general.DOM 结构",
+  "verdict": "PASS",
+  "detail": "+0 / -0 行；新增示例：(无)"
+ },
+ {
+  "area": "S2_settings",
+  "item": "data.DOM 结构",
+  "verdict": "DIFF",
+  "detail": "+12 / -0 行；新增示例：<div .cell [class=cell-_85c1b]> ; <div .cell [class=cell-_85c1b]> ; <div .apiKey [class=apiKey-_85c1b]> ; <div .apiKey [class=apiKey-_85c1b]>"
+ },
+ {
+  "area": "S2_settings",
+  "item": "localStorage chat-demo:api-key",
+  "verdict": "PASS",
+  "detail": "\"string(len=32, masked)\""
+ },
+ {
+  "area": "S2_settings",
+  "item": "localStorage chat-demo:locale",
+  "verdict": "PASS",
+  "detail": "\"string(len=5)\""
+ },
+ {
+  "area": "S3_session",
+  "item": "请求 method+路径",
+  "verdict": "PASS",
+  "detail": "(无请求)"
+ },
+ {
+  "area": "S3_session",
+  "item": "body 关键值(stream/model/tools/safety)",
+  "verdict": "PASS",
+  "detail": "[]"
+ },
+ {
+  "area": "S3_session",
+  "item": "console error",
+  "verdict": "PASS",
+  "detail": "base=0 after=0；新增=(无)"
+ },
+ {
+  "area": "S3_session",
+  "item": "drawer.messageCount",
+  "verdict": "PASS",
+  "detail": "base=0 after=0"
+ },
+ {
+  "area": "S3_session",
+  "item": "drawer.bubbleCount",
+  "verdict": "PASS",
+  "detail": "base=0 after=0"
+ },
+ {
+  "area": "S3_session",
+  "item": "drawer.hasTextarea",
+  "verdict": "PASS",
+  "detail": "base=true after=true"
+ },
+ {
+  "area": "S3_session",
+  "item": "drawer.sendButtonPresent",
+  "verdict": "PASS",
+  "detail": "base=true after=true"
+ },
+ {
+  "area": "S3_session",
+  "item": "drawer.sendDisabled",
+  "verdict": "PASS",
+  "detail": "base=false after=false"
+ },
+ {
+  "area": "S3_session",
+  "item": "drawer.modalOpen",
+  "verdict": "PASS",
+  "detail": "base=false after=false"
+ },
+ {
+  "area": "S3_session",
+  "item": "drawer.提示文案",
+  "verdict": "PASS",
+  "detail": "(无)"
+ },
+ {
+  "area": "S3_session",
+  "item": "session.messageCount",
+  "verdict": "PASS",
+  "detail": "base=20 after=20"
+ },
+ {
+  "area": "S3_session",
+  "item": "session.bubbleCount",
+  "verdict": "PASS",
+  "detail": "base=20 after=20"
+ },
+ {
+  "area": "S3_session",
+  "item": "session.hasTextarea",
+  "verdict": "PASS",
+  "detail": "base=true after=true"
+ },
+ {
+  "area": "S3_session",
+  "item": "session.sendButtonPresent",
+  "verdict": "PASS",
+  "detail": "base=true after=true"
+ },
+ {
+  "area": "S3_session",
+  "item": "session.sendDisabled",
+  "verdict": "PASS",
+  "detail": "base=false after=false"
+ },
+ {
+  "area": "S3_session",
+  "item": "session.modalOpen",
+  "verdict": "PASS",
+  "detail": "base=false after=false"
+ },
+ {
+  "area": "S3_session",
+  "item": "session.提示文案",
+  "verdict": "PASS",
+  "detail": "(无)"
+ },
+ {
+  "area": "S3_session",
+  "item": "drawer.DOM 结构",
+  "verdict": "PASS",
+  "detail": "+0 / -0 行；新增示例：(无)"
+ },
+ {
+  "area": "S3_session",
+  "item": "session.DOM 结构",
+  "verdict": "PASS",
+  "detail": "+0 / -0 行；新增示例：(无)"
+ },
+ {
+  "area": "S3_session",
+  "item": "localStorage chat-demo:api-key",
+  "verdict": "PASS",
+  "detail": "\"string(len=32, masked)\""
+ },
+ {
+  "area": "S3_session",
+  "item": "localStorage chat-demo:locale",
+  "verdict": "PASS",
+  "detail": "\"string(len=5)\""
+ },
+ {
+  "area": "S4_compose_send",
+  "item": "请求 method+路径",
+  "verdict": "PASS",
+  "detail": "POST api.deepseek.com/anthropic/v1/messages"
+ },
+ {
+  "area": "S4_compose_send",
+  "item": "请求 body 顶层字段",
+  "verdict": "PASS",
+  "detail": "messages,model,safety_check,stream,system,thinking,title,tools"
+ },
+ {
+  "area": "S4_compose_send",
+  "item": "body 关键值(stream/model/tools/safety)",
+  "verdict": "PASS",
+  "detail": "[{\"stream\":true,\"model\":\"deepseek-flash\",\"messageRoles\":[\"latest_reminder\",\"user\"],\"toolTypes\":[\"deepseek_read_url\"],\"safetyCheckLevel\":\"high\",\"systemIsArray\":false,\"thinkingType\":\"disabled\",\"titleEna"
+ },
+ {
+  "area": "S4_compose_send",
+  "item": "请求 header 名",
+  "verdict": "PASS",
+  "detail": "accept,accept-language,content-type,referer,sec-ch-ua,sec-ch-ua-mobile,sec-ch-ua-platform,user-agent,x-api-key"
+ },
+ {
+  "area": "S4_compose_send",
+  "item": "响应状态码",
+  "verdict": "PASS",
+  "detail": "base=POST /anthropic/v1/messages->401 after=POST /anthropic/v1/messages->401"
+ },
+ {
+  "area": "S4_compose_send",
+  "item": "console error",
+  "verdict": "PASS",
+  "detail": "base=1 after=1；新增=(无)"
+ },
+ {
+  "area": "S4_compose_send",
+  "item": "typed.messageCount",
+  "verdict": "PASS",
+  "detail": "base=0 after=0"
+ },
+ {
+  "area": "S4_compose_send",
+  "item": "typed.bubbleCount",
+  "verdict": "PASS",
+  "detail": "base=0 after=0"
+ },
+ {
+  "area": "S4_compose_send",
+  "item": "typed.hasTextarea",
+  "verdict": "PASS",
+  "detail": "base=true after=true"
+ },
+ {
+  "area": "S4_compose_send",
+  "item": "typed.sendButtonPresent",
+  "verdict": "PASS",
+  "detail": "base=true after=true"
+ },
+ {
+  "area": "S4_compose_send",
+  "item": "typed.sendDisabled",
+  "verdict": "PASS",
+  "detail": "base=false after=false"
+ },
+ {
+  "area": "S4_compose_send",
+  "item": "typed.modalOpen",
+  "verdict": "PASS",
+  "detail": "base=false after=false"
+ },
+ {
+  "area": "S4_compose_send",
+  "item": "typed.提示文案",
+  "verdict": "PASS",
+  "detail": "(无)"
+ },
+ {
+  "area": "S4_compose_send",
+  "item": "afterSend400ms.messageCount",
+  "verdict": "PASS",
+  "detail": "base=1 after=1"
+ },
+ {
+  "area": "S4_compose_send",
+  "item": "afterSend400ms.bubbleCount",
+  "verdict": "PASS",
+  "detail": "base=1 after=1"
+ },
+ {
+  "area": "S4_compose_send",
+  "item": "afterSend400ms.hasTextarea",
+  "verdict": "PASS",
+  "detail": "base=true after=true"
+ },
+ {
+  "area": "S4_compose_send",
+  "item": "afterSend400ms.sendButtonPresent",
+  "verdict": "PASS",
+  "detail": "base=true after=true"
+ },
+ {
+  "area": "S4_compose_send",
+  "item": "afterSend400ms.sendDisabled",
+  "verdict": "PASS",
+  "detail": "base=false after=false"
+ },
+ {
+  "area": "S4_compose_send",
+  "item": "afterSend400ms.modalOpen",
+  "verdict": "PASS",
+  "detail": "base=false after=false"
+ },
+ {
+  "area": "S4_compose_send",
+  "item": "afterSend400ms.提示文案",
+  "verdict": "PASS",
+  "detail": "API Key 无效或已被删除，请更换后重试 更换 API Key"
+ },
+ {
+  "area": "S4_compose_send",
+  "item": "settled.messageCount",
+  "verdict": "PASS",
+  "detail": "base=1 after=1"
+ },
+ {
+  "area": "S4_compose_send",
+  "item": "settled.bubbleCount",
+  "verdict": "PASS",
+  "detail": "base=1 after=1"
+ },
+ {
+  "area": "S4_compose_send",
+  "item": "settled.hasTextarea",
+  "verdict": "PASS",
+  "detail": "base=true after=true"
+ },
+ {
+  "area": "S4_compose_send",
+  "item": "settled.sendButtonPresent",
+  "verdict": "PASS",
+  "detail": "base=true after=true"
+ },
+ {
+  "area": "S4_compose_send",
+  "item": "settled.sendDisabled",
+  "verdict": "PASS",
+  "detail": "base=false after=false"
+ },
+ {
+  "area": "S4_compose_send",
+  "item": "settled.modalOpen",
+  "verdict": "PASS",
+  "detail": "base=false after=false"
+ },
+ {
+  "area": "S4_compose_send",
+  "item": "settled.提示文案",
+  "verdict": "PASS",
+  "detail": "API Key 无效或已被删除，请更换后重试 更换 API Key"
+ },
+ {
+  "area": "S4_compose_send",
+  "item": "typed.DOM 结构",
+  "verdict": "PASS",
+  "detail": "+0 / -0 行；新增示例：(无)"
+ },
+ {
+  "area": "S4_compose_send",
+  "item": "afterSend400ms.DOM 结构",
+  "verdict": "PASS",
+  "detail": "+0 / -0 行；新增示例：(无)"
+ },
+ {
+  "area": "S4_compose_send",
+  "item": "settled.DOM 结构",
+  "verdict": "PASS",
+  "detail": "+0 / -0 行；新增示例：(无)"
+ },
+ {
+  "area": "S4_compose_send",
+  "item": "localStorage chat-demo:api-key",
+  "verdict": "PASS",
+  "detail": "\"string(len=32, masked)\""
+ },
+ {
+  "area": "S4_compose_send",
+  "item": "localStorage chat-demo:locale",
+  "verdict": "PASS",
+  "detail": "\"string(len=5)\""
+ },
+ {
+  "area": "S5_no_key_send",
+  "item": "请求 method+路径",
+  "verdict": "PASS",
+  "detail": "(无请求)"
+ },
+ {
+  "area": "S5_no_key_send",
+  "item": "body 关键值(stream/model/tools/safety)",
+  "verdict": "PASS",
+  "detail": "[]"
+ },
+ {
+  "area": "S5_no_key_send",
+  "item": "console error",
+  "verdict": "PASS",
+  "detail": "base=0 after=0；新增=(无)"
+ },
+ {
+  "area": "S5_no_key_send",
+  "item": "onLoad.messageCount",
+  "verdict": "PASS",
+  "detail": "base=0 after=0"
+ },
+ {
+  "area": "S5_no_key_send",
+  "item": "onLoad.bubbleCount",
+  "verdict": "PASS",
+  "detail": "base=0 after=0"
+ },
+ {
+  "area": "S5_no_key_send",
+  "item": "onLoad.hasTextarea",
+  "verdict": "PASS",
+  "detail": "base=true after=true"
+ },
+ {
+  "area": "S5_no_key_send",
+  "item": "onLoad.sendButtonPresent",
+  "verdict": "PASS",
+  "detail": "base=true after=true"
+ },
+ {
+  "area": "S5_no_key_send",
+  "item": "onLoad.sendDisabled",
+  "verdict": "PASS",
+  "detail": "base=false after=false"
+ },
+ {
+  "area": "S5_no_key_send",
+  "item": "onLoad.modalOpen",
+  "verdict": "PASS",
+  "detail": "base=true after=true"
+ },
+ {
+  "area": "S5_no_key_send",
+  "item": "onLoad.提示文案",
+  "verdict": "PASS",
+  "detail": "(无)"
+ },
+ {
+  "area": "S5_no_key_send",
+  "item": "afterSend.messageCount",
+  "verdict": "PASS",
+  "detail": "base=0 after=0"
+ },
+ {
+  "area": "S5_no_key_send",
+  "item": "afterSend.bubbleCount",
+  "verdict": "PASS",
+  "detail": "base=0 after=0"
+ },
+ {
+  "area": "S5_no_key_send",
+  "item": "afterSend.hasTextarea",
+  "verdict": "PASS",
+  "detail": "base=true after=true"
+ },
+ {
+  "area": "S5_no_key_send",
+  "item": "afterSend.sendButtonPresent",
+  "verdict": "PASS",
+  "detail": "base=true after=true"
+ },
+ {
+  "area": "S5_no_key_send",
+  "item": "afterSend.sendDisabled",
+  "verdict": "PASS",
+  "detail": "base=false after=false"
+ },
+ {
+  "area": "S5_no_key_send",
+  "item": "afterSend.modalOpen",
+  "verdict": "PASS",
+  "detail": "base=true after=true"
+ },
+ {
+  "area": "S5_no_key_send",
+  "item": "afterSend.提示文案",
+  "verdict": "PASS",
+  "detail": "(无)"
+ },
+ {
+  "area": "S5_no_key_send",
+  "item": "onLoad.DOM 结构",
+  "verdict": "DIFF",
+  "detail": "+12 / -0 行；新增示例：<div .cell [class=cell-_85c1b]> ; <div .cell [class=cell-_85c1b]> ; <div .apiKey [class=apiKey-_85c1b]> ; <div .apiKey [class=apiKey-_85c1b]>"
+ },
+ {
+  "area": "S5_no_key_send",
+  "item": "afterSend.DOM 结构",
+  "verdict": "DIFF",
+  "detail": "+12 / -0 行；新增示例：<div .cell [class=cell-_85c1b]> ; <div .cell [class=cell-_85c1b]> ; <div .apiKey [class=apiKey-_85c1b]> ; <div .apiKey [class=apiKey-_85c1b]>"
+ },
+ {
+  "area": "S6_offline",
+  "item": "请求 method+路径",
+  "verdict": "PASS",
+  "detail": "POST api.deepseek.com/anthropic/v1/messages"
+ },
+ {
+  "area": "S6_offline",
+  "item": "请求 body 顶层字段",
+  "verdict": "PASS",
+  "detail": "messages,model,safety_check,stream,system,thinking,title,tools"
+ },
+ {
+  "area": "S6_offline",
+  "item": "body 关键值(stream/model/tools/safety)",
+  "verdict": "PASS",
+  "detail": "[{\"stream\":true,\"model\":\"deepseek-flash\",\"messageRoles\":[\"latest_reminder\",\"user\"],\"toolTypes\":[\"deepseek_read_url\"],\"safetyCheckLevel\":\"high\",\"systemIsArray\":false,\"thinkingType\":\"disabled\",\"titleEna"
+ },
+ {
+  "area": "S6_offline",
+  "item": "请求 header 名",
+  "verdict": "PASS",
+  "detail": "accept,accept-language,content-type,referer,sec-ch-ua,sec-ch-ua-mobile,sec-ch-ua-platform,user-agent,x-api-key"
+ },
+ {
+  "area": "S6_offline",
+  "item": "console error",
+  "verdict": "PASS",
+  "detail": "base=1 after=1；新增=(无)"
+ },
+ {
+  "area": "S6_offline",
+  "item": "settled.messageCount",
+  "verdict": "PASS",
+  "detail": "base=1 after=1"
+ },
+ {
+  "area": "S6_offline",
+  "item": "settled.bubbleCount",
+  "verdict": "PASS",
+  "detail": "base=1 after=1"
+ },
+ {
+  "area": "S6_offline",
+  "item": "settled.hasTextarea",
+  "verdict": "PASS",
+  "detail": "base=true after=true"
+ },
+ {
+  "area": "S6_offline",
+  "item": "settled.sendButtonPresent",
+  "verdict": "PASS",
+  "detail": "base=true after=true"
+ },
+ {
+  "area": "S6_offline",
+  "item": "settled.sendDisabled",
+  "verdict": "PASS",
+  "detail": "base=false after=false"
+ },
+ {
+  "area": "S6_offline",
+  "item": "settled.modalOpen",
+  "verdict": "PASS",
+  "detail": "base=false after=false"
+ },
+ {
+  "area": "S6_offline",
+  "item": "settled.提示文案",
+  "verdict": "PASS",
+  "detail": "网络异常，请检查你的网络状况"
+ },
+ {
+  "area": "S6_offline",
+  "item": "settled.DOM 结构",
+  "verdict": "PASS",
+  "detail": "+0 / -0 行；新增示例：(无)"
+ },
+ {
+  "area": "S6_offline",
+  "item": "localStorage chat-demo:api-key",
+  "verdict": "PASS",
+  "detail": "\"string(len=32, masked)\""
+ },
+ {
+  "area": "S6_offline",
+  "item": "localStorage chat-demo:locale",
+  "verdict": "PASS",
+  "detail": "\"string(len=5)\""
+ },
+ {
+  "area": "S7_upload_thinking_title",
+  "item": "请求 method+路径",
+  "verdict": "PASS",
+  "detail": "POST api.deepseek.com/anthropic/v1/files"
+ },
+ {
+  "area": "S7_upload_thinking_title",
+  "item": "body 关键值(stream/model/tools/safety)",
+  "verdict": "PASS",
+  "detail": "[null]"
+ },
+ {
+  "area": "S7_upload_thinking_title",
+  "item": "请求 header 名",
+  "verdict": "PASS",
+  "detail": "accept-language,anthropic-beta,content-type,referer,sec-ch-ua,sec-ch-ua-mobile,sec-ch-ua-platform,user-agent,x-api-key"
+ },
+ {
+  "area": "S7_upload_thinking_title",
+  "item": "响应状态码",
+  "verdict": "PASS",
+  "detail": "base=POST /anthropic/v1/files->401 after=POST /anthropic/v1/files->401"
+ },
+ {
+  "area": "S7_upload_thinking_title",
+  "item": "console error",
+  "verdict": "PASS",
+  "detail": "base=1 after=1；新增=(无)"
+ },
+ {
+  "area": "S7_upload_thinking_title",
+  "item": "thinkingOn.messageCount",
+  "verdict": "PASS",
+  "detail": "base=0 after=0"
+ },
+ {
+  "area": "S7_upload_thinking_title",
+  "item": "thinkingOn.bubbleCount",
+  "verdict": "PASS",
+  "detail": "base=0 after=0"
+ },
+ {
+  "area": "S7_upload_thinking_title",
+  "item": "thinkingOn.hasTextarea",
+  "verdict": "PASS",
+  "detail": "base=true after=true"
+ },
+ {
+  "area": "S7_upload_thinking_title",
+  "item": "thinkingOn.sendButtonPresent",
+  "verdict": "PASS",
+  "detail": "base=true after=true"
+ },
+ {
+  "area": "S7_upload_thinking_title",
+  "item": "thinkingOn.sendDisabled",
+  "verdict": "PASS",
+  "detail": "base=false after=false"
+ },
+ {
+  "area": "S7_upload_thinking_title",
+  "item": "thinkingOn.modalOpen",
+  "verdict": "PASS",
+  "detail": "base=false after=false"
+ },
+ {
+  "area": "S7_upload_thinking_title",
+  "item": "thinkingOn.提示文案",
+  "verdict": "PASS",
+  "detail": "(无)"
+ },
+ {
+  "area": "S7_upload_thinking_title",
+  "item": "afterUpload.messageCount",
+  "verdict": "PASS",
+  "detail": "base=0 after=0"
+ },
+ {
+  "area": "S7_upload_thinking_title",
+  "item": "afterUpload.bubbleCount",
+  "verdict": "PASS",
+  "detail": "base=0 after=0"
+ },
+ {
+  "area": "S7_upload_thinking_title",
+  "item": "afterUpload.hasTextarea",
+  "verdict": "PASS",
+  "detail": "base=true after=true"
+ },
+ {
+  "area": "S7_upload_thinking_title",
+  "item": "afterUpload.sendButtonPresent",
+  "verdict": "PASS",
+  "detail": "base=true after=true"
+ },
+ {
+  "area": "S7_upload_thinking_title",
+  "item": "afterUpload.sendDisabled",
+  "verdict": "PASS",
+  "detail": "base=false after=false"
+ },
+ {
+  "area": "S7_upload_thinking_title",
+  "item": "afterUpload.modalOpen",
+  "verdict": "PASS",
+  "detail": "base=false after=false"
+ },
+ {
+  "area": "S7_upload_thinking_title",
+  "item": "afterUpload.提示文案",
+  "verdict": "PASS",
+  "detail": "(无)"
+ },
+ {
+  "area": "S7_upload_thinking_title",
+  "item": "thinkingOn.DOM 结构",
+  "verdict": "PASS",
+  "detail": "+0 / -0 行；新增示例：(无)"
+ },
+ {
+  "area": "S7_upload_thinking_title",
+  "item": "afterUpload.DOM 结构",
+  "verdict": "PASS",
+  "detail": "+0 / -0 行；新增示例：(无)"
+ },
+ {
+  "area": "S7_upload_thinking_title",
+  "item": "localStorage chat-demo:api-key",
+  "verdict": "PASS",
+  "detail": "\"string(len=32, masked)\""
+ },
+ {
+  "area": "S7_upload_thinking_title",
+  "item": "localStorage chat-demo:thinking",
+  "verdict": "PASS",
+  "detail": "\"boolean\""
+ },
+ {
+  "area": "S7_upload_thinking_title",
+  "item": "localStorage chat-demo:locale",
+  "verdict": "PASS",
+  "detail": "\"string(len=5)\""
+ },
+ {
+  "area": "S8_thinking_title",
+  "item": "请求 method+路径",
+  "verdict": "PASS",
+  "detail": "POST api.deepseek.com/anthropic/v1/messages"
+ },
+ {
+  "area": "S8_thinking_title",
+  "item": "请求 body 顶层字段",
+  "verdict": "PASS",
+  "detail": "messages,model,safety_check,stream,system,thinking,title,tools"
+ },
+ {
+  "area": "S8_thinking_title",
+  "item": "body 关键值(stream/model/tools/safety)",
+  "verdict": "PASS",
+  "detail": "[{\"stream\":true,\"model\":\"deepseek-flash\",\"messageRoles\":[\"latest_reminder\",\"user\"],\"toolTypes\":[\"deepseek_read_url\"],\"safetyCheckLevel\":\"high\",\"systemIsArray\":false,\"thinkingType\":\"enabled\",\"titleEnab"
+ },
+ {
+  "area": "S8_thinking_title",
+  "item": "请求 header 名",
+  "verdict": "PASS",
+  "detail": "accept,accept-language,content-type,referer,sec-ch-ua,sec-ch-ua-mobile,sec-ch-ua-platform,user-agent,x-api-key"
+ },
+ {
+  "area": "S8_thinking_title",
+  "item": "响应状态码",
+  "verdict": "PASS",
+  "detail": "base=POST /anthropic/v1/messages->401 after=POST /anthropic/v1/messages->401"
+ },
+ {
+  "area": "S8_thinking_title",
+  "item": "console error",
+  "verdict": "PASS",
+  "detail": "base=1 after=1；新增=(无)"
+ },
+ {
+  "area": "S8_thinking_title",
+  "item": "thinkingOn.messageCount",
+  "verdict": "PASS",
+  "detail": "base=0 after=0"
+ },
+ {
+  "area": "S8_thinking_title",
+  "item": "thinkingOn.bubbleCount",
+  "verdict": "PASS",
+  "detail": "base=0 after=0"
+ },
+ {
+  "area": "S8_thinking_title",
+  "item": "thinkingOn.hasTextarea",
+  "verdict": "PASS",
+  "detail": "base=true after=true"
+ },
+ {
+  "area": "S8_thinking_title",
+  "item": "thinkingOn.sendButtonPresent",
+  "verdict": "PASS",
+  "detail": "base=true after=true"
+ },
+ {
+  "area": "S8_thinking_title",
+  "item": "thinkingOn.sendDisabled",
+  "verdict": "PASS",
+  "detail": "base=false after=false"
+ },
+ {
+  "area": "S8_thinking_title",
+  "item": "thinkingOn.modalOpen",
+  "verdict": "PASS",
+  "detail": "base=false after=false"
+ },
+ {
+  "area": "S8_thinking_title",
+  "item": "thinkingOn.提示文案",
+  "verdict": "PASS",
+  "detail": "(无)"
+ },
+ {
+  "area": "S8_thinking_title",
+  "item": "afterSend.messageCount",
+  "verdict": "PASS",
+  "detail": "base=1 after=1"
+ },
+ {
+  "area": "S8_thinking_title",
+  "item": "afterSend.bubbleCount",
+  "verdict": "PASS",
+  "detail": "base=1 after=1"
+ },
+ {
+  "area": "S8_thinking_title",
+  "item": "afterSend.hasTextarea",
+  "verdict": "PASS",
+  "detail": "base=true after=true"
+ },
+ {
+  "area": "S8_thinking_title",
+  "item": "afterSend.sendButtonPresent",
+  "verdict": "PASS",
+  "detail": "base=true after=true"
+ },
+ {
+  "area": "S8_thinking_title",
+  "item": "afterSend.sendDisabled",
+  "verdict": "PASS",
+  "detail": "base=false after=false"
+ },
+ {
+  "area": "S8_thinking_title",
+  "item": "afterSend.modalOpen",
+  "verdict": "PASS",
+  "detail": "base=false after=false"
+ },
+ {
+  "area": "S8_thinking_title",
+  "item": "afterSend.提示文案",
+  "verdict": "PASS",
+  "detail": "API Key 无效或已被删除，请更换后重试 更换 API Key"
+ },
+ {
+  "area": "S8_thinking_title",
+  "item": "thinkingOn.DOM 结构",
+  "verdict": "PASS",
+  "detail": "+0 / -0 行；新增示例：(无)"
+ },
+ {
+  "area": "S8_thinking_title",
+  "item": "afterSend.DOM 结构",
+  "verdict": "PASS",
+  "detail": "+0 / -0 行；新增示例：(无)"
+ },
+ {
+  "area": "S8_thinking_title",
+  "item": "localStorage chat-demo:api-key",
+  "verdict": "PASS",
+  "detail": "\"string(len=32, masked)\""
+ },
+ {
+  "area": "S8_thinking_title",
+  "item": "localStorage chat-demo:thinking",
+  "verdict": "PASS",
+  "detail": "\"boolean\""
+ },
+ {
+  "area": "S8_thinking_title",
+  "item": "localStorage chat-demo:locale",
+  "verdict": "PASS",
+  "detail": "\"string(len=5)\""
+ },
+ {
+  "area": "S3_session",
+  "item": "耗时 openSession.ms",
+  "verdict": "INFO",
+  "detail": "base=111ms after=111ms ratio=1.00"
+ },
+ {
+  "area": "S3_session",
+  "item": "耗时 scrollToBottom.scrollMs",
+  "verdict": "INFO",
+  "detail": "base=0ms after=0ms ratio=0.00"
+ }
+]

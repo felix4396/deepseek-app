@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="format-detection" content="telephone=no">
+<meta name="theme-color" content="#fafafa">
+<title>DeepSeek Chat · APK 下载</title>
+<style>
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{margin:0 auto;max-width:402px;background:#fafafa;color:#17181c;padding:24px 16px calc(32px + env(safe-area-inset-bottom));
+font:15px/1.6 -apple-system,BlinkMacSystemFont,"PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif}
+h1{font-size:19px;margin:0 0 2px;letter-spacing:-.2px}
+.sub{color:#8a8f98;font-size:13px;margin:0 0 18px}
+.card{background:#fff;border:1px solid #ececf0;border-radius:14px;padding:16px}
+.tag{display:inline-block;font-size:11px;line-height:1;padding:4px 7px;border-radius:6px;background:#eef3ff;color:#2f6bff;vertical-align:middle;margin-left:7px;position:relative;top:-3px}
+.ver{font-size:26px;font-weight:600;letter-spacing:-.5px;line-height:1.2}
+.meta{color:#8a8f98;font-size:13px;margin-top:6px}
+.btn{display:block;width:100%;text-align:center;text-decoration:none;font-size:16px;font-weight:600;background:#2f6bff;
+color:#fff;border:0;border-radius:11px;padding:14px;margin-top:16px;-webkit-appearance:none;cursor:pointer}
+.btn:active{background:#2458dd}
+.btn.ghost{background:#f3f4f7;color:#3a3f47;font-weight:500;font-size:14px;padding:11px;margin-top:9px}
+.ch{margin:12px 0 0;padding-left:18px;color:#4a4f57;font-size:13.5px}
+.ch li{margin:3px 0}
+.warn{margin-top:14px;background:#fff8e6;border:1px solid #ffe1a8;border-radius:12px;padding:13px 14px}
+.warn p{margin:0;font-size:13px;line-height:1.65;color:#7a5a12}
+.warn b{color:#a26a00}
+.warn .btn{margin-top:11px;background:#fff;color:#8a6a12;border:1px solid #f0d69a;font-size:13px;font-weight:500;padding:9px}
+h2{font-size:14px;font-weight:600;margin:26px 0 10px;color:#4a4f57}
+details{background:#fff;border:1px solid #ececf0;border-radius:12px;margin-bottom:9px;overflow:hidden}
+summary{list-style:none;cursor:pointer;padding:13px 14px;display:flex;align-items:center;gap:8px;font-size:14px;font-weight:500}
+summary::-webkit-details-marker{display:none}
+summary .d{margin-left:auto;color:#b0b4bb;font-size:12px;font-weight:400}
+summary .arrow{color:#b0b4bb;font-size:10px;transition:transform .18s}
+details[open] summary .arrow{transform:rotate(90deg)}
+.body{border-top:1px solid #f2f2f5;padding:12px 14px 14px}
+.kv{font-size:12px;color:#9aa0a8;word-break:break-all;line-height:1.7}
+.dl2{display:block;text-align:center;text-decoration:none;font-size:14px;font-weight:500;color:#2f6bff;background:#f6f8ff;border-radius:9px;padding:10px;margin-top:11px}
+.empty,.loading{color:#9aa0a8;font-size:13px;text-align:center;padding:16px 0}
+footer{margin-top:26px;text-align:center;color:#b6bac1;font-size:11.5px;line-height:1.8}
+#toast{position:fixed;left:50%;bottom:34px;transform:translateX(-50%) translateY(12px);opacity:0;background:rgba(23,24,28,.92);
+color:#fff;font-size:13px;padding:9px 16px;border-radius:20px;transition:.2s;pointer-events:none;z-index:9;max-width:330px;text-align:center}
+#toast.on{opacity:1;transform:translateX(-50%) translateY(0)}
+</style>
+</head>
+<body>
+<h1>DeepSeek Chat</h1>
+<p class="sub">Android 客户端 · 历史版本全部保留</p>
+<div id="latest" class="card"><div class="loading">加载中…</div></div>
+<div class="warn">
+  <p>⚠️ <b>微信 / QQ 内打不开</b>：请点右上角 <b>···</b> → <b>在浏览器打开</b>，或复制链接粘贴到浏览器打开。</p>
+  <button class="btn" id="copyTop" type="button">复制下载链接</button>
+</div>
+<h2>历史版本</h2>
+<div id="history"><div class="loading">加载中…</div></div>
+<footer>MD5 可用于校验安装包完整性<br>dl.rose7.cn</footer>
+<div id="toast"></div>
+<script>
+(function(){
+  var $=function(s){return document.querySelector(s)};
+  var ESC={'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'};
+  function esc(s){return String(s==null?'':s).replace(/[&<>"']/g,function(c){return ESC[c]})}
+  function size(n){n=Number(n)||0;if(!n)return'—';return n>=1048576?(n/1048576).toFixed(1)+' MB':Math.round(n/1024)+' KB'}
+  function p2(x){return(x<10?'0':'')+x}
+  function fmt(s,withTime){
+    var d=new Date(s);if(isNaN(d.getTime()))return esc(s||'');
+    var a=d.getFullYear()+'-'+p2(d.getMonth()+1)+'-'+p2(d.getDate());
+    return withTime?a+' '+p2(d.getHours())+':'+p2(d.getMinutes()):a;
+  }
+  function abs(f){try{return new URL(f,location.href).href}catch(e){return f}}
+  var tt;
+  function toast(m){var t=$('#toast');t.textContent=m;t.className='on';clearTimeout(tt);tt=setTimeout(function(){t.className=''},1900)}
+  function fbCopy(txt,cb){
+    var ta=document.createElement('textarea');ta.value=txt;ta.setAttribute('readonly','');
+    ta.style.cssText='position:fixed;top:0;left:-9999px;opacity:0';
+    document.body.appendChild(ta);ta.select();ta.setSelectionRange(0,txt.length);
+    var ok=false;try{ok=document.execCommand('copy')}catch(e){}
+    document.body.removeChild(ta);ok?cb():toast('复制失败，请长按按钮下方链接手动复制');
+  }
+  function copy(txt){
+    var done=function(){toast('已复制 ✓ 去浏览器粘贴打开')};
+    if(navigator.clipboard&&window.isSecureContext){navigator.clipboard.writeText(txt).then(done,function(){fbCopy(txt,done)})}
+    else fbCopy(txt,done);
+  }
+  var TOPURL='';
+  $('#copyTop').addEventListener('click',function(){copy(TOPURL||location.href)});
+  function render(d){
+    var rel=(d&&d.releases)||[],latest=d&&d.latest,cur=null,i;
+    for(i=0;i<rel.length;i++)if(rel[i].version===latest){cur=rel[i];break}
+    if(!cur)cur=rel[0];
+    if(!cur){$('#latest').innerHTML='<div class="empty">暂无版本</div>';$('#history').innerHTML='<div class="empty">—</div>';return}
+    var L=abs(cur.file);TOPURL=L;
+    $('#latest').innerHTML=
+      '<div class="ver">v'+esc(cur.version)+'<span class="tag">最新</span></div>'+
+      '<div class="meta">'+fmt(cur.releasedAt)+' · '+size(cur.size)+' · versionCode '+esc(cur.versionCode)+'</div>'+
+      (cur.changes&&cur.changes.length?'<ul class="ch">'+cur.changes.map(function(c){return '<li>'+esc(c)+'</li>'}).join('')+'</ul>':'')+
+      '<a class="btn" href="'+esc(L)+'" rel="noopener">下载 v'+esc(cur.version)+'</a>'+
+      '<button class="btn ghost" id="copyLatest" type="button">复制直链</button>'+
+      '<div class="kv" style="margin-top:12px">MD5 '+esc(cur.md5||'—')+'</div>'+
+      '<div class="kv">'+esc(L)+'</div>';
+    $('#copyLatest').addEventListener('click',function(){copy(L)});
+    var h='';
+    for(i=0;i<rel.length;i++){var r=rel[i];
+      h+='<details'+(i===0?' open':'')+'><summary>v'+esc(r.version)+
+         '<span class="d">'+fmt(r.releasedAt)+' · '+size(r.size)+'</span><span class="arrow">▶</span></summary>'+
+         '<div class="body"><ul class="ch" style="margin:0 0 12px">'+
+         ((r.changes||[]).map(function(c){return '<li>'+esc(c)+'</li>'}).join('')||'<li>—</li>')+'</ul>'+
+         '<div class="kv">versionCode '+esc(r.versionCode)+'<br>MD5 '+esc(r.md5||'—')+'</div>'+
+         '<a class="dl2" href="'+esc(abs(r.file))+'" rel="noopener">下载此版本</a></div></details>';
+    }
+    $('#history').innerHTML=h;
+  }
+  fetch('./releases.json',{cache:'no-store'}).then(function(r){if(!r.ok)throw new Error('http '+r.status);return r.json()})
+   .then(render).catch(function(e){
+     $('#latest').innerHTML='<div class="empty">版本列表加载失败（'+esc(e.message)+'），请下拉刷新</div>';
+     $('#history').innerHTML='<div class="empty">—</div>';
+   });
+})();
+</script>
+</body>
+</html>

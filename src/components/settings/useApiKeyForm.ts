@@ -1,10 +1,10 @@
 import { useState } from 'react'
 import { ApiError, verifyApiKey } from '../../services/api/client.js'
 import { classifyApiError } from '../../services/api/errors.js'
-import { setApiKey } from '../../services/settings.js'
+import { setApiKey } from '../../services/apiConfig.js'
 import { useTranslate } from '../../i18n/index.js'
 
-/** 输入 API Key 后先用 GET /models 校验，通过才保存 */
+/** 输入 API Key 后先用当前配置的 GET /models 校验，通过才写入当前配置 */
 export const useApiKeyForm = (onSaved?: () => void) => {
   const t = useTranslate()
   const [value, setValue] = useState('')

@@ -35,4 +35,3 @@ declare const styles: {
   readonly "deleteActions": string;
 };
 export = styles;
-

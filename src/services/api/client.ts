@@ -1,4 +1,5 @@
 import { translate, type TranslationMessage } from '../../i18n/index.js'
+import { getMessagesBaseUrl, getModelsUrl, normalizeBaseUrl } from '../apiConfig.js'
 import { readMessageEvent } from './parseEvent.js'
 import { readServerSentEvents } from './sse.js'
 import type {
@@ -9,10 +10,10 @@ import type {
   MessageStreamEvent,
 } from './types.js'
 
-/** 构建期 API 地址，默认 https://api.deepseek.com；本地开发支持开发服务器代理 */
-export const API_ORIGIN = __API_ORIGIN__
-/** Anthropic 兼容接口的前缀 */
-const ANTHROPIC_BASE_URL = `${API_ORIGIN}/anthropic/v1`
+/**
+ * 地址不再写死：每次请求都从当前生效的模型服务配置（providers.ts）取 baseUrl + apiPath，
+ * 构建期的 __API_ORIGIN__ 只作为新建配置的预填值。
+ */
 /** 引用 Files API 上传的图片、调用 Anthropic 兼容 Files API 时必须携带 */
 const FILES_BETA = 'files-api-2025-04-14'
 
@@ -89,9 +90,9 @@ const anthropicHeaders = (apiKey: string, beta: boolean): Record<string, string>
   ...(beta ? { 'anthropic-beta': FILES_BETA } : {}),
 })
 
-/** 用 GET /models 校验 API Key（不产生费用） */
+/** 用 GET /models 校验 API Key（不产生费用）；地址取当前配置的 baseUrl 根路径 */
 export const verifyApiKey = async (apiKey: string, signal?: AbortSignal): Promise<void> => {
-  await request(`${API_ORIGIN}/models`, {
+  await request(getModelsUrl(), {
     method: 'GET',
     headers: { Authorization: `Bearer ${apiKey}` },
     signal,
@@ -113,7 +114,7 @@ export const uploadFile = async (
     form.append('purpose', purpose)
   }
   form.append('file', file)
-  const response = await request(`${ANTHROPIC_BASE_URL}/files`, {
+  const response = await request(`${getMessagesBaseUrl()}/files`, {
     method: 'POST',
     headers: anthropicHeaders(apiKey, true),
     body: form,
@@ -124,7 +125,7 @@ export const uploadFile = async (
 
 /** DELETE /anthropic/v1/files/{file_id} */
 export const deleteFile = async (apiKey: string, fileId: string): Promise<void> => {
-  await request(`${ANTHROPIC_BASE_URL}/files/${encodeURIComponent(fileId)}`, {
+  await request(`${getMessagesBaseUrl()}/files/${encodeURIComponent(fileId)}`, {
     method: 'DELETE',
     headers: anthropicHeaders(apiKey, true),
   })
@@ -146,7 +147,7 @@ export async function* streamMessage(
   body: CreateMessageRequest,
   signal: AbortSignal
 ): AsyncGenerator<MessageStreamEvent> {
-  const response = await request(`${ANTHROPIC_BASE_URL}/messages`, {
+  const response = await request(`${getMessagesBaseUrl()}/messages`, {
     method: 'POST',
     headers: {
       ...anthropicHeaders(apiKey, hasFile(body)),
@@ -186,4 +187,112 @@ export async function* streamMessage(
   }
   // 服务端没有提供错误内容时保持为空，不推测断流原因。
   throw new ApiError('interrupted', '')
+}
+
+/** 连通性测试结果；失败时 reason 区分非法地址、超时、网络（含跨域）、HTTP 错误、非 JSON */
+export type ProviderProbeResult = {
+  ok: boolean
+  /** HTTP 状态码，未收到响应时缺省 */
+  status?: number
+  /** 解析出的模型 id；空数组表示接口通但没给列表 */
+  models: string[]
+  reason?: 'invalid' | 'timeout' | 'network' | 'http' | 'json'
+  /** 原始错误信息（HTTP 与 JSON 情形） */
+  message?: string
+}
+
+/** 从各种中转的返回里尽量捞出模型 id：字符串数组或 { id / name / model } */
+const pickModelIds = (body: unknown): string[] => {
+  const readIds = (list: unknown): string[] => {
+    if (!Array.isArray(list)) {
+      return []
+    }
+    const ids: string[] = []
+    for (const item of list) {
+      if (typeof item === 'string') {
+        ids.push(item)
+      } else if (item && typeof item === 'object') {
+        const record = item as Record<string, unknown>
+        const id = record.id ?? record.name ?? record.model
+        if (typeof id === 'string') {
+          ids.push(id)
+        }
+      }
+    }
+    return ids
+  }
+  if (Array.isArray(body)) {
+    return readIds(body)
+  }
+  if (body && typeof body === 'object') {
+    const record = body as Record<string, unknown>
+    for (const key of ['data', 'models', 'model_list', 'result']) {
+      const ids = readIds(record[key])
+      if (ids.length) {
+        return ids
+      }
+    }
+  }
+  return []
+}
+
+/**
+ * 连通性测试：GET {baseUrl}/models 带 Bearer key（路径不带 apiPath）。
+ * 超时、断网/跨域、非 2xx、非 JSON 分别给出可读原因，不抛异常。
+ */
+export const probeProvider = async (
+  config: { baseUrl: string; apiKey: string },
+  timeoutMs = 15000
+): Promise<ProviderProbeResult> => {
+  const baseUrl = normalizeBaseUrl(config.baseUrl)
+  if (!baseUrl) {
+    return { ok: false, models: [], reason: 'invalid' }
+  }
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), timeoutMs)
+  try {
+    const response = await fetch(`${baseUrl}/models`, {
+      method: 'GET',
+      headers: { Authorization: `Bearer ${config.apiKey}` },
+      signal: controller.signal,
+    })
+    const text = await response.text().catch(() => '')
+    if (!response.ok) {
+      let message = text || response.statusText
+      try {
+        const body: unknown = JSON.parse(text)
+        if (isErrorBody(body)) {
+          message = body.error.message
+        }
+      } catch {
+        // 非 JSON 错误体直接展示原文
+      }
+      return { ok: false, status: response.status, models: [], reason: 'http', message }
+    }
+    let body: unknown
+    try {
+      body = JSON.parse(text)
+    } catch {
+      return {
+        ok: false,
+        status: response.status,
+        models: [],
+        reason: 'json',
+        message: text.slice(0, 200),
+      }
+    }
+    return { ok: true, status: response.status, models: pickModelIds(body) }
+  } catch (error) {
+    if (controller.signal.aborted) {
+      return { ok: false, models: [], reason: 'timeout' }
+    }
+    return {
+      ok: false,
+      models: [],
+      reason: 'network',
+      message: error instanceof Error ? error.message : String(error),
+    }
+  } finally {
+    clearTimeout(timer)
+  }
 }

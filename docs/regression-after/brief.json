@@ -1,0 +1,280 @@
+{
+ "S1_home_fresh": {
+  "consoleErrors": [],
+  "pageErrors": [],
+  "requests": [],
+  "statuses": [],
+  "states": {
+   "loaded": {
+    "messageCount": 0,
+    "bubbleCount": 0,
+    "hasTextarea": true,
+    "textareaDisabled": false,
+    "sendButtonPresent": true,
+    "sendDisabled": false,
+    "modalOpen": true,
+    "noticeTexts": [],
+    "bodyTextHead": "API 使用 demo 开启新对话 设置 今天有什么可以帮到你？ 深度思考 智能搜索 设置 通用设置 数据管理 输入 API Key 开始使用 服务地址 测试 模型 导入历史对话 导入历史对话会覆盖全部本地对话和附件，支持 DeepSeek 导出的 ZIP 文件。 上传 导出所有历史对话 包含所有历史对话及本地图片原件；其他附件仅保留文件信息，不包含 API Key。 下载 删除所有对话 删除"
+   }
+  },
+  "steps": []
+ },
+ "S2_settings": {
+  "consoleErrors": [],
+  "pageErrors": [],
+  "requests": [],
+  "statuses": [],
+  "states": {
+   "general": {
+    "messageCount": 0,
+    "bubbleCount": 0,
+    "hasTextarea": true,
+    "textareaDisabled": false,
+    "sendButtonPresent": true,
+    "sendDisabled": false,
+    "modalOpen": true,
+    "noticeTexts": [],
+    "bodyTextHead": "API 使用 demo 开启新对话 设置 今天有什么可以帮到你？ 深度思考 智能搜索 设置 通用设置 数据管理 主题 浅色 深色 跟随系统 语言 简体中文 朗读音色 海星（女声） 位置信息 请选择省份/地区 请选择市"
+   },
+   "data": {
+    "messageCount": 0,
+    "bubbleCount": 0,
+    "hasTextarea": true,
+    "textareaDisabled": false,
+    "sendButtonPresent": true,
+    "sendDisabled": false,
+    "modalOpen": true,
+    "noticeTexts": [],
+    "bodyTextHead": "API 使用 demo 开启新对话 设置 今天有什么可以帮到你？ 深度思考 智能搜索 设置 通用设置 数据管理 输入 API Key 开始使用 ******************************** 服务地址 测试 模型 导入历史对话 导入历史对话会覆盖全部本地对话和附件，支持 DeepSeek 导出的 ZIP 文件。 上传 导出所有历史对话 包含所有历史对话及本地图片原件；其他附件仅保留文件信息，不包含 API Key。 下载 删除所有对话 删除"
+   }
+  },
+  "steps": []
+ },
+ "S3_session": {
+  "consoleErrors": [],
+  "pageErrors": [],
+  "requests": [],
+  "statuses": [],
+  "states": {
+   "drawer": {
+    "messageCount": 0,
+    "bubbleCount": 0,
+    "hasTextarea": true,
+    "textareaDisabled": false,
+    "sendButtonPresent": true,
+    "sendDisabled": false,
+    "modalOpen": false,
+    "noticeTexts": [],
+    "bodyTextHead": "API 使用 demo 开启新对话 2023-11 回归测试会话 设置 今天有什么可以帮到你？ 深度思考 智能搜索"
+   },
+   "session": {
+    "messageCount": 20,
+    "bubbleCount": 20,
+    "hasTextarea": true,
+    "textareaDisabled": false,
+    "sendButtonPresent": true,
+    "sendDisabled": false,
+    "modalOpen": false,
+    "noticeTexts": [],
+    "bodyTextHead": "API 使用 demo 开启新对话 2023-11 回归测试会话 设置 回归测试会话 问题 0 回答 0 填充文本填充文本填充文本填充文本填充文本填充文本填充文本填充文本填充文本填充文本填充文本填充文本填充文本填充文本填充文本填充文本填充文本填充文本填充文本填充文本 问题 1 回答 1 填充文本填充文本填充文本填充文本填充文本填充文本填充文本填充文本填充文本填充文本填充文本填充文本填充文本填充文本填充文本填充文本填充文本填充文本填充文本填充文本 问题 2 回答 2 填充文本填充文本填充文本填充文本填充文本填充文本填充文本填充文本填充文本填充文本填充文本填充文本填充文本填充文本填充文本填充文本填"
+   }
+  },
+  "steps": [
+   {
+    "step": "openSession",
+    "ms": 111
+   },
+   {
+    "step": "scrollToBottom",
+    "scrollMs": 0,
+    "scrollHeight": 4330,
+    "messages": 20
+   }
+  ]
+ },
+ "S4_compose_send": {
+  "consoleErrors": [
+   "Failed to load resource: the server responded with a status of 401 ()"
+  ],
+  "pageErrors": [],
+  "requests": [
+   "POST api.deepseek.com/anthropic/v1/messages"
+  ],
+  "statuses": [
+   "POST /anthropic/v1/messages -> 401"
+  ],
+  "states": {
+   "typed": {
+    "messageCount": 0,
+    "bubbleCount": 0,
+    "hasTextarea": true,
+    "textareaDisabled": false,
+    "sendButtonPresent": true,
+    "sendDisabled": false,
+    "modalOpen": false,
+    "noticeTexts": [],
+    "bodyTextHead": "API 使用 demo 开启新对话 设置 今天有什么可以帮到你？ 深度思考 智能搜索"
+   },
+   "afterSend400ms": {
+    "messageCount": 1,
+    "bubbleCount": 1,
+    "hasTextarea": true,
+    "textareaDisabled": false,
+    "sendButtonPresent": true,
+    "sendDisabled": false,
+    "modalOpen": false,
+    "noticeTexts": [
+     "API Key 无效或已被删除，请更换后重试 更换 API Key"
+    ],
+    "bodyTextHead": "API 使用 demo 开启新对话 今天 新对话 设置 新对话 你好 API Key 无效或已被删除，请更换后重试 更换 API Key 深度思考 智能搜索 内容由 AI 生成，请仔细甄别"
+   },
+   "settled": {
+    "messageCount": 1,
+    "bubbleCount": 1,
+    "hasTextarea": true,
+    "textareaDisabled": false,
+    "sendButtonPresent": true,
+    "sendDisabled": false,
+    "modalOpen": false,
+    "noticeTexts": [
+     "API Key 无效或已被删除，请更换后重试 更换 API Key"
+    ],
+    "bodyTextHead": "API 使用 demo 开启新对话 今天 新对话 设置 新对话 你好 API Key 无效或已被删除，请更换后重试 更换 API Key 深度思考 智能搜索 内容由 AI 生成，请仔细甄别"
+   }
+  },
+  "steps": []
+ },
+ "S5_no_key_send": {
+  "consoleErrors": [],
+  "pageErrors": [],
+  "requests": [],
+  "statuses": [],
+  "states": {
+   "onLoad": {
+    "messageCount": 0,
+    "bubbleCount": 0,
+    "hasTextarea": true,
+    "textareaDisabled": false,
+    "sendButtonPresent": true,
+    "sendDisabled": false,
+    "modalOpen": true,
+    "noticeTexts": [],
+    "bodyTextHead": "API 使用 demo 开启新对话 设置 今天有什么可以帮到你？ 深度思考 智能搜索 设置 通用设置 数据管理 输入 API Key 开始使用 服务地址 测试 模型 导入历史对话 导入历史对话会覆盖全部本地对话和附件，支持 DeepSeek 导出的 ZIP 文件。 上传 导出所有历史对话 包含所有历史对话及本地图片原件；其他附件仅保留文件信息，不包含 API Key。 下载 删除所有对话 删除"
+   },
+   "afterSend": {
+    "messageCount": 0,
+    "bubbleCount": 0,
+    "hasTextarea": true,
+    "textareaDisabled": false,
+    "sendButtonPresent": true,
+    "sendDisabled": false,
+    "modalOpen": true,
+    "noticeTexts": [],
+    "bodyTextHead": "API 使用 demo 开启新对话 设置 今天有什么可以帮到你？ 深度思考 智能搜索 设置 通用设置 数据管理 输入 API Key 开始使用 服务地址 测试 模型 导入历史对话 导入历史对话会覆盖全部本地对话和附件，支持 DeepSeek 导出的 ZIP 文件。 上传 导出所有历史对话 包含所有历史对话及本地图片原件；其他附件仅保留文件信息，不包含 API Key。 下载 删除所有对话 删除"
+   }
+  },
+  "steps": []
+ },
+ "S6_offline": {
+  "consoleErrors": [
+   "Failed to load resource: net::ERR_INTERNET_DISCONNECTED"
+  ],
+  "pageErrors": [],
+  "requests": [
+   "POST api.deepseek.com/anthropic/v1/messages"
+  ],
+  "statuses": [],
+  "states": {
+   "settled": {
+    "messageCount": 1,
+    "bubbleCount": 1,
+    "hasTextarea": true,
+    "textareaDisabled": false,
+    "sendButtonPresent": true,
+    "sendDisabled": false,
+    "modalOpen": false,
+    "noticeTexts": [
+     "网络异常，请检查你的网络状况"
+    ],
+    "bodyTextHead": "API 使用 demo 开启新对话 今天 新对话 设置 新对话 你好 网络异常，请检查你的网络状况 深度思考 智能搜索 内容由 AI 生成，请仔细甄别"
+   }
+  },
+  "steps": []
+ },
+ "S7_upload_thinking_title": {
+  "consoleErrors": [
+   "Failed to load resource: the server responded with a status of 401 ()"
+  ],
+  "pageErrors": [],
+  "requests": [
+   "POST api.deepseek.com/anthropic/v1/files"
+  ],
+  "statuses": [
+   "POST /anthropic/v1/files -> 401"
+  ],
+  "states": {
+   "thinkingOn": {
+    "messageCount": 0,
+    "bubbleCount": 0,
+    "hasTextarea": true,
+    "textareaDisabled": false,
+    "sendButtonPresent": true,
+    "sendDisabled": false,
+    "modalOpen": false,
+    "noticeTexts": [],
+    "bodyTextHead": "API 使用 demo 开启新对话 设置 今天有什么可以帮到你？ 深度思考 智能搜索 先思考后回答，解决推理问题"
+   },
+   "afterUpload": {
+    "messageCount": 0,
+    "bubbleCount": 0,
+    "hasTextarea": true,
+    "textareaDisabled": false,
+    "sendButtonPresent": true,
+    "sendDisabled": false,
+    "modalOpen": false,
+    "noticeTexts": [],
+    "bodyTextHead": "API 使用 demo 开启新对话 设置 今天有什么可以帮到你？ note.txt 上传失败 深度思考 智能搜索"
+   }
+  },
+  "steps": []
+ },
+ "S8_thinking_title": {
+  "consoleErrors": [
+   "Failed to load resource: the server responded with a status of 401 ()"
+  ],
+  "pageErrors": [],
+  "requests": [
+   "POST api.deepseek.com/anthropic/v1/messages"
+  ],
+  "statuses": [
+   "POST /anthropic/v1/messages -> 401"
+  ],
+  "states": {
+   "thinkingOn": {
+    "messageCount": 0,
+    "bubbleCount": 0,
+    "hasTextarea": true,
+    "textareaDisabled": false,
+    "sendButtonPresent": true,
+    "sendDisabled": false,
+    "modalOpen": false,
+    "noticeTexts": [],
+    "bodyTextHead": "API 使用 demo 开启新对话 设置 今天有什么可以帮到你？ 深度思考 智能搜索 先思考后回答，解决推理问题"
+   },
+   "afterSend": {
+    "messageCount": 1,
+    "bubbleCount": 1,
+    "hasTextarea": true,
+    "textareaDisabled": false,
+    "sendButtonPresent": true,
+    "sendDisabled": false,
+    "modalOpen": false,
+    "noticeTexts": [
+     "API Key 无效或已被删除，请更换后重试 更换 API Key"
+    ],
+    "bodyTextHead": "API 使用 demo 开启新对话 今天 新对话 设置 新对话 你好 API Key 无效或已被删除，请更换后重试 更换 API Key 深度思考 智能搜索 内容由 AI 生成，请仔细甄别"
+   }
+  },
+  "steps": []
+ }
+}
