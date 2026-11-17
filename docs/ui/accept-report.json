@@ -1,0 +1,168 @@
+{
+  "samples": [
+    {
+      "ms": 4,
+      "len": 60
+    },
+    {
+      "ms": 313,
+      "len": 90
+    },
+    {
+      "ms": 618,
+      "len": 110
+    },
+    {
+      "ms": 920,
+      "len": 150
+    },
+    {
+      "ms": 1343,
+      "len": 184
+    },
+    {
+      "ms": 1649,
+      "len": 207
+    },
+    {
+      "ms": 1952,
+      "len": 224
+    },
+    {
+      "ms": 2261,
+      "len": 224
+    },
+    {
+      "ms": 2567,
+      "len": 224
+    },
+    {
+      "ms": 2874,
+      "len": 224
+    },
+    {
+      "ms": 3179,
+      "len": 224
+    },
+    {
+      "ms": 3485,
+      "len": 224
+    },
+    {
+      "ms": 3790,
+      "len": 224
+    },
+    {
+      "ms": 4097,
+      "len": 224
+    },
+    {
+      "ms": 4404,
+      "len": 224
+    },
+    {
+      "ms": 4711,
+      "len": 224
+    }
+  ],
+  "results": [
+    {
+      "id": "T0",
+      "name": "聊天输入区可用（设置弹窗已关闭）",
+      "pass": true,
+      "evidence": "ensureChatReady=true"
+    },
+    {
+      "id": "T1",
+      "name": "打开首页 → 输入框可点、可聚焦",
+      "pass": true,
+      "evidence": "真实 click 后 activeElement=TEXTAREA；深度思考开关=on"
+    },
+    {
+      "id": "T2",
+      "name": "真打字「你好」",
+      "pass": true,
+      "evidence": "keyboard.type 后 inputValue=\"你好\""
+    },
+    {
+      "id": "T3",
+      "name": "Enter 发送 → 用户气泡 + 输入框清空",
+      "pass": true,
+      "evidence": "main 含「你好」=true, 输入框=\"\""
+    },
+    {
+      "id": "T4a",
+      "name": "mock SSE 期间打字机效果（文本随时间增长）",
+      "pass": true,
+      "evidence": "ms:chars=4:60 313:90 618:110 920:150 1343:184 1649:207 1952:224 递增点数=7 不同长度数=7"
+    },
+    {
+      "id": "T4b",
+      "name": "出现「深度思考」折叠块",
+      "pass": true,
+      "evidence": "折叠标题=\"已思考（用时 1 秒）\" 思考正文块=1 点击可折叠=true (流式期标题样本=\"已思考（用时 1 秒）\")"
+    },
+    {
+      "id": "T5",
+      "name": "Markdown 渲染（代码块+列表）+ 操作按钮",
+      "pass": true,
+      "evidence": "pre=1 代码块标题(js)=1 li=3 复制按钮=3 重新生成=1"
+    },
+    {
+      "id": "T6",
+      "name": "点「复制」→ 剪贴板/按钮状态变化",
+      "pass": true,
+      "evidence": "按钮图标变化=true (innerHTML 长度 2618→825) clipboard.readText=\"\" err=Error: page.evaluate: TypeError: Cannot read properties of u"
+    },
+    {
+      "id": "T7",
+      "name": "发送中途「停止」→ 中断且可重发",
+      "pass": true,
+      "evidence": "停止按钮=1 点击=true 长度 360→360 停止按钮消失=true 重新生成=2"
+    },
+    {
+      "id": "T8",
+      "name": "新建会话 → 回空态 + 旧会话在侧栏",
+      "pass": true,
+      "evidence": "welcome=true 侧栏会话项=1 [\"新对话\"]"
+    },
+    {
+      "id": "T9",
+      "name": "侧栏点旧会话 → 消息恢复",
+      "pass": true,
+      "evidence": "点击侧栏旧会话后 main 含「再试一次」且 pre=2"
+    },
+    {
+      "id": "T10a",
+      "name": "设置上传背景图 → 聊天页生效",
+      "pass": true,
+      "evidence": "data-chat-background=on=true ::before background-image=url(\"blob:http://100.113 遮罩 ::after=rgba(255, 255, 255, 0.75) --chat-background-image=url(\"blob:http://100.113"
+    },
+    {
+      "id": "T11",
+      "name": "刷新后会话与背景都在（IndexedDB 持久化）",
+      "pass": true,
+      "evidence": "刷新后自动恢复消息=false 侧栏会话项=1 会话消息可恢复=true 背景仍在=true(url(\"blob:http://100.113)"
+    },
+    {
+      "id": "T10b",
+      "name": "清除背景 → 恢复默认",
+      "pass": true,
+      "evidence": "清除按钮=1 清除后 on=false ::before=none"
+    },
+    {
+      "id": "T12",
+      "name": "console error / pageerror 计数",
+      "pass": true,
+      "evidence": "console.error=0 pageerror=0 http>=400=[]"
+    }
+  ],
+  "consoleErrors": [],
+  "pageErrors": [],
+  "httpErrors": [],
+  "routeLog": [
+    "POST http://127.0.0.1:4789/anthropic/v1/messages",
+    "POST http://127.0.0.1:4789/anthropic/v1/messages"
+  ],
+  "mock": "local SSE server 127.0.0.1:4789 (CORS enabled)"
+}
