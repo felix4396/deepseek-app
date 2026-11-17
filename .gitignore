@@ -24,6 +24,8 @@ android/local.properties
 docs/acceptance/
 .build-*.sh
 deploy-check*.png
+# 调试截图（不作为发布产物）
+docs/ui/debug-*.png
 
 # 杂项
 .DS_Store
