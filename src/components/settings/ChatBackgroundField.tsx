@@ -1,0 +1,129 @@
+import { useRef, useState } from 'react'
+import clsx from 'clsx'
+import { Button } from '../base/Button.js'
+import { useTranslate, type TranslationKey } from '../../i18n/index.js'
+import {
+  applyChatBackground,
+  removeChatBackground,
+  useChatBackground,
+} from '../../services/chat/background.js'
+import styles from './Settings.module.css'
+
+type Status = { key: TranslationKey; error?: boolean } | null
+
+/**
+ * 聊天背景：与上方三字段（API Key / 服务地址 / 模型）同一行样式。
+ * 行内是缩略图 + 上传 + 清除；清除需就地二次确认，不新增卡片或二级页。
+ */
+export const ChatBackgroundField = () => {
+  const t = useTranslate()
+  const url = useChatBackground((state) => state.url)
+  const inputRef = useRef<HTMLInputElement>(null)
+  const [busy, setBusy] = useState(false)
+  const [status, setStatus] = useState<Status>(null)
+  const [confirming, setConfirming] = useState(false)
+
+  const upload = async (file: File) => {
+    setBusy(true)
+    setStatus(null)
+    setConfirming(false)
+    try {
+      await applyChatBackground(file)
+      setStatus({ key: 'settingsChatBackgroundSaved' })
+    } catch (error) {
+      // eslint-disable-next-line no-console
+      console.error('[background] upload failed', error)
+      setStatus({ key: 'settingsChatBackgroundFailed', error: true })
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const clear = async () => {
+    setBusy(true)
+    try {
+      await removeChatBackground()
+      setStatus({ key: 'settingsChatBackgroundCleared' })
+    } catch (error) {
+      // eslint-disable-next-line no-console
+      console.error('[background] clear failed', error)
+      setStatus({ key: 'settingsChatBackgroundFailed', error: true })
+    } finally {
+      setBusy(false)
+      setConfirming(false)
+    }
+  }
+
+  const hint = confirming
+    ? t('settingsChatBackgroundClearConfirm')
+    : status
+      ? t(status.key)
+      : t('settingsChatBackgroundDescription')
+
+  return (
+    <div className={clsx(styles.cell, styles.backgroundRow)}>
+      <div className={styles.backgroundText}>
+        <div className={styles.label}>{t('settingsChatBackground')}</div>
+        <div className={clsx(styles.description, status?.error && styles.error)}>{hint}</div>
+      </div>
+      <div className={styles.backgroundAction}>
+        <span
+          className={clsx(styles.backgroundPreview, !url && styles.backgroundPreviewEmpty)}
+          role="img"
+          aria-label={t('settingsChatBackground')}
+          style={url ? { backgroundImage: `url("${url}")` } : undefined}
+        >
+          {url ? null : '—'}
+        </span>
+        {confirming ? (
+          <>
+            <Button variant="outlined" size="m" disabled={busy} onClick={() => setConfirming(false)}>
+              {t('cancel')}
+            </Button>
+            <Button variant="danger" size="m" disabled={busy} onClick={() => void clear()}>
+              {t('confirm')}
+            </Button>
+          </>
+        ) : (
+          <>
+            <Button
+              variant="outlined"
+              size="m"
+              className={styles.uploadButton}
+              disabled={busy}
+              onClick={() => inputRef.current?.click()}
+            >
+              {t('settingsChatBackgroundUpload')}
+            </Button>
+            <Button
+              variant="outlined"
+              size="m"
+              disabled={busy || !url}
+              onClick={() => {
+                setStatus(null)
+                setConfirming(true)
+              }}
+            >
+              {t('settingsChatBackgroundClear')}
+            </Button>
+          </>
+        )}
+        <input
+          ref={inputRef}
+          type="file"
+          accept="image/*"
+          aria-label={t('settingsChatBackgroundUpload')}
+          className={styles.backgroundFile}
+          onChange={(event) => {
+            const file = event.target.files?.[0]
+            // 允许连续选同一张图
+            event.target.value = ''
+            if (file) {
+              void upload(file)
+            }
+          }}
+        />
+      </div>
+    </div>
+  )
+}

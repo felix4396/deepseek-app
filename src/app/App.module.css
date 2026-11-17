@@ -12,6 +12,46 @@
   flex-direction: column;
   flex: 1;
   min-width: 0;
+  /* 背景层与遮罩只在 .main 内叠加，不污染设置弹窗、侧边栏与 body */
+  isolation: isolate;
+}
+
+/*
+ * 聊天背景：图片与遮罩各占一层伪元素。
+ * .main 本身不滚动（消息在内部 .content 里滚动），定位盒固定，
+ * 因此这里的 absolute 叠层等效于 background-attachment: fixed。
+ */
+.main[data-chat-background='on']::before,
+.main[data-chat-background='on']::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.main[data-chat-background='on']::before {
+  z-index: 0;
+  background-image: var(--chat-background-image);
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+}
+
+/* 亮色遮罩 0.75 白，保证气泡、代码块与正文对比度 */
+.main[data-chat-background='on']::after {
+  z-index: 1;
+  background-color: rgba(255, 255, 255, 0.75);
+}
+
+/* 暗色主题跟随 body.dark 换成 0.6 黑遮罩 */
+:global(body.dark) .main[data-chat-background='on']::after {
+  background-color: rgba(0, 0, 0, 0.6);
+}
+
+/* 内容层始终在背景与遮罩之上 */
+.main[data-chat-background='on'] > * {
+  position: relative;
+  z-index: 2;
 }
 
 .content {

@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, type CSSProperties } from 'react'
 import { useTranslate } from '../i18n/index.js'
 import { useSettings } from '../services/settings.js'
 import { useIsMobile, useMobileViewport, usePreventPageScroll } from './viewport.js'
@@ -18,6 +18,7 @@ import { ensureApiKey } from '../components/settings/settingsDialogState.js'
 import { SettingsDialog } from '../components/settings/SettingsDialog.js'
 import { Toast } from '../components/base/Toast.js'
 import { showToast } from '../components/base/toastState.js'
+import { initChatBackground, useChatBackground } from '../services/chat/background.js'
 import { onUploadNotice } from '../services/attachments.js'
 import { Button } from '../components/base/Button.js'
 import { stopReadAloud } from '../services/speech/readAloud.js'
@@ -49,6 +50,8 @@ export const App = () => {
     state.activeId === null ? false : Object.hasOwn(state.streaming, state.activeId)
   )
   const activeId = useChatStore((state) => state.activeId)
+  // 聊天背景图存在 IndexedDB，刷新/重开后读回；只作用于聊天主区域
+  const backgroundUrl = useChatBackground((state) => state.url)
 
   usePreventPageScroll(isMobile)
 
@@ -58,6 +61,9 @@ export const App = () => {
 
   // 文件数、存储空间达到上限时，附件上只显示「上传失败」，原因用 toast 说明
   useEffect(() => onUploadNotice(showToast), [])
+  useEffect(() => {
+    void initChatBackground()
+  }, [])
   useEffect(bindChatPersistence, [])
 
   // 搜索结果面板只属于当前会话
@@ -77,7 +83,15 @@ export const App = () => {
     <>
       <div ref={frameRef} className={styles.frame}>
         {isMobile ? <MobileSider /> : siderCollapsed ? null : <Sider />}
-        <main className={styles.main}>
+        <main
+          className={styles.main}
+          data-chat-background={backgroundUrl ? 'on' : undefined}
+          style={
+            backgroundUrl
+              ? ({ '--chat-background-image': `url("${backgroundUrl}")` } as CSSProperties)
+              : undefined
+          }
+        >
           {saveError ? (
             <div className={styles.saveError} role="alert">
               <span>{t('sessionSaveFailed')}</span>

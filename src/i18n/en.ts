@@ -192,4 +192,15 @@ export const en = {
   settingsTestTimeout: 'Connection timed out; check the URL and your network',
   settingsTestNetwork: 'Cannot connect: {message} (wrong URL, service down, or blocked by CORS)',
   settingsTestBadJson: 'Response is not JSON: {message}',
+
+  // ---------- Chat background ----------
+  settingsChatBackground: 'Chat background',
+  settingsChatBackgroundDescription:
+    'Stored on this device only (IndexedDB), never uploaded; resized to 1600px max edge',
+  settingsChatBackgroundUpload: 'Upload',
+  settingsChatBackgroundClear: 'Clear',
+  settingsChatBackgroundSaved: 'Applied to the chat area',
+  settingsChatBackgroundCleared: 'Cleared; the chat area is back to default',
+  settingsChatBackgroundFailed: 'Could not process this image; try a JPG or PNG',
+  settingsChatBackgroundClearConfirm: 'Remove the current chat background?',
 } satisfies Record<keyof typeof zh, string>

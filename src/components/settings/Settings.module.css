@@ -192,6 +192,57 @@
   }
 }
 
+/* 聊天背景：和三字段同款 .cell 行，左侧文字 + 右侧缩略图与按钮 */
+.backgroundRow {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.backgroundText {
+  display: flex;
+  flex: 1 0 0;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.backgroundAction {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 8px;
+}
+
+.backgroundPreview,
+.backgroundPreviewEmpty {
+  flex-shrink: 0;
+  box-sizing: border-box;
+  width: 44px;
+  height: 44px;
+  border-radius: 10px;
+  background-color: var(--dsw-specific-login-input);
+  background-position: center;
+  background-size: cover;
+  background-repeat: no-repeat;
+}
+
+.backgroundPreviewEmpty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px dashed var(--dsw-alias-border-l2);
+  background-image: none;
+  color: var(--dsw-alias-label-caption);
+  font-size: 12px;
+  line-height: 18px;
+  user-select: none;
+}
+
+.backgroundFile {
+  display: none;
+}
+
 .description {
   font-size: 12px;
   line-height: 18px;
@@ -289,6 +340,15 @@
 }
 
 @media not all and (min-width: 768px) {
+  .backgroundRow {
+    flex-wrap: wrap;
+  }
+
+  .backgroundAction {
+    flex: 1 0 100%;
+    justify-content: flex-end;
+  }
+
   .dialog {
     align-self: flex-end;
     width: 100%;

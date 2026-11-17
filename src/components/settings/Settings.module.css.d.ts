@@ -19,6 +19,12 @@ declare const styles: {
   readonly "themeOptions": string;
   readonly "themeOption": string;
   readonly "themeOptionSelected": string;
+  readonly "backgroundRow": string;
+  readonly "backgroundText": string;
+  readonly "backgroundAction": string;
+  readonly "backgroundPreview": string;
+  readonly "backgroundPreviewEmpty": string;
+  readonly "backgroundFile": string;
   readonly "description": string;
   readonly "error": string;
   readonly "apiKey": string;

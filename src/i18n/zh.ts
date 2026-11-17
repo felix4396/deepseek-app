@@ -183,4 +183,14 @@ export const zh = {
   settingsTestTimeout: '连接超时，请检查地址与网络后再试',
   settingsTestNetwork: '无法连接：{message}（地址错误、服务未启动或被跨域策略拦截）',
   settingsTestBadJson: '返回的不是 JSON：{message}',
+
+  // ---------- 聊天背景 ----------
+  settingsChatBackground: '聊天背景',
+  settingsChatBackgroundDescription: '图片只保存在本机（IndexedDB），不会上传；最长边压缩到 1600px',
+  settingsChatBackgroundUpload: '上传',
+  settingsChatBackgroundClear: '清除',
+  settingsChatBackgroundSaved: '已应用到聊天区域',
+  settingsChatBackgroundCleared: '已清除，聊天区域恢复默认背景',
+  settingsChatBackgroundFailed: '图片处理失败，请换一张 JPG/PNG 图片再试',
+  settingsChatBackgroundClearConfirm: '确认清除当前聊天背景？',
 } as const

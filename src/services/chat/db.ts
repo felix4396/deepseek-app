@@ -2,7 +2,7 @@ import { openDB, type DBSchema, type IDBPDatabase } from 'idb'
 import { toSessionSummary, type Session, type SessionSummary } from './types.js'
 
 /** IndexedDB 存储结构版本；新增或调整存储、索引时递增。 */
-const DB_VERSION = 11
+const DB_VERSION = 12
 
 /** 文件原件按附件的本地 id 存储，所有引用同一 id 的消息共用一份；用于缩略图、打开查看，以及没有 serverId 时补传。 */
 export type StoredFile = {
@@ -12,6 +12,9 @@ export type StoredFile = {
 
 /** 文件引用留在摘要中，删除会话时通过索引判断原件是否仍被引用。 */
 type StoredSessionSummary = SessionSummary & { fileIds: string[] }
+
+/** 应用级素材（如聊天背景图）：按固定 key 存取，与会话/附件数据互不影响。 */
+export type StoredAsset = { key: string; blob: Blob; updatedAt: number }
 
 interface ChatDB extends DBSchema {
   /** 当前使用的会话，界面读写都在这里 */
@@ -29,6 +32,8 @@ interface ChatDB extends DBSchema {
    */
   sessionsStaging: { key: string; value: Session }
   filesStaging: { key: string; value: StoredFile }
+  /** 应用素材：聊天背景等全局资源，主键是固定 key，不随会话删除 */
+  appAssets: { key: string; value: StoredAsset }
 }
 
 let dbPromise: Promise<IDBPDatabase<ChatDB>> | null = null
@@ -67,6 +72,10 @@ const getDB = () =>
         : db.createObjectStore('sessionSummaries', { keyPath: 'id' })
       if (!summaries.indexNames.contains('fileIds')) {
         summaries.createIndex('fileIds', 'fileIds', { multiEntry: true })
+      }
+      // 应用素材（聊天背景等）单独一个 store：只新增，不重建、不清空已有会话/原件
+      if (!db.objectStoreNames.contains('appAssets')) {
+        db.createObjectStore('appAssets', { keyPath: 'key' })
       }
     },
   }).catch((error: unknown) => {
@@ -248,4 +257,17 @@ export const commitStaging = async (): Promise<SessionSummary[]> => {
 export const reportStorageError = (action: string) => (error: unknown) => {
   // eslint-disable-next-line no-console
   console.error(`[storage] ${action} failed`, error)
+}
+
+/** 读取应用素材（如聊天背景）：未设置时返回 undefined。 */
+export const loadAppAsset = async (key: string): Promise<StoredAsset | undefined> =>
+  (await getDB()).get('appAssets', key)
+
+/** 写入/覆盖应用素材；固定 key 保证全局只有一份背景图。 */
+export const saveAppAsset = async (key: string, blob: Blob): Promise<void> => {
+  await (await getDB()).put('appAssets', { key, blob, updatedAt: Date.now() })
+}
+
+export const deleteAppAsset = async (key: string): Promise<void> => {
+  await (await getDB()).delete('appAssets', key)
 }
