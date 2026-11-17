@@ -4,11 +4,19 @@
  * 设置页的输入行、请求路径、鉴权头、能力开关（搜索/附件/语音/朗读/标题）
  * 以及请求体里能带哪些 DeepSeek 扩展字段，全部由这里驱动。
  *
- * 新增 openai 时只需要：把 'openai' 加进 ProviderKind，并在 SPECS 里补一个对象，
+ * 新增一个服务类型只需要：把它加进 ProviderKind，并在 SPECS 里补一个对象；
  * 设置页与请求构造不用改任何结构（组件按 spec.fields 循环渲染、按 spec.caps 控制显隐）。
+ * 协议不同（OpenAI 兼容）的额外工作是 openaiAdapter.ts 里的双向翻译，同样与组件无关。
  */
 
-export type ProviderKind = 'deepseek' | 'anthropic'
+export type ProviderKind = 'deepseek' | 'anthropic' | 'openai'
+
+/**
+ * 线上协议：决定请求体怎么构造、响应流怎么解析。
+ * - 'anthropic'：Messages API（本应用内部就是这套事件，直接透传）
+ * - 'openai'：chat/completions，经 openaiAdapter.ts 双向翻译
+ */
+export type ProviderProtocol = 'anthropic' | 'openai'
 
 /** 需要用户填的字段；不在列表里的字段用 defaults 里的内置默认值 */
 export type ProviderField = 'baseUrl' | 'apiKey' | 'model'
@@ -18,6 +26,10 @@ export type ProviderAuth = 'x-api-key' | 'bearer'
 
 /** 能力开关：决定界面上哪些入口可用，以及请求体里能带哪些扩展字段 */
 export type ProviderCaps = {
+  /** 基础文本对话（流式正文、停止、重新生成 / 编辑 / 分支） */
+  text: boolean
+  /** 深度思考开关（thinking / reasoning） */
+  thinking: boolean
   /** 智能搜索（deepseek_web_search） */
   search: boolean
   /** 服务端自动生成会话标题 */
@@ -42,6 +54,8 @@ export type ProviderPaths = {
 export type ProviderSpec = {
   kind: ProviderKind
   label: { zh: string; en: string }
+  /** 线上协议：请求体与响应流按它选解析方式 */
+  protocol: ProviderProtocol
   /** 需要用户填哪些字段，顺序即设置页里的渲染顺序 */
   fields: ProviderField[]
   /** 未显示的字段用内置默认；用户已存过的值仍然优先（升级无感兼容） */
@@ -72,6 +86,7 @@ const SPECS: Record<ProviderKind, ProviderSpec> = {
   deepseek: {
     kind: 'deepseek',
     label: { zh: 'DeepSeek 官方', en: 'DeepSeek Official' },
+    protocol: 'anthropic',
     // 官方地址与模型都写死，用户只需要填 Key
     fields: ['apiKey'],
     defaults: { baseUrl: 'https://api.deepseek.com', model: 'deepseek-flash' },
@@ -79,21 +94,59 @@ const SPECS: Record<ProviderKind, ProviderSpec> = {
     auth: 'x-api-key',
     // 官方 CORS 白名单包含 anthropic-version（实测 OPTIONS 允许 x-api-key,anthropic-version）
     anthropicVersion: ANTHROPIC_VERSION,
-    caps: { search: true, title: true, vision: true, tts: true, asr: true },
+    caps: {
+      text: true,
+      thinking: true,
+      search: true,
+      title: true,
+      vision: true,
+      tts: true,
+      asr: true,
+    },
     extended: { safetyCheck: true, latestReminder: true },
   },
   anthropic: {
     kind: 'anthropic',
     label: { zh: 'Anthropic 协议', en: 'Anthropic-compatible' },
+    protocol: 'anthropic',
     // 任意 Anthropic 兼容中转：地址与模型都要自己填
     fields: ['baseUrl', 'apiKey', 'model'],
     paths: { models: '/v1/models', messages: '/v1/messages', tools: '/v1/tools' },
     auth: 'x-api-key',
     // 故意不带 anthropic-version：中转的 CORS 白名单一般只放行 x-api-key，
     // 带上后预检失败会让每个请求都变成网络错误（60010 实测）。
-    caps: { search: false, title: false, vision: false, tts: false, asr: false },
+    caps: {
+      text: true,
+      thinking: true,
+      search: false,
+      title: false,
+      vision: false,
+      tts: false,
+      asr: false,
+    },
     // 深度思考仍然可用，但真 Anthropic 要求带 budget_tokens
     thinkingBudget: 4096,
+  },
+  openai: {
+    kind: 'openai',
+    label: { zh: 'OpenAI 兼容', en: 'OpenAI-compatible' },
+    protocol: 'openai',
+    // 任意 OpenAI 兼容上游（官方 / 中转 / 本地 vLLM、Ollama…）：地址与模型都要自己填
+    fields: ['baseUrl', 'apiKey', 'model'],
+    paths: { models: '/v1/models', messages: '/v1/chat/completions', tools: '' },
+    // Authorization: Bearer <key>
+    auth: 'bearer',
+    // 只做基础对话：搜索/标题/附件/语音/朗读全关，深度思考也没给开关
+    // （请求侧的 thinking 字段直接丢弃，理由见 openaiAdapter.ts 文件头）
+    caps: {
+      text: true,
+      thinking: false,
+      search: false,
+      title: false,
+      vision: false,
+      tts: false,
+      asr: false,
+    },
   },
 }
 

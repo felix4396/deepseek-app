@@ -1010,7 +1010,8 @@ const streamReply = async (sessionId: string, initial: AssistantMessage, request
         persist(sessionId)
         const spec = getCurrentSpec()
         const gates = requestGates(spec)
-        const thinking = initial.thinking ?? false
+        // 协议不支持思考（caps.thinking=false）时请求侧也不开，避免历史里带思考块回传
+        const thinking = (initial.thinking ?? false) && spec.caps.thinking
         const body = toRequestBody(
           toRequestMessages(
             prepared.history,

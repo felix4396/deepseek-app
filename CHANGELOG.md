@@ -2,6 +2,17 @@
 
 本文件记录 deepseek-app 的重要变更，版本倒序排列。
 
+## 1.3.0 (2026-11-17)
+
+- 设置页新增第三个服务类型「OpenAI 兼容 / OpenAI-compatible」（versionCode 7）：可自填服务地址、API Key 与模型，发消息走 `POST /v1/chat/completions`，鉴权头为 `Authorization: Bearer <key>`，模型探测走 `GET /v1/models`
+- 新增协议翻译层 `src/services/api/openaiAdapter.ts`：
+  - 请求方向：`system` → messages 头部 `{role:'system'}`；user/assistant 原样映射，block 数组只取 `type:'text'`（图片/文档直接丢弃）；`safety_check`/`title`/`tools` 沿用 REQUEST_GATES 不发；`thinking` 直接丢弃（OpenAI 无对应字段，`reasoning_effort` 不是通用 chat/completions 参数）；必带 `stream: true` 与 `stream_options.include_usage`
+  - 响应方向：OpenAI SSE → Anthropic 事件流，序列固定为 `message_start → content_block_start → content_block_delta* → content_block_stop → message_delta(stop_reason + usage) → message_stop`；`finish_reason` 映射 `stop→end_turn`、`length→max_tokens`、`tool_calls/function_call→end_turn`、`content_filter→refusal`
+  - 脏数据容错：空 `choices`、`delta` 空对象、`: ping` 注释行、非 JSON 的 data 行、同一 chunk 多条 choices（只取 index 0）、没有 `[DONE]` 的断流都能正常收尾不卡死；上游若下发 `reasoning_content` 会另开一个 thinking 块
+- OpenAI 兼容模式只保留基础对话（流式文本、停止、重新生成 / 编辑 / 分支）：智能搜索、附件/图片、语音输入、朗读、自动标题、深度思考入口全部隐藏（由 `caps` 驱动，DOM 里 `count=0`）
+- deepseek / anthropic 两种模式零影响：三条路径、四个私有字段、能力降级行为与 1.2.3 逐字一致，原有回归断言仍全绿
+- 测试：新增 `tests/test.openai-adapter.spec.mjs`（28 项断言，直接 import 适配器，不启浏览器）并纳入 `tests/run-acceptance.mjs`（覆盖 openai 路径/鉴权头/请求体/端到端逐字渲染/能力降级 + 原有 deepseek/anthropic 回归）
+
 ## 1.2.3 (2026-11-17)
 
 - 设置页新增「服务类型」下拉（versionCode 6）：

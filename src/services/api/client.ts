@@ -7,6 +7,7 @@ import {
   getModelsUrl,
   normalizeBaseUrl,
 } from './apiConfig.js'
+import { OpenAIStreamError, toOpenAIRequest, translateOpenAIStream } from './openaiAdapter.js'
 import type { ProviderSpec } from './providers.js'
 import { readMessageEvent } from './parseEvent.js'
 import { readServerSentEvents } from './sse.js'
@@ -117,7 +118,7 @@ const ensureBaseUrl = (): void => {
 /**
  * 鉴权头完全按当前服务类型的 spec.auth 决定：
  * - 'x-api-key' → x-api-key + anthropic-version（Anthropic 风格，DeepSeek 官方同样接受）
- * - 'bearer'    → Authorization: Bearer（预留给 openai 一类的协议）
+ * - 'bearer'    → Authorization: Bearer（OpenAI 兼容服务类型）
  * beta 为 true 时附带 Files API 的 anthropic-beta。
  */
 const sameHost = (url: string, other: string): boolean => {
@@ -138,7 +139,7 @@ const needsAnthropicVersion = (spec: ProviderSpec, baseUrl: string): boolean =>
 /**
  * 鉴权头完全按当前服务类型的 spec.auth 决定：
  * - 'x-api-key' → x-api-key（官方端点另带 anthropic-version，Anthropic 风格）
- * - 'bearer'    → Authorization: Bearer（预留给 openai 一类的协议）
+ * - 'bearer'    → Authorization: Bearer（OpenAI 兼容服务类型）
  * beta 为 true 时附带 Files API 的 anthropic-beta。
  */
 export const authHeaders = (
@@ -215,8 +216,52 @@ const hasFile = (body: CreateMessageRequest) =>
   )
 
 /**
+ * OpenAI 兼容上游（spec.protocol = 'openai'）：POST {paths.messages}（通常 /v1/chat/completions）。
+ * 请求体与响应流都经 openaiAdapter 双向翻译，向上层产出的仍是 Anthropic 风格事件，
+ * 因此 UI 与 store 不需要任何分支。断流/脏数据由翻译器收尾，这里只把错误帧转成 ApiError。
+ */
+async function* streamOpenAIMessage(
+  apiKey: string,
+  body: CreateMessageRequest,
+  signal: AbortSignal
+): AsyncGenerator<MessageStreamEvent> {
+  ensureBaseUrl()
+  const response = await request(getMessagesUrl(), {
+    method: 'POST',
+    headers: {
+      ...authHeaders(apiKey),
+      'Content-Type': 'application/json',
+      Accept: 'text/event-stream',
+    },
+    body: JSON.stringify(toOpenAIRequest(body)),
+    signal,
+  })
+  const contentType = response.headers.get('Content-Type') ?? ''
+  if (!response.body || !contentType.includes('text/event-stream')) {
+    throw await readErrorResponse(response, 'protocol', '')
+  }
+  try {
+    for await (const event of translateOpenAIStream(
+      readServerSentEvents(response.body, signal),
+      { model: body.model }
+    )) {
+      yield event
+      if (event.type === 'message_stop') {
+        return
+      }
+    }
+  } catch (error) {
+    if (error instanceof OpenAIStreamError) {
+      throw new ApiError('stream', error.message)
+    }
+    throw error
+  }
+}
+
+/**
  * POST /anthropic/v1/messages（stream: true），逐个产出流式事件，收到 message_stop 时结束。
  * ping、保活注释与无法解析的内容不产出；中止请求时抛出 signal 的 AbortError。
+ * OpenAI 兼容协议走 streamOpenAIMessage，其余协议这一段的代码与 1.2.3 完全一致。
  */
 export async function* streamMessage(
   apiKey: string,
@@ -224,6 +269,10 @@ export async function* streamMessage(
   signal: AbortSignal
 ): AsyncGenerator<MessageStreamEvent> {
   ensureBaseUrl()
+  if (getCurrentSpec().protocol === 'openai') {
+    yield* streamOpenAIMessage(apiKey, body, signal)
+    return
+  }
   const response = await request(getMessagesUrl(), {
     method: 'POST',
     headers: {
