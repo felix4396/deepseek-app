@@ -17,11 +17,8 @@ import {
 } from '../../services/chat/backup.js'
 import { useIsMobile } from '../../app/viewport.js'
 import { useChatStore } from '../../services/chat/store.js'
-import { regionCodes, getRegionName, provinces } from '../../services/location.js'
 import {
-  isChineseBrowser,
   setLocale,
-  setLocation,
   setThemePreference,
   setTtsVoice,
   useSettings,
@@ -100,7 +97,8 @@ const SettingsContent = () => {
               <ThemeSetting />
               <LocaleSetting />
               <TtsVoiceSetting />
-              <LocationSetting />
+              {/* 「位置信息」已从设置页移除（1.4.0-beta.1）：location 仍在 store 里读取，
+                  只用于 latest_reminder 快照，界面上不再暴露入口。 */}
             </>
           ) : (
             <>
@@ -205,70 +203,6 @@ const useHistoryDelete = () => {
     },
     confirm,
   }
-}
-
-const LocationSetting = () => {
-  const t = useTranslate()
-  const locale = useSettings((state) => state.locale)
-  const location = useSettings((state) => state.location)
-  const province =
-    location?.region === 'CN'
-      ? provinces.find((item) => item.code === location.province)
-      : undefined
-
-  return (
-    <SettingCell
-      label={t('settingsLocation')}
-      status={null}
-      className={styles.locationCell}
-      action={
-        <div className={styles.locationSelectors}>
-          {isChineseBrowser() ? (
-            <>
-              <Select
-                ariaLabel={t('settingsLocationProvince')}
-                className={styles.provinceSelect}
-                value={province?.code ?? ''}
-                placeholder={t('settingsLocationProvince')}
-                options={provinces.map((item) => ({ value: item.code, label: item.name }))}
-                onChange={(value) => {
-                  if (value !== province?.code) {
-                    setLocation({ region: 'CN', province: value })
-                  }
-                }}
-              />
-              <Select
-                ariaLabel={t('settingsLocationCity')}
-                className={styles.citySelect}
-                value={province ? (location?.city ?? '') : ''}
-                disabled={!province?.cities.length}
-                placeholder={t('settingsLocationCity')}
-                options={
-                  province?.cities.map((item) => ({ value: item.code, label: item.name })) ?? []
-                }
-                onChange={(value) => {
-                  if (province) {
-                    setLocation({ region: 'CN', province: province.code, city: value })
-                  }
-                }}
-              />
-            </>
-          ) : (
-            <Select
-              ariaLabel={t('settingsLocationRegion')}
-              className={styles.regionSelect}
-              value={location?.region ?? ''}
-              placeholder={t('settingsLocationRegion')}
-              options={regionCodes
-                .map((code) => ({ value: code, label: getRegionName(code, locale) }))
-                .sort((a, b) => a.label.localeCompare(b.label, locale))}
-              onChange={(value) => setLocation({ region: value })}
-            />
-          )}
-        </div>
-      }
-    />
-  )
 }
 
 const LocaleSetting = () => {

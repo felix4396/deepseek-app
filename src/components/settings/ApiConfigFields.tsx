@@ -12,6 +12,7 @@ import {
 import {
   PROVIDER_SPECS,
   getSpec,
+  hasProviderChoice,
   type ProviderField,
   type ProviderSpec,
 } from '../../services/api/providers.js'
@@ -37,13 +38,16 @@ type ApiKeyEditor = ReturnType<typeof useApiKeyEditor>
 /**
  * 服务配置区：最上面是「服务类型」，下面按 spec.fields 循环渲染输入行，最后是连通性测试。
  * 新增服务类型只需要在 providers.ts 里加一个 spec，这里的 JSX 结构不用改。
+ *
+ * 内测版（只有一个可选 spec / spec.fixed）：服务类型下拉不渲染，地址与模型不进 fields，
+ * 于是这一区只剩 API Key 输入框 + 连通性测试。
  */
 export const ApiConfigFields = ({ editor }: { editor: ApiKeyEditor }) => {
   const kind = useApiConfig((state) => state.kind)
   const spec = getSpec(kind)
   return (
     <>
-      <ProviderKindField />
+      {hasProviderChoice() ? <ProviderKindField /> : null}
       {spec.fields.map((field) => (
         <ApiConfigField key={field} field={field} spec={spec} editor={editor} />
       ))}

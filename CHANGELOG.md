@@ -2,6 +2,20 @@
 
 本文件记录 deepseek-app 的重要变更，版本倒序排列。
 
+## 1.4.0-beta.1 (2026-11-17) — 内测版
+
+> 内测版包：服务地址与模型已固定，用户只需填写 API Key。下载页与 GitHub Release 均标注「内测版」（pre-release）。
+
+- 服务地址、模型、服务类型在**构建期固定**（`INTERNAL_BUILD=1 pnpm build:internal`，versionCode 8 / versionName 1.4.0-beta.1）：
+  - 服务地址固定为 `http://123.207.199.196:60010`，模型固定为 `deepseek-v4.1-flash`，服务类型固定为「Anthropic 协议」预设（该上游只有 `/v1/messages`，没有 `/anthropic` 前缀，且不带 `anthropic-version` 头以免中转 CORS 预检失败）
+  - 三项常量集中在 `src/services/api/internalBuild.ts` 一处，改地址/模型只改这里
+  - 这些值**不写 localStorage**：内测包不再读取已存的地址/模型/服务类型，`setBaseUrl`/`setModel`/`setProviderKind` 变为空操作
+- 设置页隐藏编辑入口：`providers.ts` 的 spec 新增 `fixed` 概念，固定项的 `baseUrl`/`model` 不进 `fields`，因此不渲染「服务地址」「模型」输入行；可选项只剩一个 spec 时不渲染「服务类型」下拉
+- **API Key 仍由用户填写**（唯一可编辑项），保存前的 `/v1/models` 校验、连通性测试按钮行为不变
+- 移除设置页「位置信息」（location / 所在地）：UI 项整段删除，`settings.location`、`src/services/location.ts` 与 `latestReminder` 的读取逻辑保留但不再暴露入口；`createLatestReminder` 在没有位置信息时**省略该段**，不再产生空段或 `undefined`
+- 协议适配零改动：deepseek / anthropic / openai 三条链路的路径、字段门控（REQUEST_GATES）、翻译器（`openaiAdapter.ts`）逐字未变；正式构建（`pnpm build`）行为与 1.3.0 完全一致
+- 测试：9 个既有 spec 全绿（对标准构建，断言未削弱）；新增 `tests/test.internal-build.spec.mjs`（内测构建验收：DOM 只有 API Key、请求 URL/模型固定、扩展字段剥离、localStorage 不落固定项、console error=0）与本地 mock 上游 `tests/mock-anthropic.mjs`（node 标准库，监听 `123.207.199.196:60010` 并回标准 Anthropic SSE）
+
 ## 1.3.0 (2026-11-17)
 
 - 设置页新增第三个服务类型「OpenAI 兼容 / OpenAI-compatible」（versionCode 7）：可自填服务地址、API Key 与模型，发消息走 `POST /v1/chat/completions`，鉴权头为 `Authorization: Bearer <key>`，模型探测走 `GET /v1/models`

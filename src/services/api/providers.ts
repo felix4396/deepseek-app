@@ -7,7 +7,12 @@
  * 新增一个服务类型只需要：把它加进 ProviderKind，并在 SPECS 里补一个对象；
  * 设置页与请求构造不用改任何结构（组件按 spec.fields 循环渲染、按 spec.caps 控制显隐）。
  * 协议不同（OpenAI 兼容）的额外工作是 openaiAdapter.ts 里的双向翻译，同样与组件无关。
+ *
+ * 「固定配置」（内测版）：spec 上的 fixed 字段表示 baseUrl / model / kind 由构建期常量钉死
+ * （常量集中在 internalBuild.ts）。带 fixed 的 spec 只保留 apiKey 一个字段，设置页因此
+ * 不渲染地址/模型输入行；可选项只剩一个时不渲染「服务类型」下拉。协议适配逻辑不受影响。
  */
+import { FIXED_SERVICE, type FixedService } from './internalBuild.js'
 
 export type ProviderKind = 'deepseek' | 'anthropic' | 'openai'
 
@@ -77,12 +82,18 @@ export type ProviderSpec = {
   extended?: { safetyCheck: boolean; latestReminder: boolean }
   /** 开启 thinking 时需要附带的最小思考预算；不填表示该协议不需要这个字段 */
   thinkingBudget?: number
+  /**
+   * 固定配置（内测版）：地址 / 模型 / 服务类型都由构建期常量钉死（见 internalBuild.ts）。
+   * 有它时：这些值不落 localStorage、设置页不渲染对应输入行、服务类型不可切换。
+   * 只影响「配置从哪来」，不影响 paths / auth / caps / extended 这些协议行为。
+   */
+  fixed?: FixedService
 }
 
 /** Anthropic 风格接口要求的协议版本头 */
 export const ANTHROPIC_VERSION = '2023-06-01'
 
-const SPECS: Record<ProviderKind, ProviderSpec> = {
+const RAW_SPECS: Record<ProviderKind, ProviderSpec> = {
   deepseek: {
     kind: 'deepseek',
     label: { zh: 'DeepSeek 官方', en: 'DeepSeek Official' },
@@ -150,15 +161,42 @@ const SPECS: Record<ProviderKind, ProviderSpec> = {
   },
 }
 
-export const DEFAULT_PROVIDER_KIND: ProviderKind = 'deepseek'
+/**
+ * 内测版：把这个 spec 变成「固定配置」版本——字段只剩 apiKey（API Key 仍由用户填），
+ * 地址与模型换成构建期常量。协议相关字段（paths / auth / caps / extended）原样保留。
+ */
+const withFixedService = (spec: ProviderSpec, fixed: FixedService): ProviderSpec => ({
+  ...spec,
+  fixed,
+  fields: spec.fields.filter((field) => field === 'apiKey'),
+  defaults: { ...spec.defaults, baseUrl: fixed.baseUrl, model: fixed.model },
+})
 
-export const PROVIDER_KINDS = Object.keys(SPECS) as ProviderKind[]
+const SPECS: Record<ProviderKind, ProviderSpec> = FIXED_SERVICE
+  ? ({
+      ...RAW_SPECS,
+      [FIXED_SERVICE.kind]: withFixedService(RAW_SPECS[FIXED_SERVICE.kind], FIXED_SERVICE),
+    } satisfies Record<ProviderKind, ProviderSpec>)
+  : RAW_SPECS
+
+/** 内测版钉死的服务类型；正式构建为 null（用户可自由切换） */
+export const getFixedService = (): FixedService | null => FIXED_SERVICE
+
+export const DEFAULT_PROVIDER_KIND: ProviderKind = FIXED_SERVICE?.kind ?? 'deepseek'
+
+/** 可切换的服务类型：内测版只剩钉死的那一个 */
+export const PROVIDER_KINDS: ProviderKind[] = FIXED_SERVICE
+  ? [FIXED_SERVICE.kind]
+  : (Object.keys(RAW_SPECS) as ProviderKind[])
 
 /** 下拉里的选项（顺序即展示顺序） */
 export const PROVIDER_SPECS: ProviderSpec[] = PROVIDER_KINDS.map((kind) => SPECS[kind])
 
+/** 至少两个可选项才值得渲染「服务类型」下拉；只有一个说明是内测版的固定配置 */
+export const hasProviderChoice = (): boolean => PROVIDER_KINDS.length > 1
+
 export const isProviderKind = (value: unknown): value is ProviderKind =>
-  typeof value === 'string' && Object.hasOwn(SPECS, value)
+  typeof value === 'string' && (PROVIDER_KINDS as string[]).includes(value)
 
 /** 取 spec：未知/缺省（旧用户没有这个 key）一律按 deepseek 处理 */
 export const getSpec = (kind?: string | null): ProviderSpec =>

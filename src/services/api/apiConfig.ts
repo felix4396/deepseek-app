@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import {
   DEFAULT_PROVIDER_KIND,
+  getFixedService,
   getSpec,
   isProviderKind,
   type ProviderCaps,
@@ -16,6 +17,9 @@ import {
  * - chat-demo:model          请求里的 model
  *
  * 请求路径与鉴权头都来自 ProviderSpec（providers.ts），这里只负责「当前用哪个 spec + 取到值」。
+ *
+ * 固定配置（内测版，spec.fixed）：服务类型、地址、模型一律取构建期常量（internalBuild.ts），
+ * 不读也不写 localStorage；对应 setter 变成空操作（设置页本来就不渲染这些输入行）。
  */
 export type ApiConfig = {
   kind: ProviderKind
@@ -78,8 +82,12 @@ export const normalizeBaseUrl = (value: string): string | null => {
   }
 }
 
-/** 当前生效的服务类型；旧数据（没有 kind）回落到 deepseek */
+/** 当前生效的服务类型；内测版固定为常量里的那一个，否则老数据（没有 kind）回落到 deepseek */
 export const getProviderKind = (): ProviderKind => {
+  const fixed = getFixedService()
+  if (fixed) {
+    return fixed.kind
+  }
   const saved = read(CONFIG_KEYS.kind)
   return isProviderKind(saved) ? saved : DEFAULT_PROVIDER_KIND
 }
@@ -103,6 +111,11 @@ export const getCaps = (): ProviderCaps => getCurrentSpec().caps
  * 其次用当前 spec 的内置默认，最后回落到构建期地址。
  */
 const resolveBaseUrl = (): string => {
+  const fixed = getCurrentSpec().fixed
+  if (fixed) {
+    // 内测版：地址写死在构建期常量里，已存值不再参与
+    return fixed.baseUrl
+  }
   const stored = normalizeBaseUrl(read(CONFIG_KEYS.baseUrl) ?? '')
   if (stored) {
     return stored
@@ -112,6 +125,11 @@ const resolveBaseUrl = (): string => {
 
 /** 模型：同上，已存值优先，其次 spec 默认，最后 deepseek-flash */
 const resolveModel = (): string => {
+  const fixed = getCurrentSpec().fixed
+  if (fixed) {
+    // 内测版：模型写死在构建期常量里，已存值不再参与
+    return fixed.model
+  }
   const stored = (read(CONFIG_KEYS.model) ?? '').trim()
   if (stored) {
     return stored
@@ -133,8 +151,11 @@ export const getMessagesBaseUrl = (): string => `${getBaseUrl()}${getCurrentSpec
 /** ASR / TTS 等工具接口前缀 */
 export const getToolsBaseUrl = (): string => `${getBaseUrl()}${getCurrentSpec().paths.tools}`
 
-/** 保存服务类型并立即生效（路径、鉴权头、按钮显隐随之切换） */
+/** 保存服务类型并立即生效（路径、鉴权头、按钮显隐随之切换）；内测版固定，直接忽略 */
 export const setProviderKind = (kind: ProviderKind) => {
+  if (getFixedService()) {
+    return
+  }
   write(CONFIG_KEYS.kind, isProviderKind(kind) ? kind : DEFAULT_PROVIDER_KIND)
   useApiConfig.setState({ kind })
 }
@@ -148,6 +169,10 @@ export const setApiKey = (apiKey: string) => {
 
 /** 保存服务地址；非法返回 false 且不写入。空值等于清除（回到内置默认地址） */
 export const setBaseUrl = (baseUrl: string): boolean => {
+  if (getCurrentSpec().fixed) {
+    // 内测版：地址固定，写不进去（设置页也不渲染这一行）
+    return false
+  }
   if (!baseUrl.trim()) {
     write(CONFIG_KEYS.baseUrl, null)
     useApiConfig.setState({ baseUrl: '' })
@@ -164,6 +189,10 @@ export const setBaseUrl = (baseUrl: string): boolean => {
 
 /** 保存模型；空值非法（返回 false），清除请传 null */
 export const setModel = (model: string, reset = false): boolean => {
+  if (getCurrentSpec().fixed) {
+    // 内测版：模型固定，写不进去（设置页也不渲染这一行）
+    return false
+  }
   if (reset) {
     write(CONFIG_KEYS.model, null)
     useApiConfig.setState({ model: '' })

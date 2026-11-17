@@ -19,6 +19,14 @@ const cssLoader = {
 type ConfigOptions = {
   /** 公开 API 的地址，注入为 __API_ORIGIN__ */
   apiOrigin?: string
+  /**
+   * 内测构建：注入 __INTERNAL_BUILD__=true，服务地址 / 模型 / 服务类型由
+   * src/services/api/internalBuild.ts 的常量钉死（设置页不再暴露这三项的编辑入口）。
+   * 默认 false：正式构建行为与之前完全一致。
+   */
+  internalBuild?: boolean
+  /** 输出目录（默认 dist；cap sync 只认 dist） */
+  outputPath?: string
   /** 开发服务器配置，支持本地接口代理 */
   devServer?: Configuration['devServer']
 }
@@ -26,12 +34,14 @@ type ConfigOptions = {
 /** 创建构建配置，支持自定义 API 地址和开发服务器选项 */
 export const createConfig = ({
   apiOrigin = 'https://api.deepseek.com',
+  internalBuild = process.env.INTERNAL_BUILD === '1',
+  outputPath = 'dist',
   devServer,
 }: ConfigOptions = {}): Configuration => ({
   mode: dev ? 'development' : 'production',
   entry: './src/main.tsx',
   output: {
-    path: path.resolve(root, 'dist'),
+    path: path.resolve(root, outputPath),
     // 运行时按当前脚本地址推导资源路径，file:// 下异步 chunk、字体都按相对位置加载
     publicPath: 'auto',
     filename: 'static/js/[name].[contenthash:8].js',
@@ -80,7 +90,10 @@ export const createConfig = ({
       scriptLoading: 'defer',
       meta: { 'application-version': version },
     }),
-    new rspack.DefinePlugin({ __API_ORIGIN__: JSON.stringify(apiOrigin) }),
+    new rspack.DefinePlugin({
+      __API_ORIGIN__: JSON.stringify(apiOrigin),
+      __INTERNAL_BUILD__: JSON.stringify(internalBuild),
+    }),
     new rspack.CopyRspackPlugin({
       patterns: [{ from: path.resolve(root, 'LICENSE'), to: 'LICENSE', toType: 'file' }],
     }),
