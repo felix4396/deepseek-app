@@ -1,0 +1,38 @@
+anthropic 模式入口 DOM（生成于 2026-11-17T12:32:14.237Z）
+[
+  {
+    "label": "智能搜索",
+    "count": 0,
+    "nodes": []
+  },
+  {
+    "label": "上传文件",
+    "count": 0,
+    "nodes": []
+  },
+  {
+    "label": "语音输入",
+    "count": 0,
+    "nodes": []
+  },
+  {
+    "label": "朗读",
+    "count": 0,
+    "nodes": []
+  },
+  {
+    "label": "深度思考",
+    "count": 1,
+    "nodes": [
+      {
+        "ariaLabel": "深度思考",
+        "ariaDisabled": null,
+        "disabled": false,
+        "hidden": false,
+        "display": "flex",
+        "visibility": "visible",
+        "className": "toggle-ed6f47"
+      }
+    ]
+  }
+]
