@@ -1,10 +1,153 @@
 apply plugin: 'com.android.application'
 
 // ---------------------------------------------------------------------------
+// 版本号唯一来源：仓库根 package.json
+//   "version":            "1.4.0-beta.8"  → Android versionName
+//   "androidVersionCode": 15              → Android versionCode
+// 发版只改 package.json 一处；缺字段或格式非法直接报错中止（不猜、不静默回退）。
+// ---------------------------------------------------------------------------
+def pkgJsonFile = rootProject.file('../package.json')
+if (!pkgJsonFile.exists()) {
+    throw new GradleException("[version] 找不到 ${pkgJsonFile}：App 版本号的唯一来源，无法确定 versionName/versionCode")
+}
+def pkgJson
+try {
+    pkgJson = new groovy.json.JsonSlurper().parse(pkgJsonFile)
+} catch (Exception e) {
+    throw new GradleException("[version] 解析 ${pkgJsonFile} 失败：${e.message}")
+}
+def appVersionName = pkgJson.version?.toString()?.trim()
+if (!(appVersionName ==~ /\d+\.\d+\.\d+(?:-[0-9A-Za-z.]+)?/)) {
+    throw new GradleException("[version] package.json 的 version 缺失或格式非法（期望 x.y.z 或 x.y.z-beta.N）：'${appVersionName}'")
+}
+def rawVersionCode = pkgJson.androidVersionCode
+def appVersionCode = null
+if (rawVersionCode instanceof Number) {
+    appVersionCode = (rawVersionCode as Number).longValue()
+} else if (rawVersionCode?.toString()?.trim() ==~ /\d+/) {
+    appVersionCode = (rawVersionCode.toString().trim()) as Long
+}
+if (appVersionCode == null || appVersionCode <= 0) {
+    throw new GradleException("[version] package.json 的 androidVersionCode 缺失或非法（必须是正整数，且每次发版递增）：'${rawVersionCode}'")
+}
+
+// ---------------------------------------------------------------------------
 // 签名配置：凭据从 android/keystore/keystore.properties 读取（该文件已 gitignore）
 // 若文件缺失（例如全新 clone），构建脚本 build-apk.sh 会自动生成 keystore + properties。
+//
+// release 构建 fail-fast：缺 keystore.properties / 缺 release 字段 / keystore 文件不存在时
+// 直接 throw 中止。历史上缺凭据会「不签名」或回退 debug keystore，导致用错证书发布、
+// 已装用户无法覆盖升级。宁可构建失败，也不产出签名身份不确定的 release 包。
 // ---------------------------------------------------------------------------
-def keystorePropertiesFile = rootProject.file("../keystore/keystore.properties")
+// 路径相对于 gradle 根工程（android/），即 android/keystore/keystore.properties。
+// 历史：这里原来写成 rootProject.file("../keystore/...")，指向从未存在的仓库根 keystore/，
+// 所以本工程从来没有真正应用过文件里的 signingConfig —— 已发布包全是 AGP 默认的
+// /root/.android/debug.keystore 签的（e7c5baee…）。因此「把路径修对」本身就会换证书，
+// 下面加了 EXPECTED_CERT_SHA256 指纹闸门：路径生效但证书不符时构建直接失败，不会悄悄换签。
+def keystorePropertiesFile = rootProject.file("keystore/keystore.properties")
+def keystoreProperties = new Properties()
+def keystorePropertiesExists = keystorePropertiesFile.exists()
+if (keystorePropertiesExists) {
+    keystorePropertiesFile.withInputStream { keystoreProperties.load(it) }
+}
+def RELEASE_KEY_FIELDS = ['storePasswordRelease', 'keyAliasRelease', 'keyPasswordRelease']
+def missingReleaseKeys = RELEASE_KEY_FIELDS.findAll { !keystoreProperties[it]?.toString()?.trim() }
+
+// ---------------------------------------------------------------------------
+// 已发布 APK 的签名证书指纹（SHA-256）。所有历史版本（含 1.4.0-beta.8）都是这一个：
+// /root/.android/debug.keystore 里的标准 debug key（AGP 在本工程没有显式 signingConfig 时
+// 用的默认 key）。换证书 = 已装用户无法覆盖升级，所以下面的所有签名配置都必须先过这道指纹闸门。
+//
+// 禁止顺手切换证书：想换成正式 release key，必须单独规划迁移（新包名 / 应用商店渠道 /
+// 引导用户重装），不能在这个仓库里悄悄改一行就算。
+// ---------------------------------------------------------------------------
+def EXPECTED_CERT_SHA256 = 'e7c5baee517ca2b2258950e934521f2fad448d00f72f2ff7297bdf4fa00aa8a1'
+
+/** 读 keystore 里某别名证书的 SHA-256；读不到返回 null（口令错误 / 文件缺失 / 别名不存在）。 */
+def certSha256Of = { String storeFileRel, Object storePass, Object alias ->
+    def f = file(storeFileRel)
+    if (!f.exists()) return null
+    def pass = (storePass ?: '').toString().toCharArray()
+    for (String type : ['PKCS12', 'JKS']) {
+        try {
+            def ks = java.security.KeyStore.getInstance(type)
+            f.withInputStream { ks.load(it, pass) }
+            def a = alias?.toString()
+            def cert = a ? ks.getCertificate(a) : ks.getCertificate(ks.aliases().nextElement())
+            if (cert == null) return null
+            return java.security.MessageDigest.getInstance('SHA-256').digest(cert.encoded).encodeHex().toString()
+        } catch (Exception ignored) {
+            // 换下一种类型再试；都不行则返回 null（构建侧按「指纹未知」处理）
+        }
+    }
+    return null
+}
+
+def releaseStoreRel = keystoreProperties['storeFileRelease'] ?: '../keystore/release.keystore'
+def debugStoreRel = keystoreProperties['storeFileDebug'] ?: '../keystore/debug.keystore'
+def releaseCertSha = (keystorePropertiesExists && missingReleaseKeys.isEmpty())
+        ? certSha256Of(releaseStoreRel, keystoreProperties['storePasswordRelease'], keystoreProperties['keyAliasRelease'])
+        : null
+def debugCertSha = (keystorePropertiesExists && keystoreProperties['storePasswordDebug'])
+        ? certSha256Of(debugStoreRel, keystoreProperties['storePasswordDebug'], keystoreProperties['keyAliasDebug'])
+        : null
+// 只有「指纹与已发布证书一致」才允许真正启用该签名配置
+def releaseSigningApproved = releaseCertSha == EXPECTED_CERT_SHA256
+def debugSigningApproved = debugCertSha == EXPECTED_CERT_SHA256
+
+// 这条 gradle 命令是否会产出 release 产物（assembleRelease / bundleRelease / installRelease / build / assemble …）。
+// 认不出就按「会」处理：宁可误拦一次 debug 命令，也不产出签名身份不明的 release 包。
+def releaseTaskRequested = gradle.startParameter.taskNames.any { t ->
+    def leaf = t.toLowerCase().tokenize(':').last()
+    leaf.contains('release') || (leaf in ['build', 'assemble', 'bundle', 'install', 'package'])
+}
+def keystoreFixHint = '''
+       修复：release 包现在只能由「与已发布证书一致」的签名材料签出。
+             已发布证书 = e7c5baee…aa8a1（/root/.android/debug.keystore，标准 debug key）。
+             要换证书请另开签名迁移方案，禁止顺手切换（否则已装用户无法覆盖升级）。
+'''.stripIndent()
+if (releaseTaskRequested) {
+    if (!keystorePropertiesExists) {
+        throw new GradleException("""
+[签名] release 构建缺少 android/keystore/keystore.properties，已中止。
+       不会退化成「不签名」或 debug 签名 —— 用错证书发布会让已装用户无法覆盖升级。
+       缺失文件：${keystorePropertiesFile}
+${keystoreFixHint}""".stripIndent())
+    }
+    if (missingReleaseKeys) {
+        throw new GradleException("""
+[签名] android/keystore/keystore.properties 缺少 release 字段：${missingReleaseKeys.join(', ')}，已中止。
+       文件：${keystorePropertiesFile}
+${keystoreFixHint}""".stripIndent())
+    }
+    def releaseStoreFile = file(releaseStoreRel)
+    if (!releaseStoreFile.exists()) {
+        throw new GradleException("""
+[签名] keystore.properties 指向的 release keystore 不存在，已中止。
+       storeFileRelease = ${releaseStoreFile}
+${keystoreFixHint}""".stripIndent())
+    }
+    if (releaseCertSha == null) {
+        throw new GradleException("""
+[签名] 读不到 ${releaseStoreFile} 里 release 证书的指纹（口令 / 别名不对？），已中止。
+${keystoreFixHint}""".stripIndent())
+    }
+    if (!releaseSigningApproved) {
+        throw new GradleException("""
+[签名] 签名证书与已发布版本不一致，已中止。
+       已发布（全历史版本含 1.4.0-beta.8）: ${EXPECTED_CERT_SHA256}
+       本次 release keystore      : ${releaseCertSha}
+       换证书会让所有已装用户无法覆盖升级（必须卸载重装）。
+       这是签名迁移，必须单独规划；禁止在本仓库顺手切换证书。
+       当前可用做法：按 docs/RELEASE-MANUAL.md 用 internal 变体（assembleDebug）出包，
+       它沿用 AGP 默认的 /root/.android/debug.keystore（即已发布证书）。
+${keystoreFixHint}""".stripIndent())
+    }
+}
+if (keystorePropertiesExists && debugCertSha != null && !debugSigningApproved) {
+    logger.warn("""[签名] android/keystore/debug.keystore 指纹 ${debugCertSha} ≠ 已发布证书 ${EXPECTED_CERT_SHA256}，
+[签名] 已忽略该签名配置；本次沿用 AGP 默认的 /root/.android/debug.keystore（与已发布版本同证书）。""")
+}
 
 def updateVariant = providers.gradleProperty('artifactVariant').orElse(System.getenv('INTERNAL_BUILD') == '1' ? 'internal' : 'standard').get()
 if (!(updateVariant in ['internal', 'standard'])) throw new GradleException('artifactVariant must be internal or standard')
@@ -20,8 +163,9 @@ android {
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
         manifestPlaceholders = [artifactVariant: updateVariant]
-        versionCode 15
-        versionName "1.4.0-beta.8"
+        // 唯一来源：仓库根 package.json（见文件顶部）
+        versionCode appVersionCode.toInteger()
+        versionName appVersionName
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
@@ -30,18 +174,21 @@ android {
         }
     }
     signingConfigs {
-        if (keystorePropertiesFile.exists()) {
-            def keystoreProperties = new Properties()
-            keystorePropertiesFile.withInputStream { keystoreProperties.load(it) }
-
+        // 注意：Gradle 里名叫 "debug" 的 signingConfig 就是 AGP 的默认 debug 签名配置，
+        // 一旦在这里定义就会覆盖 ~/.android/debug.keystore。所以只有指纹与已发布证书一致时
+        // 才定义它 —— 否则等于偷偷换掉所有 debug 包（= 现网 internal 包）的证书。
+        if (keystorePropertiesExists && debugSigningApproved) {
             debug {
-                storeFile file(keystoreProperties['storeFileDebug'] ?: '../keystore/debug.keystore')
+                storeFile file(debugStoreRel)
                 storePassword keystoreProperties['storePasswordDebug']
                 keyAlias keystoreProperties['keyAliasDebug']
                 keyPassword keystoreProperties['keyPasswordDebug']
             }
+        }
+        // release 只在「证书指纹 == 已发布证书」时定义（否则 release 构建已在顶部 throw）
+        if (releaseSigningApproved) {
             release {
-                storeFile file(keystoreProperties['storeFileRelease'] ?: '../keystore/release.keystore')
+                storeFile file(releaseStoreRel)
                 storePassword keystoreProperties['storePasswordRelease']
                 keyAlias keystoreProperties['keyAliasRelease']
                 keyPassword keystoreProperties['keyPasswordRelease']
@@ -50,18 +197,19 @@ android {
     }
     buildTypes {
         debug {
-            // 显式使用 android/keystore/debug.keystore（而非 ~/.android/debug.keystore），保证可复现
-            if (keystorePropertiesFile.exists()) {
+            // 默认不配置 → 用 AGP 默认的 ~/.android/debug.keystore（= 已发布证书，历史行为）。
+            // 只有 android/keystore/debug.keystore 的证书指纹与已发布证书一致时才显式指定。
+            if (keystorePropertiesExists && debugSigningApproved) {
                 signingConfig signingConfigs.debug
             }
         }
         release {
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
-            if (keystorePropertiesFile.exists()) {
+            // 凭据缺失 / 指纹不符时这里不配置签名，但该情况只会出现在非 release 命令里
+            // （release 命令已在文件顶部 GradleException 中止），不会产出签名身份不明的 release 包。
+            if (releaseSigningApproved) {
                 signingConfig signingConfigs.release
-            } else {
-                logger.warn("[build-apk] android/keystore/keystore.properties 缺失，release 将不签名；请运行 ./build-apk.sh 让其自动生成")
             }
         }
     }
