@@ -8,11 +8,11 @@
  * 设置页与请求构造不用改任何结构（组件按 spec.fields 循环渲染、按 spec.caps 控制显隐）。
  * 协议不同（OpenAI 兼容）的额外工作是 openaiAdapter.ts 里的双向翻译，同样与组件无关。
  *
- * 四个渠道（1.4.0-beta.3）：
+ * 四个渠道（1.4.0-beta.6：ours 改走 OpenAI 协议）：
  *   1. deepseek  DeepSeek 官方：地址与模型内置（https://api.deepseek.com / deepseek-flash），只需 Key，能力全开
  *   2. anthropic Anthropic 协议：地址 / 模型 / Key 都要自己填，只有对话 + 深度思考
  *   3. openai    OpenAI 兼容：地址 / 模型 / Key 都要自己填，只有基础对话
- *   4. ours      我们的渠道：地址与模型内置（见下），只需 Key，只有对话 + 深度思考
+ *   4. ours      我们的渠道：地址与模型内置（见下），只需 Key，走 OpenAI 协议（/v1/chat/completions + Bearer），只有基础对话
  *
  * 内置地址/模型的渠道（deepseek / ours）在 fields 里没有 baseUrl / model，
  * 设置页因此不渲染地址与模型输入行，值只从 defaults 取。
@@ -167,18 +167,19 @@ const RAW_SPECS: Record<ProviderKind, ProviderSpec> = {
   ours: {
     kind: 'ours',
     label: { zh: '我们的渠道', en: 'Our Channel' },
-    protocol: 'anthropic',
+    protocol: 'openai',
     // 地址与模型内置（locked）：设置页只有 API Key 一行，用户看不到也不该看到后端地址
     fields: ['apiKey'],
-    defaults: { baseUrl: 'http://123.207.199.196:60010', model: 'deepseek-v4.1-flash' },
-    // 该上游只有 /v1/messages，没有 /anthropic 前缀
-    paths: { models: '/v1/models', messages: '/v1/messages', tools: '/v1/tools' },
-    auth: 'x-api-key',
-    // 不带 anthropic-version：中转 CORS 白名单一般只放行 x-api-key（60010 实测预检失败）
+    // 2026-11-18 起该上游走 OpenAI 协议：/v1/chat/completions + Authorization: Bearer
+    defaults: { baseUrl: 'http://62.106.70.167:60010', model: 'deepseek-v4.1-flash' },
+    paths: { models: '/v1/models', messages: '/v1/chat/completions', tools: '' },
+    auth: 'bearer',
+    // 不带 anthropic-version：OpenAI 协议路径不需要；带上去反而会让中转 CORS 预检失败
     locked: true,
+    // 能力对齐现有 openai 渠道（基础对话）：该路径没有 thinking，开关不要露出来
     caps: {
       text: true,
-      thinking: true,
+      thinking: false,
       search: false,
       title: false,
       vision: false,
