@@ -6,16 +6,19 @@
 //   npm run check:legacy                            # 同上（release 前跑）
 //
 // 背景：Android WebView 版本跟系统镜像走，Android 11 出厂镜像停在 Chromium 83。构建 target
-// 一旦被改回去（或某个第三方依赖带进更新的语法），低内核用户就是整包解析失败 = 静默白屏，
-// 而且这类问题在 Chrome/Playwright 上永远测不出来。所以要在产物层面卡死语法下限。
+// 一旦被改回去（或某个第三方依赖带进更新的语法 / API），低内核用户就是整包解析失败或运行时
+// TypeError = 静默白屏，而且这类问题在 Chrome/Playwright 上永远测不出来。所以要在产物层面卡死下限。
 //
-// 检查分两层：
+// 检查分三层：
 //   1) 词法层（零依赖）：先把字符串/模板/正则/注释剥成空格（保持长度与换行），再找
 //      ES2021+ 才有的语法记号。剥字面量是必须的 —— prismjs 的语言定义里就有一条
 //      /--|\+\+|\*\*=?|=>|&&=?|\|\|=?|…/ 正则，直接 grep '&&=' 必然误报。
 //   2) 语法层（有 acorn 就跑）：用 acorn 真解析每个文件，AST 里断言没有逻辑赋值 / 类静态块 /
 //      私有类成员，并给出精确行列。仓库没把 acorn 列进 devDependencies（它是 @rspack 的传递依赖），
 //      拿不到时自动退化成只有词法层，并在报告里标注。
+//   3) 运行时 API 层（issue #39）：1)、2) 只管语法，`s.replaceAll('/','-')` 这种**内置 API 缺失**
+//      它们完全无感。这一层扫产物里出现的、Chrome 83 没有的内置 API，再去入口脚本里找
+//      legacy polyfill 标记；没补上就阻断。
 //
 // CSS 一并检查：dvh（Chrome 108+）必须带 vh 回退，否则低内核上弹层高度直接失效。
 import { readdirSync, readFileSync } from 'node:fs'
@@ -443,6 +446,247 @@ export const checkCssUnits = (files) => {
   return { dvhTotal, fallbackTotal, problems }
 }
 
+// ── 第三层：运行时 API 层（GitHub issue #39）──────────────────────────────────
+//
+// 上面两层只管**语法**：产物里没有 ||= / static {} 就算过。但 Chrome 83 缺的不只是语法，
+// 还有一大票**内置 API**（String.prototype.replaceAll / Object.hasOwn / .at() / structuredClone …）——
+// 语法检查器对 `s.replaceAll('/','-')` 完全无感，它在 WebView 83 上跑起来是
+// `TypeError: s.replaceAll is not a function`，一个未捕获异常就把整屏 React 卸掉（issue #27 的白屏）。
+//
+// 所以这一层做**产物级 API 白名单扫描**：
+//   1) 扫每个产物 JS（先剥掉字符串/注释，避免把文案里的 "replaceAll" 当成调用）；
+//   2) 命中「Chrome 83 之后才有的内置 API」后，再去 dist/index.html 直接加载的入口脚本里找
+//      legacy polyfill 的标记（__DEEPSEEK_LEGACY_POLYFILL__）；
+//   3) 补了 → 合规（main 上业务代码本来就保留裸调用，靠 polyfill 兜，见 issue #39 第 4 条）；
+//      没补 → 阻断，因为低内核必白屏。
+
+/** polyfill 装没装上的标记，与 src/polyfills/legacy.ts 的 LEGACY_POLYFILL_FLAG 必须一致 */
+export const POLYFILL_FLAG = '__DEEPSEEK_LEGACY_POLYFILL__'
+
+/**
+ * 目标运行时（Chromium 83）之后才有的内置 API。
+ *
+ * `covered` 表示 src/polyfills/legacy.ts 是否**真的**补了它：
+ *   - true  → 允许裸调用，但产物里必须能在入口脚本找到 polyfill 标记；
+ *   - false → 没有补丁覆盖，产物里出现就是必拦（例如 String.prototype.replaceAll，Chrome 85，
+ *             legacy.ts 至今没补，低内核上必 TypeError）。
+ * 改这张表时同步核对 legacy.ts 的 define(...) 清单，别凭印象写。
+ */
+const LEGACY_RUNTIME_APIS = [
+  // JS 补丁覆盖（legacy.ts 的 define 清单）
+  {
+    id: 'object-hasOwn',
+    api: 'Object.hasOwn',
+    chrome: 93,
+    covered: true,
+    pattern: /Object\.hasOwn\s*\(/g,
+  },
+  {
+    id: 'prototype-at',
+    api: 'Array/String.prototype.at',
+    chrome: 92,
+    covered: true,
+    pattern: /\.at\s*\(/g,
+  },
+  {
+    id: 'array-findLast',
+    api: 'Array.prototype.findLast',
+    chrome: 97,
+    covered: true,
+    pattern: /\.findLast\s*\(/g,
+  },
+  {
+    id: 'array-findLastIndex',
+    api: 'Array.prototype.findLastIndex',
+    chrome: 97,
+    covered: true,
+    pattern: /\.findLastIndex\s*\(/g,
+  },
+  {
+    id: 'array-toSorted',
+    api: 'Array.prototype.toSorted',
+    chrome: 110,
+    covered: true,
+    pattern: /\.toSorted\s*\(/g,
+  },
+  {
+    id: 'array-toReversed',
+    api: 'Array.prototype.toReversed',
+    chrome: 110,
+    covered: true,
+    pattern: /\.toReversed\s*\(/g,
+  },
+  {
+    id: 'array-toSpliced',
+    api: 'Array.prototype.toSpliced',
+    chrome: 110,
+    covered: true,
+    pattern: /\.toSpliced\s*\(/g,
+  },
+  {
+    id: 'array-with',
+    api: 'Array.prototype.with',
+    chrome: 110,
+    covered: true,
+    pattern: /\.with\s*\(/g,
+  },
+  {
+    id: 'structuredClone',
+    api: 'structuredClone',
+    chrome: 98,
+    covered: true,
+    pattern: /structuredClone\s*\(/g,
+  },
+  {
+    id: 'crypto-randomUUID',
+    api: 'crypto.randomUUID',
+    chrome: 92,
+    covered: true,
+    pattern: /crypto\s*\.\s*randomUUID\s*\(/g,
+  },
+  // 没有补丁覆盖：出现即拦
+  {
+    id: 'string-replaceAll',
+    api: 'String.prototype.replaceAll',
+    chrome: 85,
+    covered: false,
+    pattern: /\.replaceAll\s*\(/g,
+  },
+  // 注意：Array.prototype.group 故意不列。它最终以 Object.groupBy 发布（Chrome 117），`.group(` 在
+  // 真实产物里更可能命中第三方库的自定义方法（例如 d3.group 写成 `d3.group(...)`），误报会随依赖升级
+  // 随机把发布门禁打红。这张表只收「名字足够独特、不可能是同名自定义方法」的 API。
+  {
+    id: 'object-groupBy',
+    api: 'Object.groupBy',
+    chrome: 117,
+    covered: false,
+    pattern: /Object\.groupBy\s*\(/g,
+  },
+  {
+    id: 'promise-any',
+    api: 'Promise.any',
+    chrome: 85,
+    covered: false,
+    pattern: /Promise\.any\s*\(/g,
+  },
+  {
+    id: 'aggregate-error',
+    api: 'AggregateError',
+    chrome: 85,
+    covered: false,
+    pattern: /new\s+AggregateError\s*\(/g,
+  },
+]
+
+/** 扫产物里出现的「目标运行时没有的内置 API」。返回 [{id, api, chrome, covered, token, line, column}] */
+export const findLegacyRuntimeApis = (code) => {
+  const stripped = stripLiterals(code)
+  const hits = []
+  for (const entry of LEGACY_RUNTIME_APIS) {
+    entry.pattern.lastIndex = 0
+    let match = entry.pattern.exec(stripped)
+    while (match) {
+      const { line, column } = positionOf(stripped, match.index)
+      hits.push({
+        id: entry.id,
+        api: entry.api,
+        chrome: entry.chrome,
+        covered: entry.covered,
+        token: match[0].trim(),
+        line,
+        column,
+      })
+      entry.pattern.lastIndex = match.index + match[0].length
+      match = entry.pattern.exec(stripped)
+    }
+  }
+  return hits
+}
+
+/** dist/index.html 里 <script src> 直接加载的脚本（相对产物目录）。没有 index.html 返回 null */
+export const readEntryScripts = (distDir) => {
+  let html
+  try {
+    html = readFileSync(path.join(distDir, 'index.html'), 'utf8')
+  } catch {
+    return null
+  }
+  return [...html.matchAll(/<script[^>]+src=["']([^"']+)["']/g)].map(
+    (match) => match[1].replace(/^\.?\//, '').split('?')[0]
+  )
+}
+
+/**
+ * 运行时 API 层判定。
+ * 返回 { usage, violations, entryScripts, polyfillInEntries, polyfillFiles }
+ */
+export const checkRuntimeApis = (distDir, jsFiles) => {
+  const usage = []
+  for (const file of jsFiles) {
+    const code = readFileSync(file, 'utf8')
+    const relative = path.relative(ROOT, file).split(path.sep).join('/')
+    for (const hit of findLegacyRuntimeApis(code)) usage.push({ file: relative, ...hit })
+  }
+
+  // polyfill 落在哪个产物文件里（标记是字符串字面量，必须查原文，不能查剥过字面量的代码）
+  const polyfillFiles = []
+  const codeByFile = new Map()
+  for (const file of jsFiles) {
+    const code = readFileSync(file, 'utf8')
+    codeByFile.set(file, code)
+    if (code.includes(POLYFILL_FLAG)) polyfillFiles.push(file)
+  }
+
+  const entryScripts = readEntryScripts(distDir)
+  const polyfillInEntries = (entryScripts ?? []).filter((src) => {
+    const code = codeByFile.get(path.resolve(distDir, src))
+    return code !== undefined && code.includes(POLYFILL_FLAG)
+  })
+
+  const violations = []
+  for (const hit of usage) {
+    if (!hit.covered) {
+      violations.push({
+        ...hit,
+        reason: `${hit.api} 是 Chrome ${hit.chrome}+ 才有的，src/polyfills/legacy.ts 没有补丁覆盖`,
+      })
+      continue
+    }
+    if (entryScripts === null) {
+      violations.push({ ...hit, reason: `产物缺少 index.html，无法确认 polyfill 是否在入口脚本里` })
+      continue
+    }
+    if (polyfillInEntries.length === 0) {
+      const where = polyfillFiles.length
+        ? `polyfill 只在 ${polyfillFiles.map((file) => path.relative(ROOT, file).split(path.sep).join('/')).join(', ')}，不在入口脚本里（懒加载 chunk 里补等于没补）`
+        : '产物里根本没有 polyfill 标记'
+      violations.push({ ...hit, reason: `${hit.api} 需要 polyfill，但${where}` })
+    }
+  }
+
+  return {
+    usage,
+    violations,
+    entryScripts,
+    polyfillInEntries: polyfillInEntries.map((src) =>
+      path.relative(ROOT, path.resolve(distDir, src)).split(path.sep).join('/')
+    ),
+    polyfillFiles: polyfillFiles.map((file) => path.relative(ROOT, file).split(path.sep).join('/')),
+  }
+}
+
+/** 同一 (file, id) 只报一次，行号取第一次出现 —— 产物里 replaceAll 常有几十处，别刷屏 */
+const summarizeRuntimeUsage = (usage) => {
+  const grouped = new Map()
+  for (const hit of usage) {
+    const key = `${hit.file}::${hit.id}`
+    const existing = grouped.get(key)
+    if (existing) existing.count += 1
+    else grouped.set(key, { ...hit, count: 1 })
+  }
+  return [...grouped.values()].sort((a, b) => (a.file === b.file ? 0 : a.file < b.file ? -1 : 1))
+}
+
 const formatFindings = (findings) =>
   findings
     .map(
@@ -461,23 +705,43 @@ const main = () => {
   }
   const js = checkJavaScript(jsFiles)
   const css = checkCssUnits(cssFiles)
-  console.log(`产物语法下限检查：${path.relative(ROOT, distDir) || '.'}`)
+  const runtime = checkRuntimeApis(distDir, jsFiles)
+  console.log(`产物兼容性检查（语法 + 运行时 API）：${path.relative(ROOT, distDir) || '.'}`)
   console.log(
     `  JS 文件 ${js.files} 个；词法层违规 ${js.lexical.length} 个；AST 层违规 ${js.ast.length} 个${js.acornVersion ? `（acorn ${js.acornVersion}, ecmaVersion 2022 + 禁用项断言）` : '（没有 acorn，只做了词法层）'}`
   )
   console.log(
     `  dvh 声明 ${css.dvhTotal} 处；带 vh 回退 ${css.fallbackTotal} 处；问题 ${css.problems.length} 个`
   )
-  const fails = js.lexical.length + js.ast.length + css.problems.length
+  const usageSummary = summarizeRuntimeUsage(runtime.usage)
+  console.log(
+    `  运行时 API：命中 Chrome 83 缺的内置 API ${runtime.usage.length} 处（${usageSummary.length} 个文件/API 组合）；违规 ${runtime.violations.length} 个；polyfill 标记 ${runtime.polyfillFiles.length ? '已打进产物' : '不在产物里'}${runtime.entryScripts === null ? '（缺 index.html）' : `，入口脚本命中 ${runtime.polyfillInEntries.length}/${runtime.entryScripts.length}`}`
+  )
+  const fails = js.lexical.length + js.ast.length + css.problems.length + runtime.violations.length
   if (js.lexical.length) console.log(formatFindings(js.lexical))
   if (js.ast.length) console.log(formatFindings(js.ast))
   for (const problem of css.problems)
     console.log(`  ✗ ${problem.file} ${problem.value}（${problem.kind}）`)
+  if (usageSummary.length && !runtime.violations.length) {
+    console.log('  运行时 API 清单（有 polyfill 兜底，记录不阻断）：')
+    for (const hit of usageSummary)
+      console.log(`    · ${hit.file}:${hit.line} ${hit.api}（Chrome ${hit.chrome}+）×${hit.count}`)
+  }
+  for (const violation of runtime.violations)
+    console.log(
+      `  ✗ ${violation.file}:${violation.line}:${violation.column} ${violation.id}（${violation.reason}）${violation.token}`
+    )
   if (fails) {
-    console.error(`\n结论：不合格 —— 产物里有 Chrome 83 解析不了的东西（issue #13 会白屏）`)
+    const parts = []
+    if (js.lexical.length + js.ast.length) parts.push('Chrome 83 解析不了的语法（issue #13）')
+    if (css.problems.length) parts.push('无 vh 回退的 dvh')
+    if (runtime.violations.length) parts.push('Chrome 83 没有、产物里也没补的内置 API（issue #39）')
+    console.error(`\n结论：不合格 —— 产物里有 ${parts.join(' + ')}，低内核上会白屏`)
     process.exit(1)
   }
-  console.log('\n结论：合格 —— 全部产物可用 Chrome 83（ES2020 语法 / 无 dvh 裸用）解析')
+  console.log(
+    '\n结论：合格 —— 全部产物可用 Chrome 83 解析（ES2020 语法 / 无 dvh 裸用 / 内置 API 有 polyfill 兜底）'
+  )
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) main()
