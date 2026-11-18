@@ -368,6 +368,7 @@ export const zh = {
   oursClaimOk: '已领取，剩余 {points}，约可消费 {yuan}',
   oursClaimOkExisting: '此前已领取，继续使用同一把 Key',
   oursClaimKeyTail: '当前 Key {tail}',
+  oursClaimUseKey: '改用服务端下发的 Key {tail}',
   oursClaimNeedsDevice: '设备码异常，无法领取，请重新打开设置页',
   // 额度
   oursQuotaTitle: '剩余额度',

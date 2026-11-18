@@ -389,6 +389,7 @@ export const en = {
   oursClaimOk: 'Claimed. {points} left, about {yuan} to spend',
   oursClaimOkExisting: 'Already claimed earlier, same Key stays in use',
   oursClaimKeyTail: 'Current Key {tail}',
+  oursClaimUseKey: 'Use the Key issued by the server {tail}',
   oursClaimNeedsDevice: 'Device code unavailable, reopen settings to retry',
   oursQuotaTitle: 'Remaining quota',
   oursQuotaValue: '{points} (about {yuan} to spend)',

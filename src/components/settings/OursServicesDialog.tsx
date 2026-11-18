@@ -558,7 +558,7 @@ const OursServicesDialog = ({ onClose }: { onClose: () => void }) => {
                   setPendingKey('')
                 }}
               >
-                {t('oursClaimKeyTail', { tail: `••••${pendingKey.slice(-6)}` })}
+                {t('oursClaimUseKey', { tail: `••••${pendingKey.slice(-6)}` })}
               </Button>
             </div>
           ) : null}
