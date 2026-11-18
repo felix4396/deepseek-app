@@ -2,7 +2,12 @@ import { create } from 'zustand'
 import { createId } from '../../utils/id.js'
 import { ApiError, streamMessage } from '../api/client.js'
 import type { CreateMessageRequest } from '../api/types.js'
-import { classifyApiError, extractFileIds, getFileErrorCode, isRetryableApiError } from '../api/errors.js'
+import {
+  classifyApiError,
+  extractFileIds,
+  getFileErrorCode,
+  isRetryableApiError,
+} from '../api/errors.js'
 import { cancelUpload, describeUploadError, uploadAttachment, useUploads } from '../attachments.js'
 import {
   captureStateSnapshot,
@@ -40,6 +45,8 @@ import {
   settleReply,
   toRequestMessages,
 } from './reply.js'
+import { STREAM_NOTICE_TIERS } from './streamNotice.js'
+import type { TranslationKey } from '../../i18n/index.js'
 import {
   toSessionSummary,
   type AssistantMessage,
@@ -115,6 +122,8 @@ type ChatState = {
   activeId: string | null
   /** 正在生成回复的会话 */
   streaming: Record<string, AbortController>
+  /** 还在等首字的会话：当前该显示哪一档等待提示；收到首字或本轮结束就删掉 */
+  waitHints: Record<string, TranslationKey>
 }
 
 export const useChatStore = create<ChatState>(() => ({
@@ -127,6 +136,7 @@ export const useChatStore = create<ChatState>(() => ({
   sessionSaveErrors: {},
   activeId: null,
   streaming: {},
+  waitHints: {},
 }))
 
 const { getState: get, setState: set } = useChatStore
@@ -144,6 +154,47 @@ const getStreamController = (id: string) => {
   return Object.hasOwn(streams, id) ? streams[id] : undefined
 }
 
+/** 换掉/清掉某个会话的等待提示；清掉时不留空壳，组件订阅的是 key 本身 */
+const setWaitHint = (sessionId: string, key?: TranslationKey) => {
+  set((state) => {
+    if (key) {
+      return state.waitHints[sessionId] === key
+        ? {}
+        : { waitHints: { ...state.waitHints, [sessionId]: key } }
+    }
+    if (!Object.hasOwn(state.waitHints, sessionId)) {
+      return {}
+    }
+    const waitHints: Record<string, TranslationKey> = {}
+    for (const [id, hint] of Object.entries(state.waitHints)) {
+      if (id !== sessionId) {
+        waitHints[id] = hint
+      }
+    }
+    return { waitHints }
+  })
+}
+
+/** 请求发出后开始按 5s / 30s / 60s 分级提示，第一档之前完全安静 */
+const armWaitHints = (sessionId: string) => {
+  clearWaitHints(sessionId)
+  waitHintTimers.set(
+    sessionId,
+    STREAM_NOTICE_TIERS.map((tier) =>
+      setTimeout(() => setWaitHint(sessionId, tier.key), tier.afterMs)
+    )
+  )
+}
+
+/** 收到首字或本轮结束：撤下提示并停掉没到点的定时器 */
+const clearWaitHints = (sessionId: string) => {
+  for (const timer of waitHintTimers.get(sessionId) ?? []) {
+    clearTimeout(timer)
+  }
+  waitHintTimers.delete(sessionId)
+  setWaitHint(sessionId)
+}
+
 const sameSummary = (a: SessionSummary, b: SessionSummary) =>
   a.title === b.title && a.createdAt === b.createdAt && a.updatedAt === b.updatedAt
 
@@ -154,6 +205,8 @@ const pendingFiles = new Map<string, db.StoredFile[]>()
 const deletingSessions = new Set<string>()
 const deletionTasks = new Set<Promise<boolean>>()
 const streamFlushes = new Map<string, () => void>()
+/** 首字等待提示的升级定时器（按会话）：收到首字、本轮收尾或重开一轮时统一清掉 */
+const waitHintTimers = new Map<string, ReturnType<typeof setTimeout>[]>()
 let accessSequence = 0
 let historyEpoch = 0
 let initTask: Promise<void> | undefined
@@ -530,7 +583,11 @@ export const pinSession = (id: string) => {
     return
   }
   const pinnedAt = session.pinnedAt === undefined ? Date.now() : undefined
-  set((state) => ({ sessions: sortSessions(state.sessions.map((item) => item.id === id ? { ...item, pinnedAt } : item)) }))
+  set((state) => ({
+    sessions: sortSessions(
+      state.sessions.map((item) => (item.id === id ? { ...item, pinnedAt } : item))
+    ),
+  }))
   void db.pinSession(id, pinnedAt).catch(db.reportStorageError('pin session'))
 }
 
@@ -1168,6 +1225,8 @@ const streamReply = async (sessionId: string, initial: AssistantMessage, request
           controller.signal
         )
         const blockIndexes = new Map<number, number>()
+        // 请求已发出：开始算首字等待，5s / 30s / 60s 三档逐级提示
+        armWaitHints(sessionId)
         for await (const event of events) {
           receivedContent ||= event.type === 'content_block_start'
           if (
@@ -1187,6 +1246,8 @@ const streamReply = async (sessionId: string, initial: AssistantMessage, request
             (event.type === 'content_block_start' || event.type === 'content_block_delta')
           ) {
             firstTokenLogged = true
+            // 首字到了：等待提示立刻撤下，用户看到的还是同一个占位位置
+            clearWaitHints(sessionId)
             recordEvent('chat_first_token', `first token in ${Date.now() - startedAt}ms`, {
               stage: 'stream',
               durationMs: Date.now() - startedAt,
@@ -1228,6 +1289,8 @@ const streamReply = async (sessionId: string, initial: AssistantMessage, request
           ...(error instanceof ApiError && error.localMessage
             ? { 'ui.notice': error.localMessage.key }
             : { 'ui.notice': error instanceof ApiError ? error.kind : 'unknown' }),
+          // 断流等情况的原始报错原文：只进日志，界面上给固定文案
+          ...(error instanceof ApiError && error.detail ? { 'error.detail': error.detail } : {}),
           ...errorMeta(error),
         })
         void captureStateSnapshot('after-chat-error')
@@ -1279,6 +1342,8 @@ const streamReply = async (sessionId: string, initial: AssistantMessage, request
   } finally {
     titleRequests.delete(controller)
     streamFlushes.delete(sessionId)
+    // 本轮无论怎么结束，等待提示都要撤下（含用户停止与各类报错）
+    clearWaitHints(sessionId)
     cancelAnimationFrame(frame)
     updateReply(sessionId, reply)
     set((state) => ({

@@ -28,8 +28,11 @@ import type {
 /** 引用 Files API 上传的图片、调用 Anthropic 兼容 Files API 时必须携带 */
 const FILES_BETA = 'files-api-2025-04-14'
 
-/** 上游把网页当接口数据返回（路径不匹配、网关报错页等） */
-export type ApiErrorCode = 'upstream_returned_html'
+/**
+ * 上游把网页当接口数据返回（路径不匹配、网关报错页等）
+ * 流在 message_start 之后、message_stop 之前结束（连接被掐断、代理超时、读到一半报错）
+ */
+export type ApiErrorCode = 'upstream_returned_html' | 'stream_interrupted'
 
 export type ApiErrorKind =
   /** 非 2xx 响应 */
@@ -44,20 +47,45 @@ export type ApiErrorKind =
   | 'protocol'
 
 export class ApiError extends Error {
+  readonly kind: ApiErrorKind
+  readonly status?: number
+  /** 机器可读的错误码，给需要精确分支的调用方用 */
+  readonly code?: ApiErrorCode
   readonly localMessage?: TranslationMessage
+  /** 原始报错原文：只进日志与元信息，不上界面 */
+  readonly detail?: string
 
   constructor(
-    readonly kind: ApiErrorKind,
+    kind: ApiErrorKind,
     message: string | TranslationMessage,
-    readonly status?: number,
-    /** 机器可读的错误码，给需要精确分支的调用方用 */
-    readonly code?: ApiErrorCode
+    status?: number,
+    code?: ApiErrorCode,
+    detail?: string
   ) {
+    // 字段逐个赋值（不用 TS 参数属性）：单测直接在 Node 里 import 这个模块跑真代码。
     super(typeof message === 'string' ? message : translate(message.key, message.params))
     this.name = 'ApiError'
+    this.kind = kind
+    this.status = status
+    this.code = code
+    this.detail = detail
     this.localMessage = typeof message === 'string' ? undefined : message
   }
 }
+
+/**
+ * 断流：流在 message_start 之后、message_stop 之前结束，或被读到一半掐断。
+ * 与「请求没发出去」的网络错误分开：界面要明说连接中断，而不是「网络异常」。
+ * 原因不猜测，原始报错只放 detail 给日志。
+ */
+const streamInterrupted = (detail?: string): ApiError =>
+  new ApiError(
+    'interrupted',
+    { key: 'replyStreamInterrupted' },
+    undefined,
+    'stream_interrupted',
+    detail
+  )
 
 const isErrorBody = (value: unknown): value is ApiErrorBody =>
   typeof value === 'object' &&
@@ -102,7 +130,12 @@ export const request = async (url: string, init: RequestInit): Promise<Response>
     throw new ApiError('network', error instanceof Error ? error.message : String(error))
   }
   if (isHtmlResponse(response)) {
-    throw new ApiError('protocol', { key: 'upstreamReturnedHtml' }, response.status, 'upstream_returned_html')
+    throw new ApiError(
+      'protocol',
+      { key: 'upstreamReturnedHtml' },
+      response.status,
+      'upstream_returned_html'
+    )
   }
   if (!response.ok) {
     throw await readErrorResponse(response)
@@ -136,7 +169,9 @@ const sameHost = (url: string, other: string): boolean => {
  * 用户自填的中转大多只放行 x-api-key，带上会让浏览器预检失败（60010 实测）。
  */
 const needsAnthropicVersion = (spec: ProviderSpec, baseUrl: string): boolean =>
-  Boolean(spec.anthropicVersion && spec.defaults?.baseUrl && sameHost(baseUrl, spec.defaults.baseUrl))
+  Boolean(
+    spec.anthropicVersion && spec.defaults?.baseUrl && sameHost(baseUrl, spec.defaults.baseUrl)
+  )
 
 /**
  * 鉴权头完全按服务类型的 spec.auth 决定：
@@ -248,10 +283,9 @@ async function* streamOpenAIMessage(
     throw await readErrorResponse(response, 'protocol', '')
   }
   try {
-    for await (const event of translateOpenAIStream(
-      readServerSentEvents(response.body, signal),
-      { model: body.model }
-    )) {
+    for await (const event of translateOpenAIStream(readServerSentEvents(response.body, signal), {
+      model: body.model,
+    })) {
       yield event
       if (event.type === 'message_stop') {
         return
@@ -261,7 +295,11 @@ async function* streamOpenAIMessage(
     if (error instanceof OpenAIStreamError) {
       throw new ApiError('stream', error.message)
     }
-    throw error
+    if (error instanceof ApiError || signal.aborted) {
+      throw error
+    }
+    // 与 Anthropic 路径一致：读到一半断掉也是断流，原文只进日志。
+    throw streamInterrupted(error instanceof Error ? error.message : String(error))
   }
 }
 
@@ -294,32 +332,42 @@ export async function* streamMessage(
   if (!response.body || !contentType.includes('text/event-stream')) {
     throw await readErrorResponse(response, 'protocol', '')
   }
-  for await (const { event: eventName, data } of readServerSentEvents(response.body, signal)) {
-    let payload: unknown
-    try {
-      payload = JSON.parse(data)
-    } catch {
-      if (eventName !== 'error') {
+  try {
+    for await (const { event: eventName, data } of readServerSentEvents(response.body, signal)) {
+      let payload: unknown
+      try {
+        payload = JSON.parse(data)
+      } catch {
+        if (eventName !== 'error') {
+          continue
+        }
+      }
+      if (isErrorBody(payload)) {
+        throw new ApiError('stream', payload.error.message)
+      }
+      if (eventName === 'error') {
+        throw new ApiError('stream', data)
+      }
+      const event = readMessageEvent(payload)
+      if (!event) {
         continue
       }
+      yield event
+      if (event.type === 'message_stop') {
+        return
+      }
     }
-    if (isErrorBody(payload)) {
-      throw new ApiError('stream', payload.error.message)
+  } catch (error) {
+    // 上面的错误帧与中止请求已经有明确分类，原样上抛
+    if (error instanceof ApiError || signal.aborted) {
+      throw error
     }
-    if (eventName === 'error') {
-      throw new ApiError('stream', data)
-    }
-    const event = readMessageEvent(payload)
-    if (!event) {
-      continue
-    }
-    yield event
-    if (event.type === 'message_stop') {
-      return
-    }
+    // 响应体读到一半报错（连接被掐断、代理超时）：和「缺 message_stop」一样是断流，
+    // 原文只进 detail 给日志，界面用固定文案。
+    throw streamInterrupted(error instanceof Error ? error.message : String(error))
   }
-  // 服务端没有提供错误内容时保持为空，不推测断流原因。
-  throw new ApiError('interrupted', '')
+  // 流在 message_stop 之前结束了。不推测原因，只明确告诉用户是断流。
+  throw streamInterrupted()
 }
 
 /** 连通性测试结果；失败时 reason 区分非法地址、超时、网络（含跨域）、HTTP 错误、非 JSON */
@@ -333,7 +381,6 @@ export type ProviderProbeResult = {
   /** 原始错误信息（HTTP 与 JSON 情形） */
   message?: string
 }
-
 
 /**
  * 连通性测试：GET {baseUrl}{paths.models}，鉴权头按当前 spec。
@@ -361,7 +408,9 @@ export const probeProvider = async (
     if (Capacitor.isNativePlatform()) {
       const response = await Promise.race([
         CapacitorHttp.get({ url, headers }),
-        new Promise<never>((_, reject) => setTimeout(() => reject(new DOMException('Timed out', 'AbortError')), timeoutMs)),
+        new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new DOMException('Timed out', 'AbortError')), timeoutMs)
+        ),
       ])
       status = response.status
       text = typeof response.data === 'string' ? response.data : JSON.stringify(response.data ?? '')
@@ -381,7 +430,13 @@ export const probeProvider = async (
         return { ok: false, status, models: [], reason: 'html' }
       }
     }
-    const responseLike = { status, statusText, headers: { get: (name: string) => name.toLowerCase() === 'content-type' ? contentType : null } }
+    const responseLike = {
+      status,
+      statusText,
+      headers: {
+        get: (name: string) => (name.toLowerCase() === 'content-type' ? contentType : null),
+      },
+    }
     if (isHtmlResponse(responseLike as Response)) {
       return { ok: false, status, models: [], reason: 'html' }
     }

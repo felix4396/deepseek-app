@@ -18,6 +18,34 @@
   height: 34px;
 }
 
+.waitingDots {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* 首字等待的分级提示：跟在点后面，不抢正文视觉 */
+.waitingText {
+  font-size: 13px;
+  line-height: 20px;
+  color: var(--dsw-alias-label-secondary);
+}
+
+.waitingAction {
+  padding: 0;
+  border: none;
+  background: none;
+  font: inherit;
+  font-size: 13px;
+  color: var(--dsw-alias-brand-text);
+  text-decoration: none;
+  cursor: pointer;
+
+  &:hover {
+    text-decoration: underline;
+  }
+}
+
 .waitingDot {
   width: 6px;
   height: 6px;

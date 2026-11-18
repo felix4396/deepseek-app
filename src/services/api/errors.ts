@@ -11,6 +11,8 @@ export type ApiErrorCondition =
   | 'rateLimited'
   | 'serverBusy'
   | 'network'
+  /** 流已开始但没收到 message_stop：连接中断，和「请求没发出去」要分开 */
+  | 'interrupted'
   | 'other'
 
 /** 按 HTTP 状态码归类；没有状态码（请求没到达服务端）时按网络问题处理 */
@@ -37,18 +39,23 @@ export const classifyApiError = (error: unknown): ApiErrorCondition => {
   if (!(error instanceof ApiError)) {
     return 'other'
   }
+  // 断流优先：它可能带着底层报错（network error / aborted），不能并进网络问题
+  if (error.kind === 'interrupted') {
+    return 'interrupted'
+  }
   if (error.status === undefined) {
     return error.kind === 'network' ? 'network' : 'other'
   }
   return classifyStatus(error.status)
 }
 
-/** 重试可能成功的情况：网络、限流、服务端繁忙；参数或鉴权类错误重试无用 */
+/** 重试可能成功的情况：网络、断流、限流、服务端繁忙；参数或鉴权类错误重试无用 */
 export const isRetryableApiError = (error: unknown): boolean => {
   const condition = classifyApiError(error)
   return (
     !(error instanceof ApiError) ||
     condition === 'network' ||
+    condition === 'interrupted' ||
     condition === 'rateLimited' ||
     condition === 'serverBusy'
   )
