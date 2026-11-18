@@ -1,5 +1,5 @@
 import { Capacitor, CapacitorHttp, type HttpResponse } from '@capacitor/core'
-import { errorMeta, record, recordAction, recordEvent, redactUrl } from '../../diagnostics/collector.js'
+import { errorMeta, record, recordAction, recordEvent } from '../../diagnostics/collector.js'
 import { importHistory } from '../backup.js'
 import { BackupError, fail } from './errors.js'
 
@@ -282,14 +282,13 @@ const isStreamBroken = (error: unknown): boolean =>
 /** 下载失败必录：阶段 + 已下载字节 + 耗时 + 错误原文（回查「导入没反应」靠这条）。 */
 const recordDownloadFailure = (
   reason: string,
-  url: string,
+  _url: string,
   startedAt: number,
   extra: Record<string, string | number> = {},
   error?: unknown
 ) =>
   record('import_error', 'error', `import download failed: ${reason}`, {
     stage: 'download',
-    'url.path': redactUrl(url),
     durationMs: Date.now() - startedAt,
     reason,
     ...extra,
@@ -441,7 +440,6 @@ const downloadArchive = async (
   const startedAt = Date.now()
   recordEvent('import_stage', 'import: download archive', {
     stage: 'download',
-    'url.path': redactUrl(url),
   })
   const chunks: Uint8Array<ArrayBuffer>[] = []
   let downloaded = 0
@@ -565,12 +563,11 @@ export const importHistoryFromUrl = async (
     record('import_error', 'error', 'import rejected: invalid url', {
       correlationId,
       stage: 'validate',
-      'url.path': redactUrl(link),
       'error.msg': 'invalid http(s) url',
     })
     fail('historyImportUrlInvalid')
   }
-  recordAction('import_start', 'import-history-url', { correlationId, source: 'url', 'url.path': redactUrl(link) })
+  recordAction('import_start', 'import-history-url', { correlationId, source: 'url' })
   const startedAt = Date.now()
   const trace = options.onTrace
   const emit = (entry: Omit<ImportTraceEntry, 'at'>) => trace?.({ at: Date.now() - startedAt, ...entry })
@@ -626,8 +623,7 @@ export const importHistoryFromUrl = async (
       record('warning', 'warn', 'import cancelled by user', {
         correlationId,
         stage: 'url-import',
-        'url.path': redactUrl(link),
-      })
+        })
       emit({ kind: 'cancel' })
       throw error instanceof UrlImportCancelled ? error : new UrlImportCancelled()
     }

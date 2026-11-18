@@ -1056,14 +1056,26 @@ const installCapacitorHttpHook = (): void => {
 const LONG_TASK_TICK_MS = 100
 const LONG_TASK_THRESHOLD_MS = 150
 let watchdogTimer: ReturnType<typeof setInterval> | null = null
+let longTaskPaused = false
+let visibilityGeneration = 0
 
 const installLongTaskHook = (): void => {
   if (typeof setInterval !== 'function' || watchdogTimer) {
     return
   }
   let expected = Date.now() + LONG_TASK_TICK_MS
+  let generation = visibilityGeneration
   watchdogTimer = setInterval(() => {
     const now = Date.now()
+    if (generation !== visibilityGeneration) {
+      generation = visibilityGeneration
+      expected = now + LONG_TASK_TICK_MS
+      return
+    }
+    if (longTaskPaused || (typeof document !== 'undefined' && document.visibilityState === 'hidden')) {
+      expected = now + LONG_TASK_TICK_MS
+      return
+    }
     const lag = now - expected
     expected = now + LONG_TASK_TICK_MS
     if (lag >= LONG_TASK_THRESHOLD_MS) {
@@ -1082,6 +1094,8 @@ const installVisibilityHook = (): void => {
   }
   document.addEventListener('visibilitychange', () => {
     const hidden = document.visibilityState === 'hidden'
+    longTaskPaused = hidden
+    visibilityGeneration += 1
     recordAction(hidden ? 'app_pause' : 'app_resume', hidden ? 'app-pause' : 'app-resume', {
       stage: 'visibility',
     })
