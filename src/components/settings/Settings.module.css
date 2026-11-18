@@ -300,6 +300,11 @@
   display: none;
 }
 
+.modelCellOpen {
+  position: relative;
+  z-index: 50;
+}
+
 .modelPicker {
   position: relative;
   z-index: 20;
