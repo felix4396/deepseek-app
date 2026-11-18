@@ -15,7 +15,17 @@ export type ChatMode = 'fast' | 'expert'
 export type ThemePreference = 'light' | 'dark' | 'system'
 
 /**
- * 本机设置，存 localStorage：语言、主题、位置、朗读音色、快速/专家模式（= 深度思考档位）、智能搜索开关、侧边栏收起状态。
+ * 思考过程（reasoning / think 内容）的显示方式，与「深度思考」开关是两件事：
+ * 那个开关决定要不要思考，这里决定思考内容怎么呈现。
+ * - collapsed：只留一行「已思考（用时 N 秒）」，点开才渲染正文（默认）
+ * - expanded：默认展开（旧的观感）
+ * - hidden：思考内容完全不渲染，也不占位
+ */
+export type ThinkingDisplay = 'collapsed' | 'expanded' | 'hidden'
+
+/**
+ * 本机设置，存 localStorage：语言、主题、位置、朗读音色、快速/专家模式（= 深度思考档位）、
+ * 思考过程显示方式、智能搜索开关、侧边栏收起状态。
  * API Key 不再单独存放，改由 providers.ts 的模型服务配置管理（旧 chat-demo:api-key 仅用于迁移）。
  */
 type Settings = {
@@ -26,6 +36,7 @@ type Settings = {
   chatMode: ChatMode
   /** 深度思考开关的镜像值，恒等于 chatMode === 'expert'；留着是为了不改读它的旧代码 */
   thinking: boolean
+  thinkingDisplay: ThinkingDisplay
   search: boolean
   siderCollapsed: boolean
 }
@@ -37,6 +48,7 @@ const KEYS = {
   ttsVoice: 'chat-demo:tts-voice',
   chatMode: 'chat-demo:chat-mode',
   thinking: 'chat-demo:thinking',
+  thinkingDisplay: 'chat-demo:thinking-display',
   search: 'chat-demo:search',
   siderCollapsed: 'chat-demo:sider-collapsed',
 } as const
@@ -95,6 +107,12 @@ const initialThemePreference = (): ThemePreference => {
   return saved === 'light' || saved === 'dark' ? saved : 'system'
 }
 
+/** 思考过程默认折叠；脏值回落折叠，不把非法值渲染出去 */
+const initialThinkingDisplay = (): ThinkingDisplay => {
+  const saved = read(KEYS.thinkingDisplay)
+  return saved === 'expanded' || saved === 'hidden' || saved === 'collapsed' ? saved : 'collapsed'
+}
+
 /** 未保存过时使用服务端默认音色 stella（海星） */
 const initialTtsVoice = (): TtsVoice => (read(KEYS.ttsVoice) === 'tide' ? 'tide' : 'stella')
 
@@ -116,6 +134,7 @@ export const useSettings = create<Settings>(() => {
     ttsVoice: initialTtsVoice(),
     chatMode,
     thinking: chatMode === 'expert',
+    thinkingDisplay: initialThinkingDisplay(),
     search: read(KEYS.search) === 'true',
     siderCollapsed: read(KEYS.siderCollapsed) === 'true',
   }
@@ -155,6 +174,11 @@ export const setChatMode = (chatMode: ChatMode) => {
 
 /** 输入行的「深度思考」开关与模式是同一件事，点它等于切模式 */
 export const setThinking = (thinking: boolean) => setChatMode(thinking ? 'expert' : 'fast')
+
+export const setThinkingDisplay = (thinkingDisplay: ThinkingDisplay) => {
+  write(KEYS.thinkingDisplay, thinkingDisplay)
+  useSettings.setState({ thinkingDisplay })
+}
 
 export const setSearch = (search: boolean) => {
   write(KEYS.search, String(search))

@@ -32,6 +32,8 @@ import { Tooltip } from '../base/Tooltip.js'
 import { Markdown } from '../markdown/Markdown.js'
 import { SiteThumbnails } from '../search/SiteLogo.js'
 import { toggleSearchPanel, useSearchPanel } from '../search/searchPanelState.js'
+import { useSettings } from '../../services/settings.js'
+import { hasThinkingContent, resolveThinkingLayout, selectVisibleSteps } from './thinkingDisplay.js'
 import styles from './ReplyArea.module.css'
 import './thinking.markdown.css'
 
@@ -65,37 +67,49 @@ export const ReplyArea = memo(function ReplyArea({
   hasResponse: boolean
 }) {
   useTranslate()
-  const [open, setOpen] = useState(true)
+  // 思考过程怎么呈现由设置决定（默认折叠）；展开状态只留在组件内，不写回设置。
+  const thinkingDisplay = useSettings((state) => state.thinkingDisplay)
+  const [opened, setOpened] = useState<boolean | null>(null)
   const titleActive = streaming && !hasResponse
   useTicker(titleActive, 1000)
-  if (view.steps.length === 0 && !(message.thinking && streaming)) {
+  // 未记录请求开关时，按是否有思考内容显示标题。
+  const thinking = hasThinkingContent(message.thinking, view.steps)
+  const layout = resolveThinkingLayout({
+    mode: thinkingDisplay,
+    hasThinking: thinking,
+    streaming,
+    hasResponse,
+    open: opened,
+  })
+  const steps = selectVisibleSteps(view.steps, layout)
+  if (steps.length === 0 && !layout.showTitle && !(thinking && streaming)) {
     return null
   }
-  // 未记录请求开关时，按是否有思考内容显示标题。
-  const thinking = message.thinking ?? view.steps.some((step) => step.type === 'thinking')
-  const title = thinking ? getAreaTitle(view, streaming, Date.now(), hasResponse) : null
+  const title = layout.showTitle ? getAreaTitle(view, streaming, Date.now(), hasResponse) : null
   const stopped = !streaming && !hasResponse
+  // 折叠档：正文不挂 DOM（不是渲染后再隐藏）；隐藏档：思考块已被剔除，工具/过程行照旧渲染。
+  const renderSteps = layout.showSteps || layout.dropThinkingSteps
   return (
     <div className={styles.area}>
       {title ? (
-        <div className={styles.title} onClick={() => setOpen((value) => !value)}>
+        <div className={styles.title} onClick={() => setOpened(!layout.showSteps)}>
           <span className={clsx(styles.titleIcon, stopped && styles.stoppedIcon)}>
             <IconThinkOutline16 />
           </span>
           <span className={clsx(styles.titleText, titleActive && styles.shimmer)}>{title}</span>
-          {open ? <IconChevronDownOutline14 /> : <IconChevronRightOutline14 />}
+          {layout.showSteps ? <IconChevronDownOutline14 /> : <IconChevronRightOutline14 />}
         </div>
       ) : null}
-      {open || !title ? (
+      {renderSteps ? (
         <div className={styles.steps}>
-          {view.steps.map((step, index) => (
+          {steps.map((step, index) => (
             <StepItem
               key={stepKey(step, index)}
               step={step}
               message={message}
               sources={view.sources}
               streaming={streaming}
-              isLast={index === view.steps.length - 1}
+              isLast={index === steps.length - 1}
             />
           ))}
         </div>

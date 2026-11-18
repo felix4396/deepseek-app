@@ -28,9 +28,11 @@ import { useChatStore } from '../../services/chat/store.js'
 import {
   setLocale,
   setThemePreference,
+  setThinkingDisplay,
   setTtsVoice,
   useSettings,
   type ThemePreference,
+  type ThinkingDisplay,
 } from '../../services/settings.js'
 import { useTranslate, type TranslationKey, type TranslationMessage } from '../../i18n/index.js'
 import { Button } from '../base/Button.js'
@@ -119,6 +121,7 @@ const SettingsContent = ({ visible }: { visible: boolean }) => {
               <ThemeSetting />
               <LocaleSetting />
               <TtsVoiceSetting />
+              <ThinkingDisplaySetting />
               <AppUpdateField />
               {/* 「位置信息」已从设置页移除（1.4.0-beta.1）：location 仍在 store 里读取，
                   只用于 latest_reminder 快照，界面上不再暴露入口。 */}
@@ -277,6 +280,39 @@ const LocaleSetting = () => {
             { value: 'en-US', label: t('settingsLocaleEnUS'), lang: 'en' },
           ]}
           onChange={setLocale}
+        />
+      }
+    />
+  )
+}
+
+/**
+ * 思考过程显示方式：折叠（默认）/ 展开 / 不显示。
+ * 与输入框上的「深度思考」开关是两件事——那个决定要不要思考，这里决定思考内容怎么呈现。
+ */
+const thinkingDisplayOptions: { value: ThinkingDisplay; label: TranslationKey }[] = [
+  { value: 'collapsed', label: 'settingDialogThinkingDisplayCollapsed' },
+  { value: 'expanded', label: 'settingDialogThinkingDisplayExpanded' },
+  { value: 'hidden', label: 'settingDialogThinkingDisplayHidden' },
+]
+
+const ThinkingDisplaySetting = () => {
+  const t = useTranslate()
+  const thinkingDisplay = useSettings((state) => state.thinkingDisplay)
+  return (
+    <SettingCell
+      label={t('settingDialogThinkingDisplayLabel')}
+      description={t('settingDialogThinkingDisplayDescription')}
+      status={null}
+      action={
+        <Select
+          ariaLabel={t('settingDialogThinkingDisplayLabel')}
+          value={thinkingDisplay}
+          options={thinkingDisplayOptions.map((option) => ({
+            value: option.value,
+            label: t(option.label),
+          }))}
+          onChange={setThinkingDisplay}
         />
       }
     />

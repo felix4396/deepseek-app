@@ -509,4 +509,10 @@ export const en = {
   oursDeviceBackupHintOk: 'Got it',
   oursInviteErrApplyRateLimited: 'Too many claims today, try again tomorrow',
   oursInviteErrAlreadyClaimed: 'This device already claimed a key and cannot claim again',
+  // Issue #46: thinking display mode
+  settingDialogThinkingDisplayLabel: 'Thinking process',
+  settingDialogThinkingDisplayDescription: 'How thinking content appears in messages when deep thinking is on. Switching applies to already open chats immediately.',
+  settingDialogThinkingDisplayCollapsed: 'Collapsed',
+  settingDialogThinkingDisplayExpanded: 'Expanded',
+  settingDialogThinkingDisplayHidden: 'Hidden',
 } satisfies Record<keyof typeof zh, string>

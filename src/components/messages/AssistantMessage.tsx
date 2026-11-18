@@ -21,6 +21,7 @@ import { SiteThumbnails } from '../search/SiteLogo.js'
 import { toggleSearchPanel, useSearchPanel } from '../search/searchPanelState.js'
 import { ReadAloudButton } from './ReadAloudButton.js'
 import { CopyButton } from './CopyButton.js'
+import { useSettings } from '../../services/settings.js'
 import { ReplyArea } from './ReplyArea.js'
 import { useReplyView } from './useReplyView.js'
 import {
@@ -60,7 +61,12 @@ export const AssistantMessage = memo(function AssistantMessage({
     .filter(Boolean)
     .join('\n\n')
   const copyText = responseText || notice?.text
-  const waiting = streaming && view.steps.length === 0 && !view.answer && !message.thinking
+  // 思考过程设为「完全不显示」时，思考期间回复区是空的：这里补回等待圆点，避免一片空白。
+  const thinkingHidden = useSettings((state) => state.thinkingDisplay) === 'hidden'
+  const waiting =
+    streaming &&
+    !view.answer &&
+    (thinkingHidden || (view.steps.length === 0 && !message.thinking))
   // 首字等待的分级提示：等得越久说得越清楚，最高档给出停止入口（停完就能重新生成）
   const waitHint = useChatStore((state) => state.waitHints[sessionId])
   const waitNotice = waitHint ? t(waitHint) : ''
