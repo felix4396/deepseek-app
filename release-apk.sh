@@ -96,7 +96,9 @@ usage(){
     --internal | --standard --internal = pnpm build:internal（内测），--standard = pnpm build（对外，缺省）
 
   选项:
-    --skip-tests     跳过门禁 4/5/6（unit/integration/e2e）；CHANGELOG 与 Release notes 留痕 [未过门禁]
+    --skip-upstream-e2e  只跳过门禁第 6 项里的【真实模型上游】e2e（发布后补测）；
+                         unit/integration/反馈上传 e2e 照跑；CHANGELOG 与 Release notes 会写明待补测
+    --skip-tests     全量跳过门禁 4/5/6（unit/integration/e2e）——正常发版不要用，留痕 [未过门禁]
     --dry-run        只打印九步计划：不改文件、不 commit、不构建、不上传、不 push、不打 tag
     --no-push        只发布到 dl.rose7.cn，不 push commit / 不打 tag（别名 --no-github）
     --wait-release [秒]  tag 推送后最多等待 N 秒（默认 90）看 workflow 是否建好 GitHub Release
@@ -114,7 +116,7 @@ USAGE
 }
 
 # ---------------------------------------------------------------- 参数
-SKIP_TESTS=0; DRY_RUN=0; NO_PUSH=0; WAIT_RELEASE=0; BUILD_TYPE=''
+SKIP_TESTS=0; SKIP_UPSTREAM_E2E=0; DRY_RUN=0; NO_PUSH=0; WAIT_RELEASE=0; BUILD_TYPE=''
 ARGS=()
 set -- "$@"
 while (( $# )); do
@@ -122,6 +124,7 @@ while (( $# )); do
     --internal) BUILD_TYPE=internal ;;
     --standard) BUILD_TYPE=standard ;;
     --skip-tests) SKIP_TESTS=1 ;;
+    --skip-upstream-e2e) SKIP_UPSTREAM_E2E=1 ;;
     --dry-run) DRY_RUN=1 ;;
     --no-push|--no-github) NO_PUSH=1 ;;
     --wait-release) WAIT_RELEASE=90
@@ -144,6 +147,11 @@ if [[ -z ${BUILD_TYPE} ]]; then BUILD_TYPE=standard; warn '  ! 未指定 --inter
 TAG="${TAG_PREFIX}${VER}"
 TITLE_SUFFIX=''
 if (( SKIP_TESTS )); then TITLE_SUFFIX=' [未过门禁]'; fi
+if (( SKIP_UPSTREAM_E2E )); then TITLE_SUFFIX="${TITLE_SUFFIX} [上游e2e待补测]"; fi
+if (( SKIP_TESTS && SKIP_UPSTREAM_E2E )); then die '--skip-tests 与 --skip-upstream-e2e 不能同时用：要发版就用 --skip-upstream-e2e'; fi
+UPSTREAM_NOTE='说明：真实模型上游测试待发布后补测（本次未跑真上游 e2e；unit/integration/反馈上传 e2e 均已跑）'
+CHANGES_ALL=("${CHANGES[@]}")
+if (( SKIP_UPSTREAM_E2E )); then CHANGES_ALL+=("${UPSTREAM_NOTE}"); fi
 DATE_STR=$(TZ=Asia/Shanghai date +%F)
 STATE_FILE="${DL_STATE_DIR}/${VER}.json"
 
@@ -180,12 +188,13 @@ write_state(){
   mkdir -p "${DL_STATE_DIR}"
   python3 - "${STATE_FILE}" "${VER}" "${NEW_VC:-0}" "${COMMIT_SHA:-}" "${APK_MD5:-}" "${APK_SIZE:-0}" \
            "${DL_STATUS:-none}" "${DL_URL:-}" "${DL_MD5:-}" "${TAG_STATUS:-none}" "${GH_STATUS:-none}" \
-           "${phase}" "${SKIP_TESTS}" <<'PY'
+           "${phase}" "${SKIP_TESTS}" "${SKIP_UPSTREAM_E2E}" <<'PY'
 import json,sys,datetime
-(p,ver,vc,sha,md5,size,dl,url,dlmd5,tag,gh,phase,skip)=sys.argv[1:]
+(p,ver,vc,sha,md5,size,dl,url,dlmd5,tag,gh,phase,skip,skipup)=sys.argv[1:]
 d={"version":ver,"versionCode":int(vc or 0),"commit":sha or "","apk":{"md5":md5 or "","size":int(size or 0)},
    "dl":{"status":dl,"url":url or "","md5":dlmd5 or "","endpoint":"api/v1/release"},
    "tag":{"status":tag},"githubRelease":{"status":gh},"skipTests":bool(int(skip)),
+   "skipUpstreamE2E":bool(int(skipup)),
    "phase":phase,"updatedAt":datetime.datetime.now().astimezone().isoformat(timespec="seconds")}
 json.dump(d,open(p,"w",encoding="utf-8"),ensure_ascii=False,indent=2)
 PY
@@ -255,7 +264,9 @@ if (( RESUME_SAME )); then VC_DESC="${GVVC}（续用，不递增）"; else VC_DE
 if (( DRY_RUN )); then
   if [[ ! ${VER} =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$ ]]; then die "版本号必须形如 1.5.0 或 1.5.0-beta.1，收到: ${VER}"; fi
   if [[ ${BUILD_TYPE} == internal ]]; then WEB_CMD='heavy-run pnpm build:internal'; else WEB_CMD='heavy-run pnpm build'; fi
-  if (( SKIP_TESTS )); then GATE_DESC='九项中 4/5/6 跳过（--skip-tests，留痕 [未过门禁]）'; else GATE_DESC='九项全跑（第 6 项需 E2E_API_KEY，否则缺证阻断）'; fi
+  if (( SKIP_TESTS )); then GATE_DESC='九项中 4/5/6 全跳过（--skip-tests，留痕 [未过门禁]；正常发版别用）'
+  elif (( SKIP_UPSTREAM_E2E )); then GATE_DESC='第 6 项只跳过真实模型上游 e2e（--skip-upstream-e2e），反馈上传 e2e 与 4/5 照跑，留痕 [上游e2e待补测]'
+  else GATE_DESC='九项全跑（第 6 项需 E2E_API_KEY，否则缺证阻断；可改用 --skip-upstream-e2e 延后补测）'; fi
   printf '\n\033[1;33m[dry-run] 发布演练：不改文件 / 不 commit / 不构建 / 不上传 / 不 push / 不打 tag\033[0m\n'
   printf '  版本          %s\n' "${VER}"
   printf '  构建类型      %s（%s）\n' "${BUILD_TYPE}" "${WEB_CMD}"
@@ -265,6 +276,10 @@ if (( DRY_RUN )); then
   printf '  远端基线      releases.json latest=%s versionCode=%s%s\n' "${REMOTE_VER}" "${REMOTE_VC}" "$([[ ${REMOTE_OK} == 1 ]] || echo '（读取失败，将降级）')"
   printf '  续发判断      %s\n' "$([[ ${SAME_ARTIFACT} == 1 ]] && echo '同 artifact 已上传 → 会跳过构建与上传，只补 tag/Release' || echo '新 artifact → 走完整流程')"
   printf '  CHANGELOG     将插入: ## %s (%s) — %s%s\n' "${VER}" "${DATE_STR}" "${SHORT}" "${TITLE_SUFFIX}"
+  if (( SKIP_UPSTREAM_E2E )); then
+    printf '  待补测说明     %s\n' "${UPSTREAM_NOTE}"
+    printf '                （会同时写进 CHANGELOG 列表、dl releases.json 的 changes、workflow 生成的 Release notes）\n'
+  fi
   printf '  上传          POST %s（Bearer %s，multipart apk+meta）\n' "${DL_API_URL}" \
     "$([[ -n ${DL_RELEASE_TOKEN:-} ]] && echo '来自 $DL_RELEASE_TOKEN' || echo "${DL_TOKEN_FILE}")"
   printf '  令牌          %s\n' "$([[ -n ${DL_RELEASE_TOKEN:-} ]] && echo 'env DL_RELEASE_TOKEN（值不打印）' || echo "${DL_TOKEN_FILE}（值不打印）")"
@@ -290,6 +305,7 @@ fi
 step "1/9 门禁 preflight"
 PF_ARGS=(--planned-version "${VER}" --planned-versioncode "${NEW_VC}")
 if (( SKIP_TESTS )); then PF_ARGS+=(--skip-tests); fi
+if (( SKIP_UPSTREAM_E2E )); then PF_ARGS+=(--skip-upstream-e2e); fi
 if (( RESUME_SAME )); then PF_ARGS+=(--allow-same-version); fi
 info "./preflight.sh ${PF_ARGS[*]}"
 if ! "${PREFLIGHT}" "${PF_ARGS[@]}"; then
@@ -334,7 +350,7 @@ info "versionCode ${VC_DESC}；versionName ${NEW_VN_DESC}"
 
 # ---------------------------------------------------------------- 4) CHANGELOG
 step "4/9 写 ${CHANGELOG_REL}"
-if ! python3 - "${CHANGELOG}" "${VER}" "${DATE_STR}" "${TITLE_SUFFIX}" "${CHANGES[@]}" <<'PY'
+if ! python3 - "${CHANGELOG}" "${VER}" "${DATE_STR}" "${TITLE_SUFFIX}" "${CHANGES_ALL[@]}" <<'PY'
 import re,sys
 path,ver,date,suffix=sys.argv[1],sys.argv[2],sys.argv[3],sys.argv[4]
 changes=sys.argv[5:]
@@ -407,7 +423,7 @@ if (( SAME_ARTIFACT )); then
   info "同 artifact 已在 dl 上（md5 ${STATE_DL_MD5:0:8}… 与本地一致），跳过重复上传"
   DL_STATUS=ok; DL_URL=$(state_get 'd["dl"]["url"]'); DL_MD5=${STATE_DL_MD5}; DL_DONE=1
 else
-  META_JSON=$(python3 - "${VER}" "${NEW_VC}" "${CHANGES[@]}" <<'PY'
+  META_JSON=$(python3 - "${VER}" "${NEW_VC}" "${CHANGES_ALL[@]}" <<'PY'
 import json,sys
 ver,vc=sys.argv[1],int(sys.argv[2]); changes=sys.argv[3:]
 bt="prerelease" if any(t in ver for t in ("-alpha","-beta","-rc")) else "stable"
@@ -548,6 +564,7 @@ step "9/9 汇总（dl 与 GitHub 非原子，按“部分成功”读）"
 printf '\n发布汇总 %s\n' "${VER}"
 printf '  构建 %s   versionCode %s   commit %s\n' "${BUILD_TYPE}" "${NEW_VC}" "${COMMIT_SHA:0:8}"
 (( SKIP_TESTS )) && printf '⚠️  --skip-tests：门禁 4/5/6 未跑（CHANGELOG 已标 [未过门禁]）\n'
+(( SKIP_UPSTREAM_E2E )) && printf '⚠️  真实模型上游 e2e 延后补测（反馈上传 e2e 已跑；CHANGELOG/Release notes 已写明）\n'
 printf '✅ dl.rose7.cn   %s（md5 %s 已核对，接口 server-side 校验通过）\n' "${DL_URL:-$DL_SITE/apk/deepseek-chat-${VER}.apk}" "${DL_MD5:0:8}"
 case ${TAG_STATUS} in
   pushed)     printf '✅ tag         %s → %s 已推送\n' "${TAG}" "${COMMIT_SHA:0:8}" ;;

@@ -33,6 +33,8 @@ DRY_RUN=0
 PLANNED_VER=''
 PLANNED_VC=''
 ALLOW_SAME=0
+SKIP_UPSTREAM=0          # 仅跳过“真实模型上游”e2e（4/5 与反馈上传 e2e 照跑）
+E2E_UPSTREAM_MATCH=${E2E_UPSTREAM_MATCH:-real-upstream}   # 上游用例文件名匹配子串
 
 usage() {
   cat <<'USAGE'
@@ -44,6 +46,8 @@ usage() {
   --dry-run                 只打印将执行什么，不真跑
   --planned-version <x.y.z> 发布预演：第 7 项按「versionName=<x.y.z>」评估
   --planned-versioncode <n> 配合 --planned-version：直接用 n 作为待发布 versionCode
+  --skip-upstream-e2e       仅跳过第 6 项里【真实模型上游】e2e（需延后补测），
+                            unit/integration/反馈上传 e2e 仍照跑；会留痕
   --allow-same-version      同版本续发：允许 planned versionCode == 远端 latest 且版本号相同
                             （release-apk.sh 发现同 artifact 续发时自动透传）
   -h, --help                显示本帮助
@@ -61,6 +65,7 @@ while (( $# )); do
     --planned-versioncode) shift; PLANNED_VC=${1:-}; [[ ${PLANNED_VC} =~ ^[0-9]+$ ]] || { usage >&2; printf 'ERROR: --planned-versioncode 需要数字\n' >&2; exit 2; } ;;
     --planned-versioncode=*) PLANNED_VC=${1#*=} ;;
     --allow-same-version) ALLOW_SAME=1 ;;
+    --skip-upstream-e2e) SKIP_UPSTREAM=1 ;;
     -h|--help) usage; exit 0 ;;
     *) usage >&2; printf 'ERROR: 未知参数 %s\n' "$1" >&2; exit 2 ;;
   esac
@@ -159,6 +164,15 @@ if (( SKIP_TESTS )); then
   printf '!!  留痕要求：CHANGELOG 版本标题会带 " [未过门禁]"，Release notes 也   !!\n'
   printf '!!  会注明；请在发布说明里写清跳过原因。                              !!\n'
   printf '!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\n'
+  printf '%s' "${C_OFF}"
+fi
+if (( SKIP_UPSTREAM )); then
+  printf '\n%s' "${C_YEL}"
+  printf '%s\n' '----------------------------------------------------------------------'
+  printf '!!  --skip-upstream-e2e：只跳过【真实模型上游】e2e（发布后补测）       !!\n'
+  printf '!!  unit / integration / 反馈上传 e2e 仍然照跑；CHANGELOG 与 Release  !!\n'
+  printf '!!  notes 会写明“真实模型上游测试待发布后补测”。                      !!\n'
+  printf '%s\n' '----------------------------------------------------------------------'
   printf '%s' "${C_OFF}"
 fi
 if (( DRY_RUN )); then
@@ -268,27 +282,53 @@ else
 fi
 
 # ---------------------------------------------------------------- 6) e2e
-item 6 "e2e 真上游测试"
+item 6 "e2e（反馈上传必跑 + 真上游模型）"
+E2E_DIR=${E2E_DIR:-tests/e2e}
+e2e_runner(){  # <--only 参数>  → 跑分层 runner 的 e2e 层
+  if [[ -n ${E2E_CMD:-} ]]; then bash -c "${E2E_CMD}"; return $?; fi
+  if has_script test:e2e; then node tests/run-layer.mjs e2e "$@"; return $?; fi
+  return 127
+}
 if (( SKIP_TESTS )); then
-  verdict SKIP "被 --skip-tests 跳过（未验证）"
+  verdict SKIP "被 --skip-tests 全量跳过（未验证；正常发版不要用它，改用 --skip-upstream-e2e）"
 elif (( DRY_RUN )); then
-  if [[ -z ${E2E_API_KEY:-} ]]; then plan "检测 E2E_API_KEY → 未设置将 FAIL（缺证阻断；显式 --skip-tests 才可跳过并留痕）"
-  elif [[ -n ${E2E_CMD:-} ]]; then plan "${E2E_CMD}"
-  elif has_script test:e2e; then plan "npm run test:e2e"; else plan "node tests/e2e-real-upstream.spec.mjs"; fi
+  plan "反馈上传/其它 e2e（必须跑并必须过）：遍历 ${E2E_DIR}/*.test.mjs，排除 *${E2E_UPSTREAM_MATCH}*，逐个 node tests/run-layer.mjs e2e --only <用例>"
+  if (( SKIP_UPSTREAM )); then plan "真实模型上游 e2e：SKIP（--skip-upstream-e2e → 发布后补测，会留痕）"
+  elif [[ -z ${E2E_API_KEY:-} ]]; then plan "真实模型上游 e2e：缺 E2E_API_KEY → FAIL（或用 --skip-upstream-e2e 明确延后补测）"
+  else plan "真实模型上游 e2e：node tests/run-layer.mjs e2e --only ${E2E_UPSTREAM_MATCH}"; fi
   verdict PLANNED
 else
-  if [[ -z ${E2E_API_KEY:-} ]]; then
-    verdict FAIL "缺 E2E_API_KEY：真上游 + 真前端链路没有任何证据，不能算完整通过" \
-      'export E2E_API_KEY=sk-xxx 后重跑；确需带病发版必须显式 --skip-tests（CHANGELOG/Release notes 会留痕 [未过门禁]）'
+  UPLOAD_OK=1; RAN_UPLOAD=''; FAILED_CASE=''
+  if [[ ! -d ${E2E_DIR} ]]; then
+    verdict FAIL "找不到 e2e 目录 ${E2E_DIR}：反馈上传 e2e 无法运行（缺证据）" "确认 tests/e2e/ 存在，或用 E2E_DIR 指到正确目录"
   else
-    if [[ -n ${E2E_CMD:-} ]]; then E2E_RUN=(bash -c "${E2E_CMD}"); E2E_DESC="E2E_CMD: ${E2E_CMD}"
-    elif has_script test:e2e; then E2E_RUN=(npm run test:e2e); E2E_DESC='npm run test:e2e'
-    else E2E_RUN=(node tests/e2e-real-upstream.spec.mjs); E2E_DESC='node tests/e2e-real-upstream.spec.mjs（降级）'; fi
-    if run_logged e2e "${E2E_DESC}" "${E2E_RUN[@]}"; then verdict PASS "${E2E_DESC}"
-    else show_tail; verdict FAIL "${E2E_DESC} 失败（有 key 就说明真上游/真前端链路有问题）" '三步定位：1) curl 探针 GET $E2E_UPSTREAM_URL/v1/models 2) 检查 SSE 是否 flush 3) 前端解析；临时绕道只能 --skip-tests（要留痕）'; fi
+    for f in ${E2E_DIR}/*.test.mjs; do
+      [[ -e ${f} ]] || continue
+      bn=$(basename "${f}" .test.mjs)
+      case ${bn} in *"${E2E_UPSTREAM_MATCH}"*) continue;; esac
+      RAN_UPLOAD="${RAN_UPLOAD} ${bn}"
+      if ! run_logged "e2e_${bn//[^A-Za-z0-9_.-]/_}" "e2e --only ${bn}" bash -c "node tests/run-layer.mjs e2e --only '${bn}'"; then
+        UPLOAD_OK=0; FAILED_CASE=${bn}; break
+      fi
+    done
+    if (( UPLOAD_OK == 0 )); then
+      show_tail
+      verdict FAIL "e2e 用例 ${FAILED_CASE} 失败（反馈上传类 e2e 是必跑项）" "复跑：node tests/run-layer.mjs e2e --only ${FAILED_CASE}"
+    elif (( SKIP_UPSTREAM )); then
+      verdict SKIP "反馈上传等 e2e 已通过（${RAN_UPLOAD# }）；真实模型上游 e2e 按 --skip-upstream-e2e 跳过 → **待发布后补测**（写进 CHANGELOG/Release notes）"
+    elif [[ -z ${E2E_API_KEY:-} ]]; then
+      verdict FAIL "缺 E2E_API_KEY：真实模型上游 e2e 无证据（反馈上传 e2e ${RAN_UPLOAD# } 已通过）" \
+        'export E2E_API_KEY=sk-xxx 后重跑；若明确接受“发布后补测”，用 --skip-upstream-e2e（会留痕），不要用 --skip-tests'
+    else
+      if run_logged e2e_upstream "e2e --only ${E2E_UPSTREAM_MATCH}" bash -c "node tests/run-layer.mjs e2e --only '${E2E_UPSTREAM_MATCH}'"; then
+        verdict PASS "上传类 e2e（${RAN_UPLOAD# }）+ 真实模型上游 e2e 全部通过"
+      else
+        show_tail
+        verdict FAIL "真实模型上游 e2e 失败" '三步定位：1) curl $E2E_UPSTREAM_URL/v1/models 2) SSE 是否 flush 3) 前端解析；确属上游不可用再考虑 --skip-upstream-e2e（留痕）'
+      fi
+    fi
   fi
 fi
-
 # ---------------------------------------------------------------- 7) 版本号递增
 item 7 "版本号递增校验"
 LVC=$(gradle_versioncode); LVN=$(gradle_versionname)
@@ -417,6 +457,8 @@ if (( DRY_RUN )); then
   printf '\n%s✅ dry-run 结束：上面就是完整九项计划（没有任何检查被真正执行）%s\n' "${C_CYN}" "${C_OFF}"
 elif (( SKIP_TESTS )); then
   printf '\n%s⚠️  通过（但 --skip-tests 生效：4/5/6 未验证，CHANGELOG 会标 [未过门禁]）%s\n' "${C_YEL}" "${C_OFF}"
+elif (( SKIP_UPSTREAM )); then
+  printf '\n%s✅ 门禁通过（真实模型上游 e2e 延后补测，其余含反馈上传 e2e 已跑）%s\n' "${C_YEL}" "${C_OFF}"
 elif (( NS > 0 )); then
   printf '\n✅ 门禁通过（%d 项 SKIP：见上表，通常是测试目标缺失或旧 APK 待重建）\n' "${NS}"
 else

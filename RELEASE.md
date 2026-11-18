@@ -39,7 +39,8 @@
 | `<版本号>` | ✅ | `x.y.z` 或 `x.y.z-beta.1` |
 | `"变更1" ...` | ✅ | 至少一条：写进 CHANGELOG、dl 的 `releases.json`、workflow 生成的 Release notes |
 | `--internal` / `--standard` | 二选一 | 不给默认 `--standard` 并告警 |
-| `--skip-tests` | ❌ | 跳过门禁 4/5/6，**留痕** `[未过门禁]` |
+| `--skip-upstream-e2e` | ❌ | **只**跳过门禁第 6 项里的「真实模型上游」e2e（发布后补测）；unit/integration/**反馈上传 e2e 照跑**；留痕 `[上游e2e待补测]` |
+| `--skip-tests` | ❌ | 全量跳过门禁 4/5/6 —— **正常发版禁止使用**，留痕 `[未过门禁]` |
 | `--dry-run` | ❌ | 只打印九步计划，零副作用 |
 | `--no-push` | ❌ | 只发 dl，不 push/不打 tag（别名 `--no-github`） |
 | `--wait-release [秒]` | ❌ | tag 推送后最多等 N 秒（默认 90）看 workflow 是否建好 Release（只观察，不创建） |
@@ -48,7 +49,7 @@
 
 | 步 | 动作 | 失败处理 |
 | --- | --- | --- |
-| 1 | `./preflight.sh --planned-version <ver> --planned-versioncode <vc>`（透传 `--skip-tests` / `--allow-same-version`） | **中止，不碰任何文件** |
+| 1 | `./preflight.sh --planned-version <ver> --planned-versioncode <vc>`（透传 `--skip-upstream-e2e` / `--skip-tests` / `--allow-same-version`） | **中止，不碰任何文件** |
 | 2 | 版本号格式校验 | 退出 |
 | 3 | 改 `android/app/build.gradle`：`versionCode` = `max(本地, 远端)+1`，`versionName` = 新版本；**同版本续发不重复递增** | 按备份还原（不动别人的改动） |
 | 4 | 写 `CHANGELOG.md`：插入 `## <ver> (<日期>) — <首条变更短标题>`（幂等） | 按备份还原 |
@@ -92,7 +93,7 @@ dl 与 GitHub 不是原子事务。脚本**从不**替你宣称“全发布成�
 | 3 | `pnpm lint`（oxlint） | 阻断：修 lint 或 `--fix` |
 | 4 | `npm run test`（缺脚本降级 `node --test tests/unit`） | 阻断 |
 | 5 | `npm run test:integration`（降级 `tests/integration`） | 阻断 |
-| 6 | `npm run test:e2e`，需 `E2E_API_KEY` | **没 key → 阻断**（缺证据不能算通过）；有 key 失败 → 阻断。应急只能显式 `--skip-tests`（留痕） |
+| 6 | e2e 分两段：**① 反馈上传等所有非上游用例（必跑，失败即阻断）**；② 真实模型上游 e2e（`--only real-upstream`，需 `E2E_API_KEY`） | ①失败 → 阻断；②没 key → 阻断（缺证）；②失败 → 阻断。用户明确「先发布再补测」时用 **`--skip-upstream-e2e`**：只有 ②SKIP，①照跑并留痕 |
 | 7 | `versionCode` 递增：待发布值（`--planned-versioncode` 或本地+1）必须 > `releases.json` 的 latest；网络不通降级比 CHANGELOG 最新版本。同版本续发且 `--allow-same-version` 时允许相等 | 阻断：让 `release-apk.sh` 自动算 `max(本地,远端)+1` |
 | 8 | `CHANGELOG.md` 含 `## <versionName>` 段落 | 阻断：手写或用 `release-apk.sh`（第 4 步自动写） |
 | 9 | 现有 APK 元信息 vs `build.gradle` | **构建前不阻断**（旧 APK 很正常）；仅提示 SKIP，构建后由 `release-apk.sh` 第 6 步**强校验** |
@@ -102,14 +103,26 @@ dl 与 GitHub 不是原子事务。脚本**从不**替你宣称“全发布成�
 
 ---
 
-## 4. 应急通道 `--skip-tests`
+## 4. 跳过真实模型上游测试（`--skip-upstream-e2e`）与全量应急（`--skip-tests`）
 
-- 只跳过第 4/5/6 项；第 1/2/3/7/8/9 项照跑。
-- 留痕（自动）：CHANGELOG 版本标题加 ` [未过门禁]`；dl 的 `releases.json` 的 `changes` 里带同样标记；
-  workflow 生成的 Release notes 也是从 `changes` 生成，故同样可见；脚本汇总再提示一次。
-- 代价：真上游 + 真前端链路无证据（SSE 解析 / 鉴权头 / 构建模式错配会直接漏到用户）。只在止血时用，并在发布说明写清原因。
+### 4.1 `--skip-upstream-e2e`（用户已授权的“先发布再补测”）
 
----
+```bash
+./release-apk.sh 1.5.0 --internal "新增：A" "修复：B" --skip-upstream-e2e
+```
+
+- **只**跳过第 6 项里的「真实模型上游」e2e；**unit(4) / integration(5) / 反馈上传 e2e 仍然照跑**，任一失败照样阻断。
+- 留痕（自动，三处可见）：
+  1. `CHANGELOG.md` 版本标题加 ` [上游e2e待补测]`，并多一条 `- 说明：真实模型上游测试待发布后补测…`；
+  2. 该说明会进 dl `releases.json` 的 `changes`，workflow 生成的 GitHub Release notes 直接读它，所以 **Release notes 里也有**；
+  3. 脚本汇总打印 `⚠️ 真实模型上游 e2e 延后补测`，状态文件 `~/.local/state/deepseek-app/release/<ver>.json` 里 `skipUpstreamE2E: true`。
+- 与 `--skip-tests` **互斥**（同时给直接报错），避免“精细开关”被当成全量放行。
+- 补测：发布后用真 key 跑 `E2E_API_KEY=sk-xxx npm run test:e2e -- --only real-upstream`，结果写进下个版本的变更记录。
+
+### 4.2 `--skip-tests`（全量，正常发版不要用）
+
+- 跳过第 4/5/6 项，CHANGELOG/notes 标 `[未过门禁]`。
+- 只用于线上已炸、必须立刻止血；用它就说明这次**没有任何测试证据**。
 
 ## 5. 回滚
 
@@ -128,7 +141,8 @@ dl 与 GitHub 不是原子事务。脚本**从不**替你宣称“全发布成�
 | 现象 | 原因 | 处置 |
 | --- | --- | --- |
 | 门禁 1 FAIL 列出文件 | 有未提交改动或其他 agent 在改代码 | `git commit` / `git stash`；只 add 自己的文件 |
-| 门禁 6 FAIL “缺 E2E_API_KEY” | 没设 key | `export E2E_API_KEY=sk-...`；或显式 `--skip-tests`（留痕） |
+| 门禁 6 FAIL “缺 E2E_API_KEY” | 没设 key | `export E2E_API_KEY=sk-...`；用户明确“先发布再测”时用 `--skip-upstream-e2e`（留痕），不要 `--skip-tests` |
+| 门禁 6 FAIL “e2e 用例 X 失败” | 反馈上传等非上游用例失败（必跑项） | 修好再发；这类用例不能跳过 |
 | 门禁 7 FAIL 没递增 | `versionCode` 未超过线上 latest | 交给脚本算（`max(本地,远端)+1`），别手改 |
 | 第 6 步 “构建产物与目标版本不一致” | `cap sync` 未刷新 / gradle 缓存 | 重新 `npx cap sync android` 后重跑；**构建后不一致绝不发布** |
 | 第 7 步 `401 UNAUTHORIZED` | 令牌错/过期 | 重新从 ECS 取令牌到 `~/.config/dl-release/token`（`chmod 600`） |
@@ -166,4 +180,6 @@ dl 与 GitHub 不是原子事务。脚本**从不**替你宣称“全发布成�
 ```
 
 覆盖：dry-run 零副作用、门禁失败阻断、401/409/md5 不符、断网、同 artifact 续发（versionCode 不重复递增）、
-tag 冲突不 force、令牌来自 env/文件、脚本从不创建 Release。当前结果：**44 通过 / 0 失败**。
+tag 冲突不 force、令牌来自 env/文件、脚本从不创建 Release；
+以及 `--skip-upstream-e2e` 的门禁路由（反馈上传 e2e 必跑、真上游只在有 key 且未跳过时跑、与 `--skip-tests` 互斥、
+留痕写进 CHANGELOG/状态文件）。当前结果：**62 断言通过 / 0 失败**。

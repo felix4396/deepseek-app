@@ -106,7 +106,7 @@ new_repo(){
   cp "${ROOT}/CHANGELOG.md" "$d/CHANGELOG.md"
   # 让 gradle 从已知状态开始
   sed -i 's/^\([[:space:]]*\)versionCode .*/\1versionCode 10/; s/^\([[:space:]]*\)versionName .*/\1versionName "1.4.0-beta.3"/' "$d/android/app/build.gradle"
-  printf '#!/usr/bin/env bash\nexit 0\n' >"$d/preflight-ok.sh"; chmod +x "$d/preflight-ok.sh"
+  printf '#!/usr/bin/env bash\nprintf "%%s\\n" "$*" >> "$PREFLIGHT_LOG"\nexit 0\n' >"$d/preflight-ok.sh"; chmod +x "$d/preflight-ok.sh"
   printf '#!/usr/bin/env bash\necho "门禁桩：故意失败" >&2\nexit 1\n' >"$d/preflight-fail.sh"; chmod +x "$d/preflight-fail.sh"
   (
     cd "$d"
@@ -132,6 +132,7 @@ run_rel(){  # <repo> <args...>
     CHANGELOG="$d/CHANGELOG.md" \
     APK_SRC="$d/app-debug.apk" \
     PREFLIGHT="${PREFLIGHT_OVERRIDE:-$d/preflight-ok.sh}" \
+    PREFLIGHT_LOG="${WORK}/preflight.args" \
     DL_API_URL="https://dl.rose7.cn/api/v1/release" \
     DL_RELEASES_URL="https://dl.rose7.cn/releases.json" \
     DL_RELEASE_TOKEN="${MOCK_TOKEN_ENV-test-token-not-real}" \
@@ -258,6 +259,49 @@ R10="${WORK}/r10"; new_repo "$R10"
 OUT=$(MOCK_TOKEN_ENV='' MOCK_TOKEN_FILE="${R10}.missing" run_rel "$R10" 1.5.0 --internal "缺令牌" 2>&1); rc=$?
 assert_eq '缺令牌 → 退出码 1' "$rc" 1
 assert_contains '缺令牌提示（含路径/chmod 600）' "$OUT" 'chmod 600'
+
+# ---------------------------------------------------------------- 8. --skip-upstream-e2e 精细开关
+printf '\n[8] --skip-upstream-e2e：只跳过真实模型上游 e2e\n'
+R11="${WORK}/r11"; new_repo "$R11"
+: >"${WORK}/preflight.args"
+OUT=$(run_rel "$R11" 1.5.0 --internal "精细开关" --skip-upstream-e2e 2>&1); rc=$?
+assert_eq '带开关可发布' "$rc" 0
+assert_contains '门禁收到 --skip-upstream-e2e' "$(cat "${WORK}/preflight.args")" '--skip-upstream-e2e'
+assert_contains 'CHANGELOG 标题留痕' "$(cat "$R11/CHANGELOG.md")" '[上游e2e待补测]'
+assert_contains 'CHANGELOG 写明待补测' "$(cat "$R11/CHANGELOG.md")" '真实模型上游测试待发布后补测'
+assert_eq '状态文件记录 skipUpstreamE2E' \
+  "$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["skipUpstreamE2E"])' "$R11/state/1.5.0.json")" True
+assert_contains '汇总提示延后补测' "$OUT" '真实模型上游 e2e 延后补测'
+assert_eq '未使用全量 --skip-tests' "$(count_in x -- '--skip-tests' "${WORK}/preflight.args")" 0
+# 两种 skip 不能同时用
+OUT=$(run_rel "$R11" 1.6.0 --internal "冲突" --skip-tests --skip-upstream-e2e 2>&1); rc=$?
+assert_eq '--skip-tests 与 --skip-upstream-e2e 互斥' "$rc" 1
+assert_contains '互斥提示' "$OUT" '不能同时用'
+
+# 真实 preflight 的门禁路由（临时仓库 + run-layer 桩）
+PF="${WORK}/pf"; rm -rf "$PF"; mkdir -p "$PF/android/app" "$PF/tests/e2e"
+cp "${ROOT}/preflight.sh" "$PF/"; cp "${ROOT}/CHANGELOG.md" "$PF/"; cp "${ROOT}/android/app/build.gradle" "$PF/android/app/"
+sed -i 's/versionCode .*/versionCode 10/; s/versionName .*/versionName "1.4.0-beta.3"/' "$PF/android/app/build.gradle"
+printf '{"name":"t","scripts":{"type":"true","lint":"true","test":"true","test:integration":"true","test:e2e":"node tests/run-layer.mjs e2e"}}\n' >"$PF/package.json"
+printf 'import {appendFileSync} from "node:fs"\nappendFileSync(process.env.RL_LOG, process.argv.slice(2).join(" ")+"\\n")\n' >"$PF/tests/run-layer.mjs"
+: >"$PF/tests/e2e/diagnostics-upload.test.mjs"; : >"$PF/tests/e2e/real-upstream.test.mjs"
+( cd "$PF" && git init -q -b main . && git config user.email t@t && git config user.name t && git add -A >/dev/null && git commit -qm init )
+pf_run(){ ( cd "$PF" && RL_LOG="${WORK}/rl.log" RELEASES_URL="https://127.0.0.1:1/x" E2E_API_KEY="${2:-}" ./preflight.sh --planned-version 1.5.0 --planned-versioncode 11 ${1:-} 2>&1 ); }
+: >"${WORK}/rl.log"
+OUT=$(pf_run --skip-upstream-e2e); rc=$?
+assert_eq 'preflight + --skip-upstream-e2e 通过' "$rc" 0
+assert_contains '上传类 e2e 已跑' "$(cat "${WORK}/rl.log")" 'diagnostics-upload'
+assert_eq '真实上游 e2e 未跑' "$(count_in x real-upstream "${WORK}/rl.log")" 0
+assert_contains '第 6 项标 SKIP 且写明待补测' "$OUT" '待发布后补测'
+: >"${WORK}/rl.log"
+OUT=$(pf_run ''); rc=$?
+assert_eq '无 key 无开关 → 阻断' "$rc" 1
+assert_contains '缺 key 提示指向精细开关' "$OUT" '--skip-upstream-e2e'
+assert_eq '无 key 时不跑上游用例' "$(count_in x real-upstream "${WORK}/rl.log")" 0
+: >"${WORK}/rl.log"
+OUT=$(pf_run '' 'dummy-key-for-routing-only'); rc=$?
+assert_eq '有 key 时照跑上游 e2e' "$(count_in x real-upstream "${WORK}/rl.log")" 1
+assert_contains '有 key 时通过' "$OUT" '真实模型上游 e2e 全部通过'
 
 printf '\n=== 结果：通过 %d，失败 %d ===\n' "${PASS}" "${FAIL}"
 if (( FAIL )); then
