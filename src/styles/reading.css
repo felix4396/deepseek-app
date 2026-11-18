@@ -1,0 +1,173 @@
+/**
+ * 消息区阅读设置（issue #102）：字号 / 字重 / 行高。
+ *
+ * 三档全部落在 token 上，组件只消费 var()，不写字号魔法数：
+ *   · 字号 → app/theme.css 里的 --dsw-font-markdown-* 字体简写读 --ds-reading-size-*
+ *   · 字重 → 同一批字体简写读 --ds-reading-weight-*
+ *   · 行高 → 各档自带行高（--ds-reading-line-*）× 行高倍率（--ds-reading-line-scale）
+ *
+ * 默认档（size=standard / weight=regular / line=standard）逐值等于改造前的现状，
+ * 也就是没动过设置的用户看到的观感与改造前一致：
+ *   消息正文 16px/28px/400（粗体 600）、次级（思考正文等）14px/24px、表格 15px/25px
+ *   （表头 500）、标题 24/22/20/16 配 34/32/30/28（700、h4 为 600）、用户气泡 16px/24px。
+ *
+ * 作用域只到消息区：--dsw-font-markdown-* 只被消息区的 Markdown / 回复区消费，
+ * 行高倍率只在 `main .ds-markdown` 这一支里乘上去；设置面板与输入框不引用任何
+ * --ds-reading-*（tests/unit/reading-settings.test.mjs 有守卫）。
+ * 代码块（--dsw-font-markdown-code*）不跟阅读设置缩放：等宽字体有独立的阅读习惯。
+ */
+
+/* 默认档 = 改造前现状。根元素上没有 data-ds-reading-* 时落到这里。 */
+:root {
+  --ds-reading-size-body: 16px;
+  --ds-reading-line-body: 28px;
+  --ds-reading-weight-body: 400;
+  --ds-reading-weight-strong: 600;
+  --ds-reading-weight-heading: 700;
+  --ds-reading-weight-table-head: 500;
+
+  --ds-reading-size-secondary: 14px;
+  --ds-reading-line-secondary: 24px;
+
+  --ds-reading-size-table: 15px;
+  --ds-reading-line-table: 25px;
+
+  --ds-reading-size-h1: 24px;
+  --ds-reading-line-h1: 34px;
+  --ds-reading-size-h2: 22px;
+  --ds-reading-line-h2: 32px;
+  --ds-reading-size-h3: 20px;
+  --ds-reading-line-h3: 30px;
+  --ds-reading-size-h4: 16px;
+  --ds-reading-line-h4: 28px;
+
+  /* 用户气泡：改造前是 16px/24px，比助手正文紧一点，所以行高单独一个 token */
+  --ds-reading-line-bubble: 24px;
+
+  /* 行高倍率：1 = 用各档自带行高（= 改造前的行距） */
+  --ds-reading-line-scale: 1;
+}
+
+/* ── 字号档 ────────────────────────────────────────────────────────────── */
+:root[data-ds-reading-size='small'] {
+  --ds-reading-size-body: 14px;
+  --ds-reading-line-body: 24px;
+  --ds-reading-size-secondary: 13px;
+  --ds-reading-line-secondary: 22px;
+  --ds-reading-size-table: 13px;
+  --ds-reading-line-table: 22px;
+  --ds-reading-size-h1: 21px;
+  --ds-reading-line-h1: 30px;
+  --ds-reading-size-h2: 20px;
+  --ds-reading-line-h2: 28px;
+  --ds-reading-size-h3: 18px;
+  --ds-reading-line-h3: 26px;
+  --ds-reading-size-h4: 14px;
+  --ds-reading-line-h4: 24px;
+  --ds-reading-line-bubble: 21px;
+}
+
+:root[data-ds-reading-size='standard'] {
+  --ds-reading-size-body: 16px;
+  --ds-reading-line-body: 28px;
+  --ds-reading-size-secondary: 14px;
+  --ds-reading-line-secondary: 24px;
+  --ds-reading-size-table: 15px;
+  --ds-reading-line-table: 25px;
+  --ds-reading-size-h1: 24px;
+  --ds-reading-line-h1: 34px;
+  --ds-reading-size-h2: 22px;
+  --ds-reading-line-h2: 32px;
+  --ds-reading-size-h3: 20px;
+  --ds-reading-line-h3: 30px;
+  --ds-reading-size-h4: 16px;
+  --ds-reading-line-h4: 28px;
+  --ds-reading-line-bubble: 24px;
+}
+
+:root[data-ds-reading-size='large'] {
+  --ds-reading-size-body: 18px;
+  --ds-reading-line-body: 31px;
+  --ds-reading-size-secondary: 16px;
+  --ds-reading-line-secondary: 27px;
+  --ds-reading-size-table: 17px;
+  --ds-reading-line-table: 28px;
+  --ds-reading-size-h1: 27px;
+  --ds-reading-line-h1: 38px;
+  --ds-reading-size-h2: 25px;
+  --ds-reading-line-h2: 35px;
+  --ds-reading-size-h3: 22px;
+  --ds-reading-line-h3: 31px;
+  --ds-reading-size-h4: 18px;
+  --ds-reading-line-h4: 31px;
+  --ds-reading-line-bubble: 27px;
+}
+
+:root[data-ds-reading-size='xlarge'] {
+  --ds-reading-size-body: 20px;
+  --ds-reading-line-body: 34px;
+  --ds-reading-size-secondary: 18px;
+  --ds-reading-line-secondary: 30px;
+  --ds-reading-size-table: 19px;
+  --ds-reading-line-table: 31px;
+  --ds-reading-size-h1: 30px;
+  --ds-reading-line-h1: 42px;
+  --ds-reading-size-h2: 28px;
+  --ds-reading-line-h2: 40px;
+  --ds-reading-size-h3: 25px;
+  --ds-reading-line-h3: 35px;
+  --ds-reading-size-h4: 20px;
+  --ds-reading-line-h4: 34px;
+  --ds-reading-line-bubble: 30px;
+}
+
+/* ── 字重档 ────────────────────────────────────────────────────────────── */
+:root[data-ds-reading-weight='regular'] {
+  --ds-reading-weight-body: 400;
+  --ds-reading-weight-strong: 600;
+  --ds-reading-weight-heading: 700;
+  --ds-reading-weight-table-head: 500;
+}
+
+/* 中等：正文加半档；粗体与标题保持原样，句子里的 <strong> 仍能区分出来 */
+:root[data-ds-reading-weight='medium'] {
+  --ds-reading-weight-body: 500;
+  --ds-reading-weight-strong: 600;
+  --ds-reading-weight-heading: 700;
+  --ds-reading-weight-table-head: 500;
+}
+
+/* 粗体：正文 600，粗体与表头各加一档，避免与被加粗的正文糊在一起 */
+:root[data-ds-reading-weight='bold'] {
+  --ds-reading-weight-body: 600;
+  --ds-reading-weight-strong: 700;
+  --ds-reading-weight-heading: 700;
+  --ds-reading-weight-table-head: 600;
+}
+
+/* ── 行高档（倍率乘在各档自带行高上，默认 1 = 现状） ───────────────────── */
+:root[data-ds-reading-line='compact'] {
+  --ds-reading-line-scale: 0.85;
+}
+
+:root[data-ds-reading-line='standard'] {
+  --ds-reading-line-scale: 1;
+}
+
+:root[data-ds-reading-line='relaxed'] {
+  --ds-reading-line-scale: 1.2;
+}
+
+/*
+ * 行高倍率的消费点。`main` 前缀把作用域钉在消息区：设置弹窗与输入框里的
+ * .ds-markdown / 文本不在这支选择器下。标题与表格保持各档自带行距，
+ * 只管正文行距（行高设置说的就是正文的松紧）。
+ */
+main .ds-markdown {
+  line-height: calc(var(--ds-reading-line-body) * var(--ds-reading-line-scale));
+}
+
+/* 思考正文比正文小一档（thinking.markdown.css 用的是 small token），行高也跟次级档 */
+main .ds-think-content .ds-markdown {
+  line-height: calc(var(--ds-reading-line-secondary) * var(--ds-reading-line-scale));
+}

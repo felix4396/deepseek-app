@@ -32,8 +32,10 @@
   box-sizing: border-box;
   padding: 10px 16px;
   border-radius: 22px;
-  font-size: 16px;
-  line-height: 24px;
+  /* 字号 / 字重 / 行高走消息区阅读设置（#102）的 token；默认档等于改造前的 16px / 24px / 400 */
+  font-size: var(--ds-reading-size-body);
+  line-height: calc(var(--ds-reading-line-bubble) * var(--ds-reading-line-scale));
+  font-weight: var(--ds-reading-weight-body);
   color: var(--dsw-alias-label-primary);
   background-color: var(--dsw-specific-bubble);
   white-space: pre-wrap;
@@ -90,8 +92,10 @@
   outline: none;
   resize: none;
   font: inherit;
-  font-size: 16px;
-  line-height: 24px;
+  /* 就地编辑时的字号跟气泡一致（同一段文字，编辑不该换一套字号） */
+  font-size: var(--ds-reading-size-body);
+  line-height: calc(var(--ds-reading-line-bubble) * var(--ds-reading-line-scale));
+  font-weight: var(--ds-reading-weight-body);
   color: var(--dsw-alias-label-primary);
   background: transparent;
 }

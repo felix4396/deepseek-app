@@ -5,6 +5,7 @@ import { createRoot } from 'react-dom/client'
 import { App } from './app/App.js'
 import { ErrorBoundary } from './app/ErrorBoundary.js'
 import { setupTheme } from './app/theme.js'
+import { setupReading } from './app/reading.js'
 import { readDiagnosticsFacts } from './app/diagnosticsContext.js'
 import { openOursServices } from './components/settings/settingsDialogState.js'
 import { consumeOrderReturn } from './services/ours/returnParams.js'
@@ -14,6 +15,7 @@ import {
 } from './services/diagnostics/index.js'
 import { ensureKatex } from './services/markdown/katex.js'
 import './app/theme.css'
+import './styles/reading.css'
 import './app/global.css'
 import './app/motion.css'
 
@@ -25,6 +27,8 @@ if ((window as Window & { __DEEPSEEK_COMPATIBILITY_ERROR__?: string[] }).__DEEPS
 
 ensureKatex()
 setupTheme()
+// 消息区阅读设置（#102）：首屏渲染前就把字号 / 字重 / 行高档位挂到根元素上
+setupReading()
 
 // 诊断：恢复上次落盘的日志并装上 window.onerror / console / fetch 等 hook（采集层与上传层解耦，见 services/diagnostics）
 void initDiagnostics({ facts: readDiagnosticsFacts })
