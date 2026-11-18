@@ -1,6 +1,8 @@
 import { formatDate } from '../../utils/format.js'
 import { captureStateSnapshot, errorMeta, record, recordAction, recordEvent } from '../diagnostics/collector.js'
 import * as db from './db.js'
+import { fail } from './history/errors.js'
+import { maxImportMegabytes, resolveMaxImportBytes } from './history/importLimit.js'
 import { parseSessionPath } from './history/paths.js'
 import { listArchivePaths } from './history/zipReader.js'
 import { replaceHistory, useChatStore } from './store.js'
@@ -50,7 +52,13 @@ export type ImportHistoryOptions = {
   signal?: AbortSignal
   /** 有回调时才会多解析一次中央目录拿会话总数（n/总数 进度），本地文件导入不需要。 */
   onProgress?: (progress: ImportProgress) => void
+  /** 大小上限（字节）；默认 DEFAULT_MAX_IMPORT_BYTES，与「从链接导入」同一个数字。UI 不传。 */
+  maxBytes?: number
 }
+
+/** 与「从链接导入」复用同一条提示文案：都是「这个包太大，先别导」。 */
+const tooLarge = (limitBytes: number): never =>
+  fail('historyImportUrlTooLarge', { size: maxImportMegabytes(limitBytes) })
 
 /** 会话总数：只读中央目录的条目名，不读条目内容；目录异常时返回 undefined（退化为只显示已处理数）。 */
 const countSessions = async (file: File): Promise<number | undefined> => {
@@ -59,7 +67,7 @@ const countSessions = async (file: File): Promise<number | undefined> => {
 }
 
 /**
- * 确认覆盖后调用：先检查 ZIP 格式与版本，校验失败时保留正在生成的回答；
+ * 确认覆盖后调用：先查大小上限，再检查 ZIP 格式与版本，校验失败时保留正在生成的回答；
  * 通过后从 ZIP 流式写入暂存，成功才替换原有会话与图片原件。返回导入的会话数。
  */
 export const importHistory = (file: File, options: ImportHistoryOptions = {}): Promise<number> =>
@@ -69,6 +77,12 @@ export const importHistory = (file: File, options: ImportHistoryOptions = {}): P
     let stage = 'check'
     recordAction('import_start', 'import-history', { bytes: file.size, source: 'file' })
     try {
+      // 上限检查放在最前：超限的包不看格式、不写暂存，直接给一句人话（issue #34）
+      const maxBytes = resolveMaxImportBytes(options.maxBytes)
+      if (file.size > maxBytes) {
+        stage = 'size'
+        tooLarge(maxBytes)
+      }
       const { checkArchiveFormat, importArchive } = await import('./history/importArchive.js')
       recordEvent('import_stage', 'import: check archive format', { stage, bytes: file.size })
       await checkArchiveFormat(file)

@@ -2,6 +2,7 @@ import { Capacitor, CapacitorHttp, type HttpResponse } from '@capacitor/core'
 import { errorMeta, record, recordAction, recordEvent, redactUrl } from '../../diagnostics/collector.js'
 import { importHistory } from '../backup.js'
 import { BackupError, fail } from './errors.js'
+import { maxImportMegabytes, resolveMaxImportBytes, DEFAULT_MAX_IMPORT_BYTES } from './importLimit.js'
 
 /**
  * 直链导入：用原生 HTTP 下载 ZIP 后交给既有的文件导入链路（importHistory）。
@@ -15,11 +16,11 @@ import { BackupError, fail } from './errors.js'
  * 每块到手就知道「已下载多少字节」，块超时只有 20s（断网最多等一块），块与块之间检查取消。
  */
 
-/** 单个导出包的大小上限。官方包约 20MB、467 条目，留十倍余量，同时避免整包读进内存。 */
-export const MAX_ARCHIVE_BYTES = 200 * 1024 * 1024
-
-/** 上限的 MB 数，用于提示文案。 */
-const maxMegabytes = MAX_ARCHIVE_BYTES / 1024 / 1024
+/**
+ * 单个导出包的大小上限：**就是 importLimit 里那一个数字**（默认 200MB）。
+ * 这里只做转出，别的地方不要再抄一遍 200MB——本地文件导入用的是同一个上限（issue #34）。
+ */
+export const MAX_ARCHIVE_BYTES = DEFAULT_MAX_IMPORT_BYTES
 
 /** 交给 importHistory 的文件名，只用于提示与暂存，不写盘。 */
 const ARCHIVE_NAME = 'deepseek_data.zip'
@@ -128,13 +129,12 @@ export type UrlImportOptions = {
   downloadBudgetMs?: number
   /** 心跳周期（毫秒）；默认 HEARTBEAT_INTERVAL_MS，同样只给诊断/测试用。 */
   heartbeatIntervalMs?: number
+  /** 大小上限（字节）；默认 DEFAULT_MAX_IMPORT_BYTES，与本地文件导入同一个数字。UI 不传。 */
+  maxBytes?: number
 }
 
 /** 原生（APK）才具备绕过 CORS 的原生 HTTP；网页版不提供该能力。 */
 export const canImportFromUrl = (): boolean => Capacitor.isNativePlatform()
-
-const isZip = (bytes: Uint8Array): boolean =>
-  bytes.length >= ZIP_MAGIC.length && ZIP_MAGIC.every((byte, index) => bytes[index] === byte)
 
 const throwIfCancelled = (signal?: AbortSignal) => {
   if (signal?.aborted) {
@@ -175,7 +175,8 @@ const contentRangeTotal = (headers: Record<string, string> | undefined): number 
   return Number.isSafeInteger(value) && value > 0 ? value : undefined
 }
 
-const tooLarge = (): never => fail('historyImportUrlTooLarge', { size: maxMegabytes })
+const tooLarge = (limitBytes: number): never =>
+  fail('historyImportUrlTooLarge', { size: maxImportMegabytes(limitBytes) })
 
 /**
  * 403 的错误页文本。
@@ -232,11 +233,11 @@ const fromBase64 = (value: string): Uint8Array<ArrayBuffer> => {
 }
 
 /** 统一 data → 字节，并在解码前先按 base64 长度估算一次大小。 */
-const toBytes = (data: unknown): Uint8Array<ArrayBuffer> => {
+const toBytes = (data: unknown, maxBytes: number): Uint8Array<ArrayBuffer> => {
   if (typeof data === 'string') {
     // 每个 base64 字符约 3/4 字节：超限的包不必解码，避免几十 MB 的字符串再膨胀一倍。
-    if (Math.floor((data.length * 3) / 4) > MAX_ARCHIVE_BYTES) {
-      tooLarge()
+    if (Math.floor((data.length * 3) / 4) > maxBytes) {
+      tooLarge(maxBytes)
     }
     return fromBase64(data)
   }
@@ -509,18 +510,17 @@ const failForStatus = async (
   return fail('historyImportUrlHttp', { status })
 }
 
-/** 把已下载的块拼成一个连续字节数组（20MB 一次拷贝，比逐块 Blob 快）。 */
-const concatChunks = (chunks: Uint8Array<ArrayBuffer>[], length: number): Uint8Array<ArrayBuffer> => {
-  if (chunks.length === 1) {
-    return chunks[0]
-  }
-  const bytes = new Uint8Array(length)
-  let offset = 0
-  for (const chunk of chunks) {
-    bytes.set(chunk, offset)
-    offset += chunk.byteLength
-  }
-  return bytes
+/**
+ * 只按首块的前 4 字节判 ZIP 头：整包拼一遍只为看 4 个字节，
+ * 等于把已经到手的几十 MB 再复制一份（#34 的内存三份拷贝之一），没必要。
+ */
+const isZipHead = (chunks: Uint8Array<ArrayBuffer>[]): boolean => {
+  const first = chunks[0]
+  return (
+    first !== undefined &&
+    first.byteLength >= ZIP_MAGIC.length &&
+    ZIP_MAGIC.every((byte, index) => first[index] === byte)
+  )
 }
 
 const clamp = (value: number, min: number, max: number): number =>
@@ -631,6 +631,7 @@ const downloadArchive = async (
   trace?: (entry: ImportTraceEntry) => void
 ): Promise<File> => {
   const startedAt = Date.now()
+  const maxBytes = resolveMaxImportBytes(options.maxBytes)
   const budgetMs = Math.max(1, options.downloadBudgetMs ?? DOWNLOAD_TOTAL_BUDGET_MS)
   const state: DownloadState = {
     startedAt,
@@ -679,7 +680,7 @@ const downloadArchive = async (
       }
       let data: unknown = response.data
       response.data = null
-      const bytes = toBytes(data)
+      const bytes = toBytes(data, maxBytes)
       data = null
       if (state.total === undefined) {
         // 总长度只认可信来源：
@@ -692,16 +693,16 @@ const downloadArchive = async (
           (status === 200 ? contentLength(response.headers) : undefined)
         if (declared !== undefined) {
           state.total = declared
-          if (declared > MAX_ARCHIVE_BYTES) {
-            tooLarge()
+          if (declared > maxBytes) {
+            tooLarge(maxBytes)
           }
         }
       }
       if (bytes.byteLength > 0) {
         chunks.push(bytes)
         state.downloaded += bytes.byteLength
-        if (state.downloaded > MAX_ARCHIVE_BYTES) {
-          tooLarge()
+        if (state.downloaded > maxBytes) {
+          tooLarge(maxBytes)
         }
         options.onProgress?.({
           phase: 'downloading',
@@ -752,11 +753,15 @@ const downloadArchive = async (
         percent: Math.round((state.downloaded / state.total) * 100),
       })
     }
-    const bytes = concatChunks(chunks, state.downloaded)
-    if (!isZip(bytes)) {
+    // 三份拷贝 → 两份：过去是「分块数组 + concat 出的整包 + Blob 自己的副本」，
+    // 峰值内存约 3×包大小；现在直接把分块交给 Blob（它只需要一份），
+    // 再丢掉分块数组的引用，让 JS 侧那份尽快被回收。没有引入流式改写（#34 明确不做）。
+    if (!isZipHead(chunks)) {
       fail('historyImportUrlNotZip')
     }
-    return new File([bytes], ARCHIVE_NAME, { type: 'application/zip' })
+    const file = new File(chunks, ARCHIVE_NAME, { type: 'application/zip' })
+    chunks.length = 0
+    return file
   } catch (error) {
     if (!(error instanceof DownloadBudgetExceeded)) {
       throw error

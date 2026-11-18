@@ -13,6 +13,9 @@ export const recordAction = (kind, action, fields = {}) => {
   store().actions.push({ kind, action, fields })
 }
 
+// 导入成功后的状态快照：本层只断言拒绝时机，不关心快照内容。
+export const captureStateSnapshot = async () => ({})
+
 export const errorMeta = (error) => ({
   'error.name': error instanceof Error ? error.name : typeof error,
   'error.msg': error instanceof Error ? error.message : String(error),
