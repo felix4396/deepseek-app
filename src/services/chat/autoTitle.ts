@@ -24,18 +24,21 @@ import {
   getModel,
 } from '../api/apiConfig.js'
 import { authHeaders, request } from '../api/client.js'
+import { translate } from '../../i18n/index.js'
 
 /**
- * 生成标题的 system prompt（中文场景；标题语言跟随消息语言）。
+ * 生成标题的 system prompt（标题语言跟随消息语言）。
  * 与 DSH 的 dsh-session-title-first-prompt-llm 同义：只输出标题本身，信息量太少也要给最佳猜测。
+ * 文案走 i18n（zh 为原硬编码文案逐字原文，en 由 i18n 提供）——issue #18。
  */
-export const AUTO_TITLE_SYSTEM_PROMPT = [
-  '根据提供的用户消息，为这段 AI 对话生成一个简洁标题。',
-  '只输出标题本身，一行纯文本，不要引号、前缀、解释、Markdown、XML 或控制字符，不允许输出代码。',
-  '使用消息的语言。',
-  '目标长度：约 8–14 个中文字符（或 3–5 个英文单词）。',
-  '如果消息信息量太少，也要给一个简短的最佳猜测标题（如「打招呼」），不要解释。',
-].join('\n')
+export const autoTitleSystemPrompt = (): string =>
+  [
+    translate('autoTitlePromptIntro'),
+    translate('autoTitlePromptFormat'),
+    translate('autoTitlePromptLanguage'),
+    translate('autoTitlePromptLength'),
+    translate('autoTitlePromptFallback'),
+  ].join('\n')
 
 /** 超时上限：到点就放弃，用本地截取兜底 */
 export const AUTO_TITLE_TIMEOUT_MS = 8000
@@ -227,7 +230,7 @@ const toTitleRequest = (text: string): unknown => {
       max_tokens: AUTO_TITLE_MAX_OUTPUT_TOKENS,
       stream: false,
       messages: [
-        { role: 'system', content: AUTO_TITLE_SYSTEM_PROMPT },
+        { role: 'system', content: autoTitleSystemPrompt() },
         { role: 'user', content: user },
       ],
     }
@@ -236,7 +239,7 @@ const toTitleRequest = (text: string): unknown => {
     model: getModel(),
     max_tokens: AUTO_TITLE_MAX_OUTPUT_TOKENS,
     stream: false,
-    system: AUTO_TITLE_SYSTEM_PROMPT,
+    system: autoTitleSystemPrompt(),
     messages: [{ role: 'user', content: user }],
   }
 }
