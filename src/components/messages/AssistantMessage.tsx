@@ -4,7 +4,13 @@ import { memo } from 'react'
 import { IconRefreshOutline16, IconWarningOutline16 } from '../base/icons.js'
 import { describeReply } from '../../services/chat/describe.js'
 import { canContinueReply } from '../../services/chat/reply.js'
-import { continueReply, regenerateReply } from '../../services/chat/store.js'
+import { hasStreamNoticeActions } from '../../services/chat/streamNotice.js'
+import {
+  continueReply,
+  regenerateReply,
+  stopReply,
+  useChatStore,
+} from '../../services/chat/store.js'
 import { stopReadAloud } from '../../services/speech/readAloud.js'
 import type { AssistantMessage as AssistantMessageType } from '../../services/chat/types.js'
 import { openSettings } from '../settings/settingsDialogState.js'
@@ -55,6 +61,10 @@ export const AssistantMessage = memo(function AssistantMessage({
     .join('\n\n')
   const copyText = responseText || notice?.text
   const waiting = streaming && view.steps.length === 0 && !view.answer && !message.thinking
+  // 首字等待的分级提示：等得越久说得越清楚，最高档给出停止入口（停完就能重新生成）
+  const waitHint = useChatStore((state) => state.waitHints[sessionId])
+  const waitNotice = waitHint ? t(waitHint) : ''
+  const waitActions = waiting && hasStreamNoticeActions(waitHint)
   const summaryEntry = `${message.id}-summary`
   return (
     <div className={styles.message}>
@@ -78,9 +88,21 @@ export const AssistantMessage = memo(function AssistantMessage({
       ) : null}
       {waiting ? (
         <div className={styles.waiting}>
-          {[0, 1, 2].map((index) => (
-            <span key={index} className={styles.waitingDot} />
-          ))}
+          <span className={styles.waitingDots}>
+            {[0, 1, 2].map((index) => (
+              <span key={index} className={styles.waitingDot} />
+            ))}
+          </span>
+          {waitNotice ? <span className={styles.waitingText}>{waitNotice}</span> : null}
+          {waitActions ? (
+            <button
+              type="button"
+              className={styles.waitingAction}
+              onClick={() => stopReply(sessionId)}
+            >
+              {t('chatInputStopButtonTooltip')}
+            </button>
+          ) : null}
         </div>
       ) : null}
       {notice?.presentation === 'response' ? (

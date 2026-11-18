@@ -87,6 +87,12 @@ export const en = {
   replyRateLimited: 'Too many requests. Please try again later.',
   completionServerBusyToast: 'Server busy, please try again later.',
   unknownError: 'Unknown error',
+  replyUnknownError: 'The reply did not finish due to an unknown error. Please regenerate.',
+  replyStreamInterrupted:
+    'The connection was interrupted and the reply is incomplete. What was received is kept — you can regenerate.',
+  replyWaitingFirstToken: 'Waiting for the response',
+  replyWaitingSlow: 'The service is responding slowly. Still waiting…',
+  replyWaitingStalled: 'This is taking unusually long. You can stop and regenerate.',
   replyRefused: "Sorry, that's beyond my current scope. Let's talk about something else.",
   messageThinkDuration: 'Thought for {count} second',
   messageThinkDurationPlural: 'Thought for {count} seconds',

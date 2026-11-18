@@ -15,18 +15,29 @@ const getTemplateText = (reply: AssistantMessage) =>
     .map((block) => (block.type === 'text' && block.isTemplate ? block.text : ''))
     .join('')
 
+/**
+ * 上游报错原文是否可以直接给用户看：中文/日文/韩文是上游自己写给人看的话，
+ * 英文（或无法判断的符号串）多半是内部错误，界面上换成 i18n 兜底文案，原文只留在日志里。
+ */
+const isReadableForUser = (text: string) => /[\u3400-\u9fff\u3040-\u30ff\uac00-\ud7af]/.test(text)
+
 /** 回复出错或未正常结束时展示的提示 */
 export const describeReply = (reply: AssistantMessage): Notice | null => {
   if (reply.status === 'error' && reply.error) {
     const { kind, status, localMessage } = reply.error
     // 导入的历史可能来自不同版本；不识别的文案沿用保存时的原文。
-    const message =
+    const localized =
       localMessage && isTranslationKey(localMessage.key)
         ? translate(localMessage.key, localMessage.params)
-        : reply.error.message
+        : ''
+    const message = localized || reply.error.message
     // 历史补传错误刷新后仍需说明原因，恢复沿用附件卡片或重新生成。
     if (kind === 'upload') {
       return { text: message || translate('uploadFileStatusFailed') }
+    }
+    // 流断在 message_stop 之前：明说连接中断（已收到的内容照常展示），不要混进「网络异常」
+    if (kind === 'interrupted') {
+      return { text: localized || translate('replyStreamInterrupted') }
     }
     if (kind === 'network') {
       return { text: translate('commonNetworkErrorToast') }
@@ -41,7 +52,11 @@ export const describeReply = (reply: AssistantMessage): Notice | null => {
       case 'serverBusy':
         return { text: translate('completionServerBusyToast') }
       default:
-        return message ? { text: message } : null
+        // 未识别的错误：可读的中文原文照常展示，其余一律走 i18n 兜底，不把英文原文丢给用户。
+        if (localized) {
+          return { text: localized }
+        }
+        return { text: isReadableForUser(message) ? message : translate('replyUnknownError') }
     }
   }
   const template = getTemplateText(reply)
