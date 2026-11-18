@@ -79,16 +79,21 @@ const SettingsContent = ({ visible }: { visible: boolean }) => {
   const [feedback, setFeedback] = useState({ open: false, integrity: false })
   const replacingHistory = useChatStore((state) => state.importingHistory)
   const historyBusy = historyImport.busy || historyDelete.busy || replacingHistory
+  // 覆盖确认 / 删除确认叠在设置之上时，设置层的 X 与点击遮罩一律不可用：
+  // 那层遮罩是全屏的，第一次点击只会落到上层的「取消」上，用户会以为 X 坏了、
+  // 必须点两次才能退出设置（issue #28 缺陷 2）。确认框关掉后自动恢复。
+  const confirmOpen = historyImport.source !== null || historyDelete.opened
   return (
     <>
       <Modal
         title={t('settings')}
         closable
+        dismissDisabled={confirmOpen}
         visible={visible}
         className={styles.dialog}
         mainClassName={styles.dialogMain}
         onClose={() => {
-          if (!historyDelete.busy) {
+          if (!historyDelete.busy && !confirmOpen) {
             closeSettings()
           }
         }}

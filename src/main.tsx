@@ -3,6 +3,7 @@
 import './polyfills/legacy.js'
 import { createRoot } from 'react-dom/client'
 import { App } from './app/App.js'
+import { ErrorBoundary } from './app/ErrorBoundary.js'
 import { setupTheme } from './app/theme.js'
 import { readDiagnosticsFacts } from './app/diagnosticsContext.js'
 import {
@@ -30,4 +31,9 @@ installDiagnosticsDebugHandle()
 
 // 告诉 index.html 的 ES5 守卫「入口跑起来了」，它就不用再兜底报白屏（见 src/index.html）。
 ;(window as Window & { __DEEPSEEK_BOOTED__?: boolean }).__DEEPSEEK_BOOTED__ = true
-createRoot(document.getElementById('root') as HTMLElement).render(<App />)
+// 根部包一层错误边界：渲染期异常不再是整屏白屏，而是一张可读的错误页（issue #28）
+createRoot(document.getElementById('root') as HTMLElement).render(
+  <ErrorBoundary>
+    <App />
+  </ErrorBoundary>
+)
