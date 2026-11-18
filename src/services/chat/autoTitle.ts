@@ -11,6 +11,9 @@
  * 4. 输出清洗：只取第一个非空行、剥掉整行的强调外壳、去掉引号与控制字符
  * 5. 任何失败（超时 / 网络 / 非 2xx / 空 / finish 原因异常 / 清洗后为空）都回退到本地截取，
  *    回退后仍算成功——会话有可辨识的标题就够了，不给用户报错。
+ * 6. 背压（issue #112）：这批非流式请求走 autoTitleQueue.ts 的并发上限（默认 2）+ 有界队列
+ *    （默认 6），队列溢出明确跳过并计数；被限流（429 / 限流语义）单独记账，不混进普通失败。
+ *    跳过或失败都只是不发请求，标题照旧回退本地截取，用户无感。
  *
  * 走哪个接口：完全复用当前生效的服务类型（providers.ts / apiConfig.ts）——
  * anthropic 模式 {base}/v1/messages，openai 模式 {base}/v1/chat/completions，
@@ -25,6 +28,7 @@ import {
 } from '../api/apiConfig.js'
 import { authHeaders, request } from '../api/client.js'
 import { translate } from '../../i18n/index.js'
+import { autoTitleLimiter, isAutoTitleThrottled } from './autoTitleQueue.js'
 
 /**
  * 生成标题的 system prompt（标题语言跟随消息语言）。
@@ -244,17 +248,18 @@ const toTitleRequest = (text: string): unknown => {
   }
 }
 
+/** 一次请求的结局：限流单独一支，避免「被限流」在统计里冒充普通失败 */
+type TitleAttempt =
+  | { kind: 'ok'; text: string }
+  | { kind: 'empty' }
+  | { kind: 'throttled' }
+  | { kind: 'failed' }
+
 /**
- * 发起一次标题请求。任何异常（超时、网络、非 2xx、非 JSON、finish 原因异常）都返回 null，
- * 由调用方回退到本地截取；这里不抛错、不打日志、不影响对话流。
+ * 真正发一次标题请求（不含背压）。任何异常（超时、网络、非 2xx、非 JSON、finish 原因异常）
+ * 都收成结局返回，这里不抛错、不打日志、不影响对话流。
  */
-const requestTitle = async (text: string, signal?: AbortSignal): Promise<string | null> => {
-  if (!text.trim()) {
-    return null
-  }
-  if (!getBaseUrl()) {
-    return null
-  }
+const attemptTitle = async (text: string, signal?: AbortSignal): Promise<TitleAttempt> => {
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), AUTO_TITLE_TIMEOUT_MS)
   const onAbort = () => controller.abort()
@@ -270,14 +275,38 @@ const requestTitle = async (text: string, signal?: AbortSignal): Promise<string 
     const payload: unknown = await response.json()
     const reply =
       spec.protocol === 'openai' ? readOpenAIReply(payload) : readAnthropicReply(payload)
-    return reply.text
-  } catch {
-    // 失败即回退：超时 / 网络 / 非 2xx / 非 JSON 都走这里
-    return null
+    return reply.text ? { kind: 'ok', text: reply.text } : { kind: 'empty' }
+  } catch (error) {
+    // 被限流（429 / 上游限流语义）要与普通失败分开记账：限流是可自愈的，不该混进失败率
+    return isAutoTitleThrottled(error) ? { kind: 'throttled' } : { kind: 'failed' }
   } finally {
     clearTimeout(timer)
     signal?.removeEventListener('abort', onAbort)
   }
+}
+
+/**
+ * 发起一次标题请求（带背压，见 autoTitleQueue.ts）：并发上限 + 有界队列，
+ * 队列溢出或排队期间被取消就明确跳过（不发请求），任何失败都返回 null 交给本地截取兜底。
+ */
+const requestTitle = async (text: string, signal?: AbortSignal): Promise<string | null> => {
+  if (!text.trim()) {
+    return null
+  }
+  if (!getBaseUrl()) {
+    return null
+  }
+  const outcome = await autoTitleLimiter.run(() => attemptTitle(text, signal), signal)
+  if (outcome.status === 'skipped') {
+    // dropped / aborted：这次就是不发（背压的目的），标题交给本地截取
+    return null
+  }
+  if (outcome.status === 'error') {
+    autoTitleLimiter.note('failed')
+    return null
+  }
+  autoTitleLimiter.note(outcome.value.kind)
+  return outcome.value.kind === 'ok' ? outcome.value.text : null
 }
 
 /**
