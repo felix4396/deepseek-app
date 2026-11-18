@@ -63,3 +63,40 @@ export const saveText = async (options: {
     throw error
   }
 }
+
+/**
+ * 保存纯文本文件：Android 走 ExportText 原生桥（SAF 面板，可取消），Web 走 Blob 下载。
+ * 能力缺失或写入失败时抛错，由调用方提示，不做静默降级；反馈日志导出与「保存为 TXT」共用这套出口。
+ */
+export const saveTextFile = async (file: {
+  filename: string
+  mimeType: string
+  text: string
+}): Promise<'saved' | 'cancelled'> => {
+  if (Capacitor.isNativePlatform()) {
+    return saveText(file)
+  }
+  if (
+    typeof Blob === 'undefined' ||
+    typeof URL.createObjectURL !== 'function' ||
+    typeof document === 'undefined'
+  ) {
+    throw new Error('SAVE_UNAVAILABLE')
+  }
+  const anchor = document.createElement('a')
+  if (!('download' in anchor)) {
+    throw new Error('SAVE_UNAVAILABLE')
+  }
+  const url = URL.createObjectURL(new Blob([file.text], { type: `${file.mimeType};charset=utf-8` }))
+  anchor.href = url
+  anchor.download = file.filename
+  try {
+    document.body.appendChild(anchor)
+    anchor.click()
+    return 'saved'
+  } finally {
+    anchor.remove()
+    // 给浏览器留出消费下载的时间，正文不落到别处。
+    setTimeout(() => URL.revokeObjectURL(url), 60_000)
+  }
+}

@@ -222,9 +222,9 @@ const openSession = async (page, title) => {
   try {
     await copyButton.waitFor({ timeout: 3000 })
   } catch {
-    await page.getByText(title).first().click()
-    // 512 KiB 单段文本首次渲染要十几秒（实测约 20s），超时留足
-    await copyButton.waitFor({ timeout: 90_000 })
+    await page.getByText(title).first().click({ timeout: 120_000 })
+    // 512 KiB 单段文本首次渲染慢且机器相关：本机实测 92~96s（作者环境约 20s），预算按实测留足
+    await copyButton.waitFor({ timeout: 240_000 })
   }
   return copyButton
 }
@@ -340,6 +340,11 @@ try {
     expect(copiedAfterFail === 0, '[5c] 保存失败不写剪贴板', `写入 ${copiedAfterFail} 次`)
     await page.close()
   }
+} catch (error) {
+  // 单个场景超时不要以未捕获异常结束：后续场景可能还没跑，至少要留下可读的失败摘要。
+  const reason = String(error instanceof Error ? error.message : error).split('\n')[0]
+  failures.push(`用例中断：${reason}`)
+  console.error(`  ✗  用例中断（后续场景未执行）：${reason}`)
 } finally {
   await browser.close()
   server.kill()
