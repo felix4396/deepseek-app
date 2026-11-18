@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from 'react'
 import { setApiKey, useApiConfig } from '../../services/api/apiConfig.js'
 import { useTranslate } from '../../i18n/index.js'
 import {
+  buyUrl,
   fetchPlans,
   formatPlanMeta,
   formatPoints,
@@ -30,10 +31,12 @@ import {
   type InviteProfile,
 } from '../../services/invite/api.js'
 import { ensureDeviceId } from '../../services/invite/device.js'
-import { httpTransport, isNativePlatform, openCheckout } from '../../services/ours/transport.js'
+import { readStoredOrder, writeStoredOrder, ORDER_RESUME_MAX_AGE_MS } from '../../services/ours/orderStore.js'
+import { httpTransport, isNativePlatform, navigateTopLevel, openCheckout } from '../../services/ours/transport.js'
 import { copyText } from '../../utils/clipboard.js'
 import { Button } from '../base/Button.js'
 import { Modal } from '../base/Modal.js'
+import { setOursServicesOpen, useSettingsDialog } from './settingsDialogState.js'
 import styles from './OursServices.module.css'
 
 /**
@@ -73,55 +76,6 @@ type OrderView = {
   errorKey: OursMessageKey | null
 }
 
-/** 未完成订单的存档：order_token 必须留下来，否则之后 /api/order 一律 403 */
-const ORDER_STORAGE_KEY = 'chat-demo:ours-order'
-/** 超过这个时间的存档不再自动续查（订单本身 15 分钟就过期了） */
-const ORDER_RESUME_MAX_AGE_MS = 30 * 60 * 1000
-
-type StoredOrder = { outTradeNo: string; orderToken: string; planId: string; startedAt: number }
-
-const readStoredOrder = (): StoredOrder | null => {
-  try {
-    const raw = localStorage.getItem(ORDER_STORAGE_KEY)
-    if (raw === null) {
-      return null
-    }
-    const parsed: unknown = JSON.parse(raw)
-    if (parsed === null || typeof parsed !== 'object') {
-      return null
-    }
-    const record = parsed as Partial<StoredOrder>
-    if (
-      typeof record.outTradeNo !== 'string' ||
-      typeof record.orderToken !== 'string' ||
-      record.outTradeNo === '' ||
-      record.orderToken === ''
-    ) {
-      return null
-    }
-    return {
-      outTradeNo: record.outTradeNo,
-      orderToken: record.orderToken,
-      planId: typeof record.planId === 'string' ? record.planId : '',
-      startedAt: typeof record.startedAt === 'number' ? record.startedAt : 0,
-    }
-  } catch {
-    return null
-  }
-}
-
-const writeStoredOrder = (order: StoredOrder | null) => {
-  try {
-    if (order === null) {
-      localStorage.removeItem(ORDER_STORAGE_KEY)
-      return
-    }
-    localStorage.setItem(ORDER_STORAGE_KEY, JSON.stringify(order))
-  } catch {
-    // 存不进去只影响「重开设置后自动续查」，不影响本次轮询
-  }
-}
-
 /** 套餐列表默认选中的套餐 id（没有可用套餐就是 null） */
 const firstPlanId = (state: OursPlansState | { status: 'loading' }): string | null =>
   state.status === 'success' ? (state.plans[0]?.id ?? null) : null
@@ -130,7 +84,8 @@ const firstPlanId = (state: OursPlansState | { status: 'loading' }): string | nu
 export const OursServicesRow = () => {
   const t = useTranslate()
   const kind = useApiConfig((state) => state.kind)
-  const [open, setOpen] = useState(false)
+  // 开合状态放在 settingsDialogState：付款回跳要能直接把它打开（见 openOursServices）
+  const open = useSettingsDialog((state) => state.oursOpen)
   if (kind !== 'ours') {
     return null
   }
@@ -146,12 +101,12 @@ export const OursServicesRow = () => {
           size="m"
           className={styles.rowButton}
           data-testid="ours-services-open"
-          onClick={() => setOpen(true)}
+          onClick={() => setOursServicesOpen(true)}
         >
           {t('oursServicesOpen')}
         </Button>
       </div>
-      {open ? <OursServicesDialog onClose={() => setOpen(false)} /> : null}
+      {open ? <OursServicesDialog onClose={() => setOursServicesOpen(false)} /> : null}
     </>
   )
 }
@@ -330,6 +285,12 @@ const OursServicesDialog = ({ onClose }: { onClose: () => void }) => {
 
   useEffect(() => {
     void (async () => {
+      // 存档里的未完成订单（付款回跳最典型）先查：用户回来第一眼就该看到订单状态，
+      // 不该排队等额度与套餐。只有存过 order_token 的才查得到。
+      const stored = readStoredOrder()
+      if (stored !== null && Date.now() - stored.startedAt < ORDER_RESUME_MAX_AGE_MS) {
+        void runPoll(stored.outTradeNo, stored.orderToken)
+      }
       if (useApiConfig.getState().apiKey.trim() === '') {
         // 首次使用：自动领取（无 Key 才会走到这里，不会覆盖用户已填的 Key）
         await claimKey(true)
@@ -348,11 +309,6 @@ const OursServicesDialog = ({ onClose }: { onClose: () => void }) => {
       if (nextId !== null) {
         setPlanId((current) => (current === '' ? nextId : current))
       }
-      // 上次没查完的订单：续查（只有存过 order_token 的才查得到）
-      const stored = readStoredOrder()
-      if (stored !== null && Date.now() - stored.startedAt < ORDER_RESUME_MAX_AGE_MS) {
-        await runPoll(stored.outTradeNo, stored.orderToken)
-      }
     })()
     // 只跑一次：挂载即初始化，之后都由用户操作驱动
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -361,28 +317,35 @@ const OursServicesDialog = ({ onClose }: { onClose: () => void }) => {
   // ---------------------------------------------------------------- 购买
 
   /**
-   * 去支付：GET /buy?plan=（**只发一次**）→ 取 302 的 Location → 系统浏览器打开。
-   * 原生靠 CapacitorHttp 的 disableRedirects（读不到 location 头时走原生插件兜底）。
-   * 网页版拿不到 Location（opaqueredirect），界面直接说「请在 App 内购买」——
-   * 不猜单号、不重发 /buy（每发一次都会新建订单）。
+   * 去支付。两种环境两种走法（Issue #36 的技术订正）：
+   *
+   *  - **网页版**：直接 `window.location.assign(buyUrl(planId))` —— 顶层导航。
+   *    /buy 的 302 目标里签名、单号、金额后端已经拼好，浏览器照着跳就行；
+   *    跨域顶层跳转不受 CORS 约束，也不需要读 Location。**一条业务请求都不发**（不发 fetch）。
+   *  - **原生**：GET /buy 读 302 的 Location（CapacitorHttp disableRedirects，读不到头时
+   *    走原生插件 resolveLocation 兜底）→ 系统浏览器打开 → 存 order_token → 轮询。
+   *
+   * 旧的网页版实现用 `fetch('/buy', { redirect: 'manual' })` 读 302：按规范只能拿到
+   * opaqueredirect（读不到 Location），所以永远走到「请在 App 内购买」—— 那条分支已删除。
    */
   const buy = async () => {
     if (!OURS_PAYMENT_OPEN || planId === '' || buyBusy) {
       return
     }
-    setBuyBusy(true)
     setBuyError(null)
+    if (!isNativePlatform()) {
+      // 网页版：让浏览器自己跳（付款回来地址栏带 ?no=&order_token=，启动时解析后进查单）
+      navigateTopLevel(buyUrl(planId))
+      return
+    }
+    setBuyBusy(true)
     const result = await startCheckout(planId, httpTransport)
     if (!alive.current) {
       return
     }
     if (result.kind !== 'ok') {
       setBuyBusy(false)
-      setBuyError(
-        result.kind === 'no-location' || !isNativePlatform()
-          ? 'oursErrCheckoutUnsupported'
-          : result.messageKey
-      )
+      setBuyError(result.kind === 'no-location' ? 'oursErrCheckoutUnsupported' : result.messageKey)
       return
     }
     const opened = await openCheckout(result.checkout.payUrl)
@@ -475,6 +438,7 @@ const OursServicesDialog = ({ onClose }: { onClose: () => void }) => {
   return (
     <Modal
       title={t('oursServicesTitle')}
+      zIndex={1100}
       closable
       onClose={onClose}
       className={styles.dialog}
@@ -732,7 +696,7 @@ const OursServicesDialog = ({ onClose }: { onClose: () => void }) => {
               ? t(buyError)
               : isNativePlatform()
                 ? t('oursBuyHint')
-                : `${t('oursBuyHint')} ${t('oursBuyWebUnsupported')}`}
+                : t('oursBuyWebHint')}
           </div>
         </section>
 

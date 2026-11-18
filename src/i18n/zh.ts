@@ -397,7 +397,7 @@ export const zh = {
   oursBuyAction: '去支付',
   oursBuyBusy: '正在创建订单…',
   oursBuyHint: '支付在系统浏览器里完成（支付宝），回到 App 自动查单。价格与积分由服务端下发。',
-  oursBuyWebUnsupported: '网页版拿不到收银台地址：请在 App 内购买，或付款后用卡密兑换。',
+  oursBuyWebHint: '网页版会跳到支付宝收银台（同一标签页）；付完回来会自动查单，请先留在本页。',
   // 订单
   oursOrderTitle: '订单',
   oursOrderChecking: '正在查询订单…',

@@ -19,6 +19,7 @@ export const Modal = ({
   className,
   mainClassName,
   visible = true,
+  zIndex,
   onClose,
 }: {
   title: ReactNode
@@ -34,6 +35,12 @@ export const Modal = ({
    * 默认为 true：直接挂载出来时只播进入动画。
    */
   visible?: boolean
+  /**
+   * 叠放层级。默认由 CSS 给 1000、按挂载先后叠放；
+   * 从一个已打开的弹窗里再开一个（例如设置层里的「我们的渠道」）时，挂载顺序不保证，
+   * 需要显式抬高一层，否则新弹层会被压在下面点不到。
+   */
+  zIndex?: number
   onClose: () => void
 }) => {
   const t = useTranslate()
@@ -102,6 +109,7 @@ export const Modal = ({
     <div
       ref={overlayRef}
       className={styles.overlay}
+      style={zIndex === undefined ? undefined : { zIndex }}
       data-motion-state={shown ? 'open' : 'closed'}
       onMouseDown={(event) => event.target === event.currentTarget && onClose()}
     >

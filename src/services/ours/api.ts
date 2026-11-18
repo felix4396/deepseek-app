@@ -431,6 +431,40 @@ export type OursCheckout = {
 /** 收银台地址只接受 https（原生插件也只放行 https），其余一律当作「没有支付入口」 */
 export const isOpenableCheckout = (url: string): boolean => /^https:\/\//i.test(url.trim())
 
+/**
+ * 建单入口：`/buy?plan=<id>`（签名、单号、金额都已经拼在它的 302 目标里）。
+ *
+ * 两种用法，取决于运行环境（Issue #36）：
+ *  - 网页版：把这个 URL 交给浏览器做**顶层导航**（`window.location.assign` / `<a href>`）。
+ *    跨域顶层跳转不受 CORS 约束，也不需要读 Location —— 这正是网页版唯一正确的打开方式。
+ *  - 原生：走 `startCheckout`（CapacitorHttp 不跟随重定向，读回 302 的 Location）。
+ *
+ * 绝不能用 `fetch(..., { redirect: 'manual' })` 去读它：规范规定跨域时只能拿到
+ * `opaqueredirect`（status 0、没有 header），读不到 Location，也看不到目标 URL。
+ */
+export const buyUrl = (planId: string): string =>
+  `${OURS_API_BASE}/buy?plan=${encodeURIComponent(planId.trim())}`
+
+/** 付款回跳时地址栏带回来的查询参数：`?no=<out_trade_no>&order_token=<token>` */
+export type OursOrderReturn = { outTradeNo: string; orderToken: string }
+
+/**
+ * 解析付款回跳参数（`?no=…&order_token=…`）。
+ *
+ * - `no` 是收银台 `return_url` 里的 out_trade_no；也兼容写成 `out_trade_no`
+ * - `order_token` 缺一不可（没有它 /api/order 一律 403）
+ * - 两个参数都在才算「这是一次回跳」，否则返回 null（正常打开页面不触发查单）
+ */
+export const parseOrderReturn = (search: string): OursOrderReturn | null => {
+  const params = new URLSearchParams(search.startsWith('?') ? search.slice(1) : search)
+  const outTradeNo = (params.get('no') ?? params.get('out_trade_no') ?? '').trim()
+  const orderToken = (params.get('order_token') ?? '').trim()
+  if (outTradeNo === '' || orderToken === '') {
+    return null
+  }
+  return { outTradeNo, orderToken }
+}
+
 const parseUrl = (value: string): URL | null => {
   try {
     return new URL(value.trim())
@@ -470,17 +504,18 @@ export const parseCheckoutTarget = (rawUrl: string): OursCheckout | null => {
 
 export type OursCheckoutResult =
   | { kind: 'ok'; checkout: OursCheckout }
-  /** 拿不到 Location：网页版 fetch(manual) 只能拿到 opaqueredirect（原生端不会走到这里） */
+  /** 拿不到 Location（原生插件也读不到 302 头）→ 界面提示换条路，不猜单号 */
   | { kind: 'no-location' }
   | { kind: 'error'; code: string; messageKey: OursMessageKey }
 
 /**
- * 建单：GET /buy?plan=<id>。
+ * 建单：GET /buy?plan=<id>（**仅原生**用；网页版走 buyUrl + 顶层导航，见 Issue #36）。
  *
  * 关键点：
  *  - 只发一次（每次 GET 都会新建订单），界面只在用户点「去支付」时调用
  *  - 请求层 followRedirects=false：只读 3xx 的 Location，不跟随（跟随会丢单号令牌）
- *  - 网页端读不到 Location（opaqueredirect）→ kind='no-location'，界面提示「请在 App 内购买」
+ *  - 网页版不该调用本函数：浏览器里 `fetch(redirect:'manual')` 只能拿到 opaqueredirect，
+ *    永远拿不到 Location。网页版的正确做法是让浏览器顶层跳转到 buyUrl(planId)。
  */
 export const startCheckout = async (
   planId: string,
@@ -492,7 +527,7 @@ export const startCheckout = async (
   }
   const result = await transport({
     method: 'GET',
-    url: `${OURS_API_BASE}/buy?plan=${encodeURIComponent(id)}`,
+    url: buyUrl(id),
     headers: { Accept: 'text/html,application/xhtml+xml' },
     timeoutMs: OURS_TIMEOUTS.buy,
     followRedirects: false,
