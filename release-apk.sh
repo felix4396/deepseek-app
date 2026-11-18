@@ -1,11 +1,17 @@
 #!/usr/bin/env bash
-# release-apk.sh — 一条命令把 APK「双发」：dl.rose7.cn（自建下载站）+ GitHub Release
+# release-apk.sh — 一条命令发布 APK：门禁 → 版本号 → CHANGELOG → commit → 构建 → 双发
 #
-# 用法: ./release-apk.sh <x.y.z[-suffix]> "变更1" "变更2" ... [--no-github]
-#   --no-github  只发 dl.rose7.cn，跳过 GitHub Release（应急用）
+# 用法: ./release-apk.sh <x.y.z[-suffix]> (--internal|--standard) "变更1" "变更2" ... [选项]
+#   --internal   内部构建（heavy-run pnpm build:internal）
+#   --standard   标准/对外构建（heavy-run pnpm build）
+#   --skip-tests 门禁里跳过 unit/integration/e2e 三项；CHANGELOG 标题与 Release notes 会留痕
+#   --dry-run    只打印九步计划：不改文件、不 commit、不构建、不上传、不打 tag
+#   --no-github  只发 dl.rose7.cn（应急）
 #
 # 幂等：同版本号重跑 = 覆盖（releases.json 覆盖同版本记录；GitHub 已存在则 upload --clobber + edit）。
-# 失败策略：dl.rose7.cn 成功即算发布成功；GitHub 步骤失败只告警，退出码仍为 0。
+# 失败策略：commit 之前失败 → 自动 git checkout 回滚 build.gradle/CHANGELOG；
+#           commit 之后失败 → 已生成发布 commit，用 git reset --hard HEAD~1 撤销。
+#           dl.rose7.cn 成功即算发布成功；GitHub 步骤失败只告警，退出码仍为 0。
 set -euo pipefail
 
 REMOTE=${REMOTE:-aliyun}
@@ -14,32 +20,75 @@ AAPT2=${AAPT2:-/root/android-sdk/build-tools/35.0.0/aapt2}
 BASE_URL=${BASE_URL:-https://dl.rose7.cn}
 REMOTE_ROOT=/var/www/dl
 GH_REPO=${GH_REPO:-zzy-repo/deepseek-app}
-CHANGELOG=${CHANGELOG:-$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/CHANGELOG.md}
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+CHANGELOG=${CHANGELOG:-${ROOT_DIR}/CHANGELOG.md}
+GRADLE=${GRADLE:-${ROOT_DIR}/android/app/build.gradle}
+PREFLIGHT=${PREFLIGHT:-${ROOT_DIR}/preflight.sh}
+GRADLE_REL=${GRADLE#${ROOT_DIR}/}
+CHANGELOG_REL=${CHANGELOG#${ROOT_DIR}/}
 TAG_PREFIX=v
+SKIP_WEB_BUILD=${SKIP_WEB_BUILD:-0}
+export SKIP_WEB_BUILD
 
-die(){ printf 'ERROR: %s\n' "$*" >&2; exit 1; }
+TOUCHED=0      # build.gradle / CHANGELOG 已被改动且尚未 commit
+COMMITTED=0    # 发布 commit 已建立
+
 info(){ printf '  %s\n' "$*"; }
 warn(){ printf '%s\n' "$*" >&2; }
+step(){ printf '\n\033[1;36m== %s ==\033[0m\n' "$*"; }
+
+rollback_files(){
+  ( cd "${ROOT_DIR}" && git reset -q HEAD -- "${GRADLE_REL}" "${CHANGELOG_REL}" 2>/dev/null || true
+    cd "${ROOT_DIR}" && git checkout -- "${GRADLE_REL}" "${CHANGELOG_REL}" 2>/dev/null || true ) || true
+}
+fail_cleanup(){
+  if (( COMMITTED )); then
+    warn "  ⚠️ 已创建发布 commit（$(git -C "${ROOT_DIR}" rev-parse --short HEAD 2>/dev/null)），文件未回滚；撤销：cd ${ROOT_DIR} && git reset --hard HEAD~1"
+  elif (( TOUCHED )); then
+    rollback_files
+    warn "  ↩️  已回滚 ${GRADLE_REL} 与 ${CHANGELOG_REL}（git checkout --）"
+  fi
+}
+die(){ printf '\nERROR: %s\n' "$*" >&2; fail_cleanup; exit 1; }
 
 usage(){
   cat <<'USAGE'
-用法: ./release-apk.sh <x.y.z[-suffix]> "变更1" "变更2" ... [--no-github]
+用法: ./release-apk.sh <x.y.z[-suffix]> (--internal|--standard) "变更1" "变更2" ... [选项]
 
-  同时发布到 dl.rose7.cn 与 GitHub Release。
-  --no-github      跳过 GitHub Release（应急用；dl.rose7.cn 仍会发布）
-  --no-github 之外的位置随意，例如:
-      ./release-apk.sh --no-github 1.2.3 "修复 A" "修复 B"
-      ./release-apk.sh 1.2.3 "修复 A" --no-github
+  一条命令做完九步：门禁 → 版本号 → CHANGELOG → commit → 构建 → 上传 dl → 发 GitHub Release → 汇总
+
+  必需:
+    <x.y.z[-suffix]>      版本号，如 1.5.0 / 1.5.0-beta.1
+    "变更1" "变更2" ...    至少一条，会写进 CHANGELOG 与 Release notes
+    --internal | --standard
+                          --internal → heavy-run pnpm build:internal（内测构建）
+                          --standard → heavy-run pnpm build（对外构建，缺省值）
+
+  选项:
+    --skip-tests          跳过门禁第 4/5/6 项（unit/integration/e2e）；CHANGELOG 标题加 [未过门禁]
+    --dry-run             只打印九步计划：不改文件、不 commit、不构建、不上传、不打 tag
+    --no-github           只发 dl.rose7.cn，跳过 GitHub Release（应急）
+    -h, --help            本帮助
+
+  示例:
+    ./release-apk.sh 1.5.0 --internal "新增：会话自动标题" "修复：手动改名被覆盖"
+    ./release-apk.sh 1.5.0 --standard --dry-run "预演一次"
+    ./release-apk.sh 1.5.0 --internal --skip-tests "紧急修崩溃"
 USAGE
 }
 
-# --- 0) 解析参数（--no-github 可放在任意位置）---
-NO_GITHUB=0
+# --- 0) 解析参数（选项可放在任意位置）---
+NO_GITHUB=0; SKIP_TESTS=0; DRY_RUN=0; BUILD_TYPE=''
 ARGS=()
 for a in "$@"; do
   case "$a" in
+    --internal) BUILD_TYPE=internal ;;
+    --standard) BUILD_TYPE=standard ;;
+    --skip-tests) SKIP_TESTS=1 ;;
+    --dry-run) DRY_RUN=1 ;;
     --no-github) NO_GITHUB=1 ;;
     -h|--help) usage; exit 0 ;;
+    --*) usage >&2; die "未知选项: $a" ;;
     *) ARGS+=("$a") ;;
   esac
 done
@@ -47,13 +96,208 @@ set -- ${ARGS[@]+"${ARGS[@]}"}
 
 VER="${1:-}"; shift || true
 CHANGES=("$@")
-[[ -n ${VER} ]] || { usage >&2; die '缺少版本号'; }
-[[ ${VER} =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$ ]] || die "版本号必须形如 1.2.3（允许 1.2.3-test 后缀），收到: ${VER}"
-(( ${#CHANGES[@]} > 0 )) || die '至少给一条 changes（写人能看懂这次改了什么）'
+if [[ -z ${VER} ]]; then usage >&2; die '缺少版本号'; fi
+if (( ${#CHANGES[@]} == 0 )); then usage >&2; die '至少给一条 changes（写人能看懂这次改了什么）'; fi
 for c in "${CHANGES[@]}"; do [[ -n ${c// /} ]] || die 'changes 里有空字符串'; done
-[[ -s ${APK_SRC} ]] || die "APK 不存在或为空: ${APK_SRC}"
-[[ -x ${AAPT2} ]] || die "aapt2 不可执行: ${AAPT2}"
+if [[ -z ${BUILD_TYPE} ]]; then
+  BUILD_TYPE=standard
+  warn '  ! 未指定 --internal/--standard，默认按 --standard（对外构建）'
+fi
+[[ -x ${PREFLIGHT} ]] || die "门禁脚本不可执行: ${PREFLIGHT}（先 chmod +x preflight.sh）"
+[[ -f ${GRADLE} ]] || die "找不到 ${GRADLE}"
 TAG="${TAG_PREFIX}${VER}"
+
+# --- 版本号读取 / 工具 ---
+gradle_versioncode(){ sed -n 's/^[[:space:]]*versionCode[[:space:]]\+\([0-9]\+\).*/\1/p' "${GRADLE}" | head -1; }
+gradle_versionname(){ sed -n 's/^[[:space:]]*versionName[[:space:]]"\([^"]*\)".*/\1/p' "${GRADLE}" | head -1; }
+OLD_VC=$(gradle_versioncode); OLD_VN=$(gradle_versionname)
+[[ -n ${OLD_VC} && -n ${OLD_VN} ]] || die "读不到 ${GRADLE_REL} 的 versionCode/versionName"
+NEW_VC=$(( OLD_VC + 1 ))
+
+short_title(){
+  python3 - "$1" <<'PY'
+import re,sys
+s=sys.argv[1]
+s=re.sub(r'^\s*(新增|修复|优化|变更|调整|移除|删除|文档|重构|测试|性能)[：:]\s*','',s)
+s=re.split(r'[。；;，,]',s)[0].strip()
+print(s[:20])
+PY
+}
+SHORT=$(short_title "${CHANGES[0]}")
+[ -n "${SHORT}" ] || SHORT="${CHANGES[0]:0:20}"
+DATE_STR=$(TZ=Asia/Shanghai date +%F)
+TITLE_SUFFIX=''
+if (( SKIP_TESTS )); then TITLE_SUFFIX=' [未过门禁]'; fi
+
+# 只读检查：远端是否已发过这个版本（重发提醒）
+check_republish(){
+  local json out same rmax
+  json=$(curl -fsS --max-time 12 "${BASE_URL}/releases.json" 2>/dev/null || true)
+  if [[ -z ${json} ]]; then info "读不到 ${BASE_URL}/releases.json（跳过重复版本检查）"; return 0; fi
+  out=$(printf '%s' "${json}" | python3 -c '
+import json,sys
+ver=sys.argv[1]
+try: d=json.load(sys.stdin)
+except Exception: print("0 0"); raise SystemExit
+rel=d.get("releases") or []
+same=any(str(r.get("version"))==ver for r in rel)
+vcs=[int(r.get("versionCode") or 0) for r in rel]
+print("%d %d"%(1 if same else 0,max(vcs) if vcs else 0))
+' "${VER}" 2>/dev/null || echo "0 0")
+  same=${out%% *}; rmax=${out##* }
+  if [[ ${same} == 1 ]]; then
+    warn "  ⚠️ ${VER} 已在 dl.rose7.cn 发布过：本次是【重发】，releases.json 覆盖同版本记录、APK 覆盖同名文件"
+  fi
+  if (( rmax >= NEW_VC )); then
+    warn "  ⚠️ 远端最大 versionCode=${rmax} >= 本次 ${NEW_VC}：手机端可能不认为是升级，检查 ${GRADLE_REL}"
+  fi
+  return 0
+}
+
+# --- dry-run：只打印九步计划，然后立刻退出（零副作用）---
+if (( DRY_RUN )); then
+  if [[ ! ${VER} =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$ ]]; then
+    die "版本号必须形如 1.5.0 或 1.5.0-beta.1，收到: ${VER}"
+  fi
+  if [[ ${BUILD_TYPE} == internal ]]; then WEB_CMD='heavy-run pnpm build:internal'; else WEB_CMD='heavy-run pnpm build'; fi
+  if (( SKIP_TESTS )); then GATE_DESC='九项中 4/5/6 跳过（--skip-tests，会留痕 [未过门禁]）'; else GATE_DESC='九项全跑'; fi
+  printf '\n\033[1;33m[dry-run] 发布演练：不改文件 / 不 commit / 不构建 / 不上传 / 不打 tag\033[0m\n'
+  printf '  版本          %s\n' "${VER}"
+  printf '  构建类型      %s（%s）\n' "${BUILD_TYPE}" "${WEB_CMD}"
+  printf '  versionCode   %s → %s\n' "${OLD_VC}" "${NEW_VC}"
+  printf '  versionName   %s → %s\n' "${OLD_VN}" "${VER}"
+  printf '  门禁          ./preflight.sh --planned-version %s（%s）\n' "${VER}" "${GATE_DESC}"
+  printf '  CHANGELOG     将插入: ## %s (%s) — %s%s\n' "${VER}" "${DATE_STR}" "${SHORT}" "${TITLE_SUFFIX}"
+  printf '  重复版本检查  %s\n' "${BASE_URL}/releases.json（只读）"
+  printf '\n  将执行：改 gradle → 写 CHANGELOG → commit → 构建 → 上传 → 发 Release\n'
+  printf '  1) ./preflight.sh --planned-version %s   发布门禁九项（失败即中止，不碰任何文件）\n' "${VER}"
+  printf '  2) 版本号格式校验                          x.y.z / x.y.z-beta.1（收到 %s）\n' "${VER}"
+  printf '  3) 改 %s            versionCode %s→%s，versionName→%s\n' "${GRADLE_REL}" "${OLD_VC}" "${NEW_VC}" "${VER}"
+  printf '  4) 写 CHANGELOG.md                         插入 "## %s (%s) — %s"%s\n' "${VER}" "${DATE_STR}" "${SHORT}" "${TITLE_SUFFIX}"
+  printf '  5) commit                                  git add %s CHANGELOG.md && git commit -m "chore: 发布 %s"\n' "${GRADLE_REL}" "${VER}"
+  printf '  6) 构建                                    %s → npx cap sync android → (cd android && heavy-run ./gradlew assembleDebug)\n' "${WEB_CMD}"
+  printf '  7) 上传 dl.rose7.cn                        apk/deepseek-chat-%s.apk + 原子替换 releases.json\n' "${VER}"
+  printf '  8) GitHub Release                          git push origin main → gh release create %s --target <HEAD> → 校验 tag 指向\n' "${TAG}"
+  printf '  9) 汇总                                    打印 APK URL / GitHub Release 链接\n'
+  check_republish >/dev/null 2>&1 || true
+  printf '\n  \033[1;32m✅ dry-run 结束：以上仅为计划，工作区未被改动\033[0m\n'
+  exit 0
+fi
+
+# --- 1) 发布门禁（失败即中止，此时还没碰任何文件）---
+step "1/9 门禁 preflight"
+PF_ARGS=(--planned-version "${VER}")
+if (( SKIP_TESTS )); then PF_ARGS+=(--skip-tests); fi
+info "./preflight.sh ${PF_ARGS[*]}"
+if ! "${PREFLIGHT}" "${PF_ARGS[@]}"; then
+  die '门禁未通过：发布中止（build.gradle / CHANGELOG / git 都没有被改动）'
+fi
+
+# --- 2) 版本号格式 ---
+step "2/9 版本号格式校验"
+if [[ ! ${VER} =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$ ]]; then
+  die "版本号必须形如 1.5.0 或 1.5.0-beta.1，收到: ${VER}"
+fi
+info "${VER} 合法（tag 将是 ${TAG}）"
+
+# --- 2.5) 重复版本检查（只读告警）---
+check_republish
+
+# --- 3) 改 build.gradle：versionCode +1 / versionName = VER ---
+step "3/9 改 ${GRADLE_REL}"
+TOUCHED=1
+if ! python3 - "${GRADLE}" "${VER}" <<'PY'
+import re,sys
+p,ver=sys.argv[1],sys.argv[2]
+s=open(p,encoding='utf-8').read()
+mc=re.search(r'(?m)^([ \t]*)versionCode[ \t]+(\d+)',s)
+mn=re.search(r'(?m)^([ \t]*)versionName[ \t]+"([^"]*)"',s)
+if not mc or not mn:
+    sys.stderr.write('versionCode/versionName 行找不到\n'); sys.exit(1)
+newvc=int(mc.group(2))+1
+s=s[:mc.start()]+"%sversionCode %d"%(mc.group(1),newvc)+s[mc.end():]
+mn=re.search(r'(?m)^([ \t]*)versionName[ \t]+"([^"]*)"',s)
+s=s[:mn.start()]+'%sversionName "%s"'%(mn.group(1),ver)+s[mn.end():]
+open(p,'w',encoding='utf-8').write(s)
+PY
+then
+  die "改 ${GRADLE_REL} 失败"
+fi
+CHK_VC=$(gradle_versioncode); CHK_VN=$(gradle_versionname)
+if [[ ${CHK_VC} != "${NEW_VC}" || ${CHK_VN} != "${VER}" ]]; then
+  die "改完后校验不一致（versionCode=${CHK_VC} versionName=${CHK_VN}，期望 ${NEW_VC}/${VER}）"
+fi
+info "versionCode ${OLD_VC} → ${NEW_VC}；versionName ${OLD_VN} → ${VER}"
+
+# --- 4) 写 CHANGELOG（插在最新一条之前）---
+step "4/9 写 ${CHANGELOG_REL}"
+if ! python3 - "${CHANGELOG}" "${VER}" "${DATE_STR}" "${TITLE_SUFFIX}" "${CHANGES[@]}" <<'PY'
+import re,sys
+path,ver,date,suffix=sys.argv[1],sys.argv[2],sys.argv[3],sys.argv[4]
+changes=sys.argv[5:]
+text=open(path,encoding='utf-8').read()
+if re.search(r'(?m)^##[ \t]+'+re.escape(ver)+r'([ \t(]|$)',text):
+    print('EXISTS'); raise SystemExit(0)
+short=re.sub(r'^\s*(新增|修复|优化|变更|调整|移除|删除|文档|重构|测试|性能)[：:]\s*','',changes[0])
+short=re.split(r'[。；;，,]',short)[0].strip()[:20]
+title='## %s (%s) — %s%s'%(ver,date,short,suffix)
+block=[title,'']+['- %s'%c for c in changes]+['']
+lines=text.split('\n')
+idx=None
+for i,l in enumerate(lines):
+    if l.startswith('## '): idx=i; break
+if idx is None:
+    new=lines+['']+block
+else:
+    new=lines[:idx]+block+lines[idx:]
+open(path,'w',encoding='utf-8').write('\n'.join(new))
+print('INSERTED')
+PY
+then
+  die "写 ${CHANGELOG_REL} 失败"
+fi
+if ! grep -qE "^##[[:space:]]+${VER}([[:space:](]|$)" "${CHANGELOG}"; then
+  die "写完校验失败：${CHANGELOG_REL} 里找不到 '## ${VER}' 段落"
+fi
+info "已写入 '## ${VER} (${DATE_STR}) — ${SHORT}${TITLE_SUFFIX}'"
+if (( SKIP_TESTS )); then
+  warn "  ⚠️ --skip-tests 生效：CHANGELOG 标题已标 [未过门禁]，Release notes 会追加说明行"
+fi
+
+# --- 5) commit ---
+step "5/9 commit"
+if ! ( cd "${ROOT_DIR}" && git add "${GRADLE_REL}" "${CHANGELOG_REL}" && git commit -q -m "chore: 发布 ${VER}" ); then
+  die 'commit 失败（检查 git 身份配置 / pre-commit hook）'
+fi
+COMMITTED=1
+COMMIT_SHA=$(git -C "${ROOT_DIR}" rev-parse --short HEAD)
+info "commit ${COMMIT_SHA}  chore: 发布 ${VER}"
+
+# --- 6) 构建 ---
+step "6/9 构建（${BUILD_TYPE}）"
+if [[ ${SKIP_WEB_BUILD} == 1 && -f "${ROOT_DIR}/dist/index.html" ]]; then
+  info "SKIP_WEB_BUILD=1：复用现有 dist/（跳过前端构建）"
+else
+  if [[ ${BUILD_TYPE} == internal ]]; then WEB_CMD=(pnpm build:internal); else WEB_CMD=(pnpm build); fi
+  if command -v heavy-run >/dev/null 2>&1; then
+    info "heavy-run ${WEB_CMD[*]}"
+    if ! ( cd "${ROOT_DIR}" && heavy-run "${WEB_CMD[@]}" ); then die "前端构建失败: ${WEB_CMD[*]}"; fi
+  else
+    info "${WEB_CMD[*]}（无 heavy-run，直接跑）"
+    if ! ( cd "${ROOT_DIR}" && "${WEB_CMD[@]}" ); then die "前端构建失败: ${WEB_CMD[*]}"; fi
+  fi
+fi
+info 'npx cap sync android'
+if ! ( cd "${ROOT_DIR}" && npx cap sync android ); then die 'npx cap sync android 失败'; fi
+info '(cd android && heavy-run ./gradlew assembleDebug)'
+if command -v heavy-run >/dev/null 2>&1; then
+  if ! ( cd "${ROOT_DIR}/android" && heavy-run ./gradlew assembleDebug ); then die 'gradlew assembleDebug 失败'; fi
+else
+  if ! ( cd "${ROOT_DIR}/android" && ./gradlew assembleDebug ); then die 'gradlew assembleDebug 失败'; fi
+fi
+[[ -s ${APK_SRC} ]] || die "构建后 APK 不存在或为空: ${APK_SRC}"
+[[ -x ${AAPT2} ]] || die "aapt2 不可执行: ${AAPT2}"
+info "APK $(stat -c%s "${APK_SRC}") B  ${APK_SRC}"
 
 # --- 0.5) 记下本机 HEAD：GitHub Release 的 tag 必须钉在这个 commit 上 ---
 #   坑（已踩两次）：`gh release create` 不给 --target 时，gh 用「远端默认分支当前 sha」建 tag；
@@ -189,6 +433,13 @@ make_notes(){
   {
     printf '\nAPK 直链：%s/apk/deepseek-chat-%s.apk\n' "${BASE_URL}" "${VER}"
   } >>"${NOTES_FILE}"
+  # --skip-tests 留痕：notes 里必须能看出这次没跑测试
+  if (( SKIP_TESTS )); then
+    {
+      printf '\n> ⚠️ 本次发布使用 `--skip-tests`：unit / integration / e2e 未执行，'
+      printf '仅通过类型检查、lint、版本号递增、CHANGELOG 段落校验。\n'
+    } >>"${NOTES_FILE}"
+  fi
   NOTES_SRC="${src}"
 }
 
@@ -294,8 +545,12 @@ else
   rm -f "${NOTES_FILE}"
 fi
 
-# --- 6) 双发汇总 ---
+# --- 9) 汇总 ---
 printf '\n发布汇总 %s\n' "${VER}"
+printf '  构建 %s   versionCode %s (%s→%s)   commit %s\n' "${BUILD_TYPE}" "${NEW_VC}" "${OLD_VC}" "${NEW_VC}" "$(git -C "${ROOT_DIR}" rev-parse --short HEAD 2>/dev/null || echo '?')"
+if (( SKIP_TESTS )); then
+  printf '⚠️  本次 --skip-tests：4/5/6 未跑，CHANGELOG/notes 已标 [未过门禁]\n'
+fi
 printf '✅ dl.rose7.cn   %s/apk/deepseek-chat-%s.apk\n' "${BASE_URL}" "${VER}"
 if (( NO_GITHUB )); then
   printf '⏭️  GitHub Release 已跳过（--no-github）\n'
