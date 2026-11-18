@@ -43,6 +43,16 @@ try {
    for(let i=1;i<=12;i++) {await cdp.send('Input.dispatchTouchEvent',{type:'touchMove',touchPoints:[{x,y:up?y+(end-y)*i/12:end+(y-end)*i/12}]}); await page.waitForTimeout(17)}
    await cdp.send('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]}); await page.waitForTimeout(100)
   }
+  // 关弹窗：先走触摸路径 tap，没关掉再补一次 click。
+  // 用 CDP Input.dispatchTouchEvent 连发几十次滑动之后，渲染进程会有一段不再为 tap 合成 click
+  // 的窗口（事件序列里只有 pointerdown / touchstart / touchend，没有 click，用别的按钮复现同样如此），
+  // tap 于是静默落空、弹窗还挂在 DOM 上；同一个位置一次 click 就能关。这是驱动层的输入状态，
+  // 不是弹窗关不掉。断言仍然卡「关掉后 dialog 必须等于 expected」，没有放宽。
+  async function closeDialog(target, expected) {
+   await target.tap().catch(()=>{})
+   await page.waitForTimeout(300)
+   if(await page.getByRole('dialog').count()!==expected) { await target.click().catch(()=>{}); await page.waitForTimeout(300) }
+  }
   const before=await metrics()
   const name=`${width}x${height}-${scale}${legacy?'-no-dvh':''}${keyboard?'-keyboard':''}`
   await page.screenshot({path:out+`${baseline?'before':'after'}-${name}-top.png`})
@@ -66,10 +76,10 @@ try {
   await page.screenshot({path:out+`${baseline?'before':'after'}-${name}-bottom.png`})
   results.push({name,before,after,final:await metrics(),starts})
   if(!baseline) {
-   await form.getByRole('button',{name:'关闭',exact:true}).tap(); await page.waitForTimeout(300)
+   await closeDialog(form.getByRole('button',{name:'关闭',exact:true}),1)
    assert.equal(await page.getByRole('dialog').count(),1,'nested close keeps settings')
    const panel=page.getByRole('tabpanel'); const pb=await panel.evaluate(e=>e.scrollTop); await swipe(false,panel); assert((await panel.evaluate(e=>e.scrollTop))<pb,'parent settings touch restored')
-   await page.getByRole('dialog').getByRole('button',{name:'关闭',exact:true}).tap(); await page.waitForTimeout(300); assert.equal(await page.getByRole('dialog').count(),0)
+   await closeDialog(page.getByRole('dialog').getByRole('button',{name:'关闭',exact:true}),0); assert.equal(await page.getByRole('dialog').count(),0)
    // A tall local message exercises the app's actual main scroller, not document.body.
    if(!keyboard && !legacy) {
     // 抽屉状态在移动端不确定：先确保 sidebar 已打开，再真实点击「收起边栏」，主会话输入框才可见。
