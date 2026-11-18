@@ -371,6 +371,13 @@ export const en = {
   feedbackActionsLabel: 'Recent actions: {actions}',
   feedbackContactLabel: 'Contact (optional)',
   feedbackContactPlaceholder: 'Email or WeChat so we can reach you',
+  // ---------- Feedback draft: kept after cancel, refilled on reopen (Issue #31) ----------
+  feedbackDraftRestored: 'Restored what you had not submitted yet',
+  feedbackDraftScreenshotHint: 'The previous image is not kept; pick it again',
+  feedbackDraftClear: 'Clear filled-in content',
+  feedbackDraftClearHint: 'Clears description, contact and screenshot; next open starts empty',
+  feedbackDraftClearConfirm: 'Clear what you filled in? This cannot be undone',
+  feedbackDraftCleared: 'Filled-in content cleared',
 
   // ---------- Our channel: quota & card codes (Issue #7) ----------
   oursServicesLabel: 'Quota & card codes',

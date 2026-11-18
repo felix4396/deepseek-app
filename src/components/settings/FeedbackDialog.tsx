@@ -2,7 +2,8 @@ import clsx from 'clsx'
 import { Capacitor } from '@capacitor/core'
 import { saveFeedbackText } from '../../services/diagnostics/save.js'
 import { saveFeedbackExport } from '../../services/diagnostics/export.js'
-import { useRef, useState } from 'react'
+import { clearFeedbackDraft, readFeedbackDraft, writeFeedbackDraft } from '../../services/feedbackDraft.js'
+import { useEffect, useRef, useState } from 'react'
 import { useTranslate, type TranslationKey } from '../../i18n/index.js'
 import {
   clearDiagnostics,
@@ -139,9 +140,11 @@ const FeedbackForm = ({
   onClose: () => void
 }) => {
   const t = useTranslate()
-  const [description, setDescription] = useState('')
-  const [contact, setContact] = useState('')
-  const [category, setCategory] = useState<FeedbackCategory>('bug')
+  // 草稿回填（Issue #31）：上次点「取消」关掉时留下的内容，这次打开直接带出来
+  const [initialDraft] = useState(readFeedbackDraft)
+  const [description, setDescription] = useState(initialDraft?.description ?? '')
+  const [contact, setContact] = useState(initialDraft?.contact ?? '')
+  const [category, setCategory] = useState<FeedbackCategory>(initialDraft?.category ?? 'bug')
   // 打开时取一次快照：预览与提交用同一批日志，用户看到的就是要上传的
   const [snapshot, setSnapshot] = useState<LogSnapshot>(readInitialSnapshot)
   // 提交前自检（条数 / 时间跨度 / 事件类型覆盖 / 缺失项）
@@ -149,12 +152,32 @@ const FeedbackForm = ({
   const [previewOpen, setPreviewOpen] = useState(false)
   const [integrityOpen, setIntegrityOpen] = useState(integrity)
   const [screenshot, setScreenshot] = useState<string | null>(null)
+  // 上次带过截图但图片对象没留下来：重开时提示需要重新选择（草稿只保留文本字段）
+  const [draftHadScreenshot, setDraftHadScreenshot] = useState(initialDraft?.hadScreenshot === true)
+  const [clearDraftConfirm, setClearDraftConfirm] = useState(false)
   const [shotBusy, setShotBusy] = useState(false)
   const [phase, setPhase] = useState<Phase>({ kind: 'edit' })
   const [copied, setCopied] = useState(false)
   const [exportBusy, setExportBusy] = useState(false)
   const [exportNotice, setExportNotice] = useState('')
   const exportInProgress = useRef(false)
+
+  /**
+   * 草稿随输入实时落在内存里（Issue #31）：取消 / Esc / 点遮罩 / 右上角 × 走的都是同一条
+   * 卸载路径，只要状态下沉到模块内存，就不必给每个关闭入口都挂一遍「保存」。
+   * 提交成功后（phase=done）不再写回：已送达的内容留着会被误以为还没提交。
+   */
+  useEffect(() => {
+    if (phase.kind === 'done') {
+      return
+    }
+    writeFeedbackDraft({
+      description,
+      contact,
+      category,
+      hadScreenshot: screenshot !== null || draftHadScreenshot,
+    })
+  }, [description, contact, category, screenshot, draftHadScreenshot, phase.kind])
 
   const onExport = async () => {
     if (exportInProgress.current) {
@@ -202,6 +225,8 @@ const FeedbackForm = ({
   const preview = total > PREVIEW_LIMIT ? snapshot.logs.slice(-PREVIEW_LIMIT) : snapshot.logs
   const transportName = getFeedbackTransportName()
   const canSubmit = description.trim() !== '' && phase.kind !== 'submitting'
+  /** 有没有可清空的草稿内容（决定「清空已填内容」按钮是否可点） */
+  const draftDirty = description.trim() !== '' || contact.trim() !== '' || screenshot !== null
 
   const refresh = () => {
     // A failed refresh must not replace the existing preview with empty logs.
@@ -219,6 +244,7 @@ const FeedbackForm = ({
     setShotBusy(true)
     try {
       setScreenshot(await prepareScreenshot(file))
+      setDraftHadScreenshot(false)
     } catch {
       showToast({ key: 'feedbackScreenshotFailed', type: 'error' })
     } finally {
@@ -243,6 +269,9 @@ const FeedbackForm = ({
         ...(screenshot ? { screenshot } : {}),
       })
       if (result.ok) {
+        // 已送达：草稿作废，别再回填（否则用户会以为没提交成功）
+        clearFeedbackDraft()
+        setDraftHadScreenshot(false)
         setPhase({
           kind: 'done',
           id: result.id,
@@ -276,6 +305,18 @@ const FeedbackForm = ({
     refresh()
     setPreviewOpen(false)
     showToast({ key: 'feedbackLogsCleared' })
+  }
+
+  /** 主动丢弃草稿：清表单 + 清内存，下次打开是空白表单（二次确认后才走到这里） */
+  const onClearDraft = () => {
+    clearFeedbackDraft()
+    setDescription('')
+    setContact('')
+    setCategory('bug')
+    setScreenshot(null)
+    setDraftHadScreenshot(false)
+    setClearDraftConfirm(false)
+    showToast({ key: 'feedbackDraftCleared' })
   }
 
   const copyTicket = async (id: string) => {
@@ -378,6 +419,11 @@ const FeedbackForm = ({
             disabled={phase.kind === 'submitting'}
             onChange={(event) => setDescription(event.currentTarget.value)}
           />
+          {initialDraft && phase.kind !== 'done' ? (
+            <div className={styles.feedbackHint} data-testid="feedback-draft-restored">
+              {t('feedbackDraftRestored')}
+            </div>
+          ) : null}
         </div>
 
         {/* 联系方式：后端会把回复发到这里，可选 */}
@@ -487,6 +533,11 @@ const FeedbackForm = ({
             {screenshot ? (
               <div className={styles.feedbackHint}>{t('feedbackScreenshotReady')}</div>
             ) : null}
+            {!screenshot && draftHadScreenshot ? (
+              <div className={styles.feedbackHint} data-testid="feedback-draft-screenshot-hint">
+                {t('feedbackDraftScreenshotHint')}
+              </div>
+            ) : null}
           </div>
           {screenshot ? (
             <img className={styles.feedbackShotPreview} src={screenshot} alt="" />
@@ -544,6 +595,48 @@ const FeedbackForm = ({
             {t('feedbackClearLogs')}
           </Button>
         </div>
+
+        {/* 草稿（描述 / 联系方式 / 截图）取消后不丢，所以给一个明确的丢弃入口，二次确认 */}
+        {phase.kind !== 'done' ? (
+          <div className={clsx(styles.cell, styles.row)}>
+            <div className={styles.text}>
+              <div className={styles.label}>{t('feedbackDraftClear')}</div>
+              <div className={styles.feedbackHint}>
+                {clearDraftConfirm ? t('feedbackDraftClearConfirm') : t('feedbackDraftClearHint')}
+              </div>
+            </div>
+            {clearDraftConfirm ? (
+              <>
+                <Button
+                  variant="outlined"
+                  size="m"
+                  className={styles.cellButton}
+                  onClick={() => setClearDraftConfirm(false)}
+                >
+                  {t('cancel')}
+                </Button>
+                <Button
+                  variant="dangerOutlined"
+                  size="m"
+                  className={styles.cellButton}
+                  onClick={onClearDraft}
+                >
+                  {t('confirm')}
+                </Button>
+              </>
+            ) : (
+              <Button
+                variant="dangerOutlined"
+                size="m"
+                className={styles.cellButton}
+                disabled={phase.kind === 'submitting' || !draftDirty}
+                onClick={() => setClearDraftConfirm(true)}
+              >
+                {t('feedbackDraftClear')}
+              </Button>
+            )}
+          </div>
+        ) : null}
         {phase.kind !== 'done' && coverage.warnings.length > 0 ? (
           <div className={styles.feedbackWarnings} role="note">
             <div className={styles.feedbackHint}>{t('feedbackWarningsTitle')}</div>
