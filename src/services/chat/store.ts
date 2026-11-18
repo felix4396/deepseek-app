@@ -489,9 +489,13 @@ export const selectSession = (id: string) => {
 }
 
 export const pinSession = (id: string) => {
-  if (get().importingHistory || deletingSessions.has(id)) return
+  if (get().importingHistory || deletingSessions.has(id)) {
+    return
+  }
   const session = get().sessions.find((item) => item.id === id)
-  if (!session) return
+  if (!session) {
+    return
+  }
   const pinnedAt = session.pinnedAt === undefined ? Date.now() : undefined
   set((state) => ({ sessions: sortSessions(state.sessions.map((item) => item.id === id ? { ...item, pinnedAt } : item)) }))
   void db.pinSession(id, pinnedAt).catch(db.reportStorageError('pin session'))

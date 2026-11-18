@@ -119,8 +119,11 @@ export const pinSession = async (id: string, pinnedAt: number | undefined): Prom
         const sessions = tx.objectStore('sessions')
         const session = await sessions.get(id)
         if (session) {
-          if (pinnedAt === undefined) delete session.pinnedAt
-          else session.pinnedAt = pinnedAt
+          if (pinnedAt === undefined) {
+            delete session.pinnedAt
+          } else {
+            session.pinnedAt = pinnedAt
+          }
           await sessions.put(session)
           await tx.objectStore('sessionSummaries').put(storedSummary(session))
         }
