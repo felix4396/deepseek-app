@@ -1,0 +1,878 @@
+{
+  "api": 31,
+  "avd": "compat31",
+  "serial": "emulator-5554",
+  "generatedAt": "2026-11-18T07:30:31.885Z",
+  "artifact": {
+    "apk": "/root/worktrees/deepseek-compat-matrix/android/app/build/outputs/apk/debug/app-debug.apk",
+    "sha256": "c0abf1d914553346cc26cb522fae535cc703737b14d6d9875947a26edc200925",
+    "versionName": "see-apk",
+    "note": "built from worktree"
+  },
+  "device": {
+    "release": "12",
+    "sdk": 31,
+    "flavor": "sdk_gphone64_x86_64-userdebug",
+    "abi": "x86_64",
+    "manufacturer": "Google",
+    "model": "sdk_gphone64_x86_64",
+    "fontScaleSetting": "1.0",
+    "webview": {
+      "provider": "com.google.android.webview",
+      "version": "91.0.4472.114",
+      "preferred": "com.google.android.webview 91.0.4472.114",
+      "implementation": "webview-provider / multiprocess=true",
+      "multiprocess": "true",
+      "dumpRaw": "Current WebView Update Service state\n  Multiprocess enabled: true\n  Current WebView package (name, version): (com.google.android.webview, 91.0.4472.114)\n  Minimum targetSdkVersion: 31\n  Minimum WebView version code: 447211487\n  Number of relros started: 1\n  Number of relros finished: 1\n  WebView package dirty: false\n  Any WebView package installed: true\n  Preferred WebView package (name, version): (com.google.android.webview, 91.0.4472.114)\n  WebView packages:\n    Valid package com.google.android.webview (versionName: 91.0.4472.114, versionCode: 447211487, targetSdkVersion: 31) is  installed/enabled for all users\n    com.google.android.webview.beta is NOT installed.\n    com.google.android.webview.dev is NOT installed.\n    com.google.android.webview.canary is NOT installed.\n    com.google.android.webview.debug is NOT installed.\n    com.android.webview is NOT installed."
+    }
+  },
+  "probe": {
+    "probe": {
+      "ua": "Mozilla/5.0 (Linux; Android 12; sdk_gphone64_x86_64 Build/SE1A.220826.008; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/91.0.4472.114 Mobile Safari/537.36",
+      "chromeVersion": "91.0.4472.114",
+      "wvFlag": true,
+      "caps": {
+        "toSorted": "undefined",
+        "toReversed": "undefined",
+        "toSpliced": "undefined",
+        "with": "undefined",
+        "hasOwn": "undefined",
+        "arrayAt": "undefined",
+        "structuredClone": "undefined",
+        "fetch": "function",
+        "AbortController": "function",
+        "ResizeObserver": "function",
+        "visualViewport": true,
+        "TextDecoder": "function",
+        "dvh": false
+      },
+      "viewport": {
+        "innerWidth": 360,
+        "innerHeight": 728,
+        "dpr": 1.5,
+        "vv": {
+          "width": 360,
+          "height": 728,
+          "scale": 1
+        }
+      },
+      "uaParsed": {
+        "android": "12",
+        "webview": "91.0.4472.114"
+      },
+      "navigatorPlatform": "Linux x86_64"
+    },
+    "capRows": {
+      "toSorted": {
+        "available": false,
+        "needsChrome": 110,
+        "matchesExpectation": true
+      },
+      "toReversed": {
+        "available": false,
+        "needsChrome": 110,
+        "matchesExpectation": true
+      },
+      "toSpliced": {
+        "available": false,
+        "needsChrome": 110,
+        "matchesExpectation": true
+      },
+      "with": {
+        "available": false,
+        "needsChrome": 110,
+        "matchesExpectation": true
+      },
+      "hasOwn": {
+        "available": false,
+        "needsChrome": 93,
+        "matchesExpectation": true
+      },
+      "arrayAt": {
+        "available": false,
+        "needsChrome": 92,
+        "matchesExpectation": true
+      },
+      "structuredClone": {
+        "available": false,
+        "needsChrome": 98,
+        "matchesExpectation": true
+      },
+      "dvh": {
+        "available": false,
+        "needsChrome": 108,
+        "matchesExpectation": true
+      },
+      "fetch": {
+        "available": true,
+        "needsChrome": 0
+      },
+      "AbortController": {
+        "available": true,
+        "needsChrome": 0
+      },
+      "ResizeObserver": {
+        "available": true,
+        "needsChrome": 0
+      },
+      "visualViewport": {
+        "available": true,
+        "needsChrome": 0
+      },
+      "TextDecoder": {
+        "available": true,
+        "needsChrome": 0
+      }
+    }
+  },
+  "startup": {
+    "readyState": "complete",
+    "textLength": 851,
+    "textHead": "How can I help you?\nFast mode\nExpert mode\nAI-generated, for reference only\nSettings\nGeneral\nData\nChannel\nDeepSeek Official\nAPI Key\nConnection test\nTest\nChat bac",
+    "nodeCount": 150,
+    "rootChildCount": 1,
+    "hasTextarea": true,
+    "textareaPlaceholder": "Enter a message",
+    "welcome": true,
+    "bodyBackground": "rgb(255, 255, 255)",
+    "title": "API 使用 demo"
+  },
+  "consoleErrors": [],
+  "logcatCrashes": [],
+  "insights": {
+    "feedback": {
+      "opened": true
+    },
+    "import": {
+      "stages": [
+        "downloading",
+        "importing"
+      ],
+      "sessionCount": 0
+    },
+    "systeminfo": {
+      "api": 31,
+      "avd": "compat31",
+      "generatedAt": "2026-11-18T07:27:42.990Z",
+      "deviceTruth": {
+        "androidRelease": "12",
+        "androidSdk": 31,
+        "webviewProvider": "com.google.android.webview",
+        "webviewVersion": "91.0.4472.114",
+        "webviewImplementation": "webview-provider / multiprocess=true",
+        "fontScaleSetting": "1.0",
+        "model": "sdk_gphone64_x86_64"
+      },
+      "native": {
+        "available": true,
+        "snap": {
+          "androidRelease": "12",
+          "androidSdk": 31,
+          "manufacturer": "Google",
+          "brand": "google",
+          "model": "sdk_gphone64_x86_64",
+          "appVersionName": "1.4.0-beta.7",
+          "appVersionCode": 14,
+          "artifactVariant": "standard",
+          "appSource": "PackageManager",
+          "webviewPackage": "com.google.android.webview",
+          "webviewVersion": "91.0.4472.114",
+          "density": 1.5,
+          "fontScale": 1,
+          "screenWidth": 540,
+          "screenHeight": 1128
+        }
+      },
+      "exportPayload": {
+        "format": "deepseek-feedback-diagnostics",
+        "schemaVersion": 1,
+        "delivery": "local-only-not-submitted",
+        "app": {
+          "version": "1.4.0-beta.7",
+          "versionCode": 14,
+          "platform": "android",
+          "buildType": "standard"
+        },
+        "device": {
+          "model": "sdk_gphone64_x86_64",
+          "androidVersion": "12",
+          "webviewVersion": "91.0.4472.114",
+          "screen": "360x800",
+          "locale": "en-US",
+          "pixelRatio": 1.5,
+          "hardwareConcurrency": 2,
+          "deviceMemory": 2,
+          "system": {
+            "appVersionName": "1.4.0-beta.7",
+            "appVersionCode": 14,
+            "artifactVariant": "standard",
+            "appSource": "PackageManager",
+            "networkType": "unknown",
+            "online": true,
+            "capabilities": {
+              "toSorted": false,
+              "hasOwn": false,
+              "at": false,
+              "visualViewport": true,
+              "dvh": false
+            },
+            "browserPath": "browser",
+            "androidRelease": "12",
+            "androidSdk": 31,
+            "manufacturer": "Google",
+            "brand": "google",
+            "model": "sdk_gphone64_x86_64",
+            "webviewPackage": "com.google.android.webview",
+            "webviewVersion": "91.0.4472.114",
+            "density": 1.5,
+            "fontScale": 1,
+            "screenWidth": 540,
+            "screenHeight": 1128,
+            "nativePath": "DiagnosticsDevice"
+          }
+        },
+        "limits": {
+          "maxBytes": 4194304,
+          "originalLogCount": 77,
+          "omittedLogCount": 0,
+          "truncated": false
+        },
+        "logCount": 77,
+        "bytes": 24110
+      },
+      "uploadPayload": null,
+      "fallback": {
+        "exportStillWorks": true,
+        "nativePath": "unavailable",
+        "androidSdk": null,
+        "fontScale": null,
+        "androidVersion": "12",
+        "webviewVersion": "91.0.4472.114"
+      },
+      "fields": {
+        "nativeSnapshot": {
+          "androidRelease": "12",
+          "androidSdk": 31,
+          "webviewPackage": "com.google.android.webview",
+          "webviewVersion": "91.0.4472.114",
+          "fontScale": 1,
+          "model": "sdk_gphone64_x86_64"
+        },
+        "uaParsed": {
+          "androidVersion": "12",
+          "webviewVersion": "91.0.4472.114"
+        },
+        "exportJson": {
+          "androidVersion(UA 派生)": "12",
+          "webviewVersion(UA 派生)": "91.0.4472.114",
+          "androidRelease(原生)": "12",
+          "androidSdk(原生)": 31,
+          "webviewPackage(原生)": "com.google.android.webview",
+          "webviewVersion(原生)": "91.0.4472.114",
+          "fontScale(原生)": 1,
+          "nativePath": "DiagnosticsDevice"
+        },
+        "exportCapabilities": {
+          "toSorted": false,
+          "hasOwn": false,
+          "at": false,
+          "visualViewport": true,
+          "dvh": false
+        }
+      },
+      "caveats": [
+        "fallback 路径下 androidSdk / fontScale 缺失（原生快照不可用时的已知降级），不影响导出与提交，但排查硬件问题会少字段。"
+      ],
+      "file": "/root/worktrees/deepseek-compat-matrix/docs/compat/31-systeminfo.json"
+    },
+    "fontscale": [
+      {
+        "scale": 1.3,
+        "layout": {
+          "submit": {
+            "top": 635,
+            "bottom": 675,
+            "h": 40
+          },
+          "save": {
+            "top": 264,
+            "bottom": 304,
+            "h": 40
+          },
+          "submitReachable": true,
+          "submitDisabled": true,
+          "dialogClipped": false,
+          "dialogScroll": {
+            "scrollHeight": 667,
+            "clientHeight": 667
+          },
+          "textOverflow": false
+        },
+        "nativeScale": 1.2999999523162842
+      },
+      {
+        "scale": 1.5,
+        "layout": {
+          "submit": {
+            "top": 638,
+            "bottom": 678,
+            "h": 40
+          },
+          "save": {
+            "top": 315,
+            "bottom": 355,
+            "h": 40
+          },
+          "submitReachable": true,
+          "submitDisabled": true,
+          "dialogClipped": false,
+          "dialogScroll": {
+            "scrollHeight": 672,
+            "clientHeight": 672
+          },
+          "textOverflow": false
+        },
+        "nativeScale": 1.5
+      }
+    ]
+  },
+  "checks": [
+    {
+      "group": "device",
+      "name": "镜像确认为 API 31",
+      "status": "pass",
+      "detail": "ro.build.version.sdk=31"
+    },
+    {
+      "group": "device",
+      "name": "google_apis x86_64 镜像（非 Play/非 arm）",
+      "status": "pass",
+      "detail": "sdk_gphone64_x86_64-userdebug"
+    },
+    {
+      "group": "bundle",
+      "name": "构建基线（rspack targets）声明的最低 Chrome：chrome >= 105",
+      "status": "pass",
+      "detail": "产物 main.f7d49f79.js（0.57MB）"
+    },
+    {
+      "group": "bundle",
+      "name": "产物里高版本语法/API 与本内核（Chrome 91）兼容",
+      "status": "fail",
+      "detail": "3 处超出：Object.hasOwn需93+ @187855，.at()需92+ @222870，CSS dvh需108+ @562878 ｜示例片段：…,feedbackContactPlaceholder:\"邮箱或微信，方便我们联系你\"},i=e=>\"string\"==typeof e&&Object.hasOwn(a,e),l=e=>(t,n)=>e[t].replace(/\\{(\\w+)\\}/g,(e,t)=>{let r…"
+    },
+    {
+      "group": "startup",
+      "name": "非白屏（DOM 已渲染出内容）",
+      "status": "pass",
+      "detail": "节点=150 文本长度=851 readyState=complete body=rgb(255, 255, 255)"
+    },
+    {
+      "group": "startup",
+      "name": "欢迎页文案出现",
+      "status": "pass",
+      "detail": "How can I help you? / Fast mode / Expert mode / AI-generated, for reference only / Settings / General / Data / Channel /"
+    },
+    {
+      "group": "startup",
+      "name": "ChatInput 渲染（textarea + 占位符）",
+      "status": "pass",
+      "detail": "placeholder=Enter a message"
+    },
+    {
+      "group": "capability",
+      "name": "UA 内核版本与 dumpsys 一致（UA 可用于交叉校验）",
+      "status": "pass",
+      "detail": "UA=91.0.4472.114 / dumpsys=91.0.4472.114"
+    },
+    {
+      "group": "capability",
+      "name": "toSorted（需要 Chrome 110+）",
+      "status": "pass",
+      "detail": "实际=false，按内核 91 预期=false"
+    },
+    {
+      "group": "capability",
+      "name": "toReversed（需要 Chrome 110+）",
+      "status": "pass",
+      "detail": "实际=false，按内核 91 预期=false"
+    },
+    {
+      "group": "capability",
+      "name": "toSpliced（需要 Chrome 110+）",
+      "status": "pass",
+      "detail": "实际=false，按内核 91 预期=false"
+    },
+    {
+      "group": "capability",
+      "name": "with（需要 Chrome 110+）",
+      "status": "pass",
+      "detail": "实际=false，按内核 91 预期=false"
+    },
+    {
+      "group": "capability",
+      "name": "hasOwn（需要 Chrome 93+）",
+      "status": "pass",
+      "detail": "实际=false，按内核 91 预期=false"
+    },
+    {
+      "group": "capability",
+      "name": "arrayAt（需要 Chrome 92+）",
+      "status": "pass",
+      "detail": "实际=false，按内核 91 预期=false"
+    },
+    {
+      "group": "capability",
+      "name": "structuredClone（需要 Chrome 98+）",
+      "status": "pass",
+      "detail": "实际=false，按内核 91 预期=false"
+    },
+    {
+      "group": "capability",
+      "name": "dvh（需要 Chrome 108+）",
+      "status": "pass",
+      "detail": "实际=false，按内核 91 预期=false"
+    },
+    {
+      "group": "capability",
+      "name": "fetch 可用",
+      "status": "pass",
+      "detail": "function"
+    },
+    {
+      "group": "capability",
+      "name": "AbortController 可用",
+      "status": "pass",
+      "detail": "function"
+    },
+    {
+      "group": "capability",
+      "name": "ResizeObserver 可用",
+      "status": "pass",
+      "detail": "function"
+    },
+    {
+      "group": "capability",
+      "name": "visualViewport 可用",
+      "status": "pass",
+      "detail": "true"
+    },
+    {
+      "group": "capability",
+      "name": "TextDecoder 可用",
+      "status": "pass",
+      "detail": "function"
+    },
+    {
+      "group": "feedback",
+      "name": "打开设置弹窗",
+      "status": "pass",
+      "detail": "ok"
+    },
+    {
+      "group": "feedback",
+      "name": "反馈弹窗打开",
+      "status": "pass",
+      "detail": "点击结果=ok"
+    },
+    {
+      "group": "feedback",
+      "name": "首部→尾部真实触摸滚动生效",
+      "status": "fail",
+      "detail": "0 → 0（内容 2034 / 可视 528），触摸事件 {\"start\":5,\"move\":15,\"end\":5}，通道=adb-input-swipe(down)"
+    },
+    {
+      "group": "feedback",
+      "name": "尾部→首部真实触摸滚动生效",
+      "status": "fail",
+      "detail": "回到 scrollTop=0，通道=adb-input-swipe(down)"
+    },
+    {
+      "group": "feedback",
+      "name": "保存日志按钮可达（可见 + 未禁用）",
+      "status": "pass",
+      "detail": "{\"found\":true,\"disabled\":false,\"inViewport\":true,\"rect\":{\"top\":212,\"bottom\":252,\"w\":312},\"innerHeight\":728}"
+    },
+    {
+      "group": "feedback",
+      "name": "打开设置弹窗",
+      "status": "pass",
+      "detail": "ok"
+    },
+    {
+      "group": "feedback",
+      "name": "反馈弹窗打开",
+      "status": "pass",
+      "detail": "点击结果=ok"
+    },
+    {
+      "group": "feedback",
+      "name": "取消后重新打开，表单内容保留",
+      "status": "fail",
+      "detail": "写入=compat-matrix 表单保留自测 取消=ok 重开值="
+    },
+    {
+      "group": "feedback",
+      "name": "键盘遮挡检查（视口压矮 306px 模拟键盘 inset，非真 IME）",
+      "status": "pass",
+      "detail": "{\"found\":true,\"viewportAfterInset\":422,\"buttonTop\":344,\"buttonBottom\":384,\"reachable\":true,\"dialogScrollable\":false,\"simulated\":true}"
+    },
+    {
+      "group": "import",
+      "name": "切到「数据管理」",
+      "status": "pass",
+      "detail": "ok"
+    },
+    {
+      "group": "import",
+      "name": "「从链接导入」入口存在（URL 为空时 disabled 属正常）",
+      "status": "pass",
+      "detail": "{\"before\":{\"found\":true,\"disabled\":true},\"after\":{\"found\":true,\"disabled\":true,\"rect\":{\"y\":806,\"h\":44}}}"
+    },
+    {
+      "group": "import",
+      "name": "URL 输入框可填",
+      "status": "pass",
+      "detail": "长度 38"
+    },
+    {
+      "group": "import",
+      "name": "填入 URL 后「导入」按钮变为可点",
+      "status": "pass",
+      "detail": "{\"found\":true,\"disabled\":false}"
+    },
+    {
+      "group": "import",
+      "name": "点「导入」按钮",
+      "status": "pass",
+      "detail": "ok"
+    },
+    {
+      "group": "import",
+      "name": "覆盖确认弹窗出现",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "group": "import",
+      "name": "阶段事件走通（下载/导入 → 完成，未崩）",
+      "status": "fail",
+      "detail": "阶段=downloading>importing 会话数=0/8"
+    },
+    {
+      "group": "systeminfo",
+      "name": "原生诊断插件 DiagnosticsDevice 可调用",
+      "status": "pass",
+      "detail": "appSource=PackageManager nativePath 走 PackageManager"
+    },
+    {
+      "group": "systeminfo",
+      "name": "androidRelease（真值一致）",
+      "status": "pass",
+      "detail": "插件=12 getprop=12"
+    },
+    {
+      "group": "systeminfo",
+      "name": "androidSdk（真值一致）",
+      "status": "pass",
+      "detail": "插件=31 getprop=31"
+    },
+    {
+      "group": "systeminfo",
+      "name": "webviewVersion（与 dumpsys 一致）",
+      "status": "pass",
+      "detail": "插件=91.0.4472.114 dumpsys=91.0.4472.114"
+    },
+    {
+      "group": "systeminfo",
+      "name": "webviewPackage（与 dumpsys 一致）",
+      "status": "pass",
+      "detail": "插件=com.google.android.webview"
+    },
+    {
+      "group": "systeminfo",
+      "name": "fontScale（与 system.font_scale 一致）",
+      "status": "pass",
+      "detail": "插件=1 settings=1.0"
+    },
+    {
+      "group": "systeminfo",
+      "name": "model 非 unknown",
+      "status": "pass",
+      "detail": "model=sdk_gphone64_x86_64"
+    },
+    {
+      "group": "systeminfo",
+      "name": "UA 派生 androidVersion 与真值一致（交叉校验）",
+      "status": "pass",
+      "detail": "UA=12 真值=12"
+    },
+    {
+      "group": "systeminfo",
+      "name": "UA 派生 webviewVersion 与真值一致（交叉校验）",
+      "status": "pass",
+      "detail": "UA=91.0.4472.114 dumpsys=91.0.4472.114"
+    },
+    {
+      "group": "systeminfo",
+      "name": "注入 nativePromise 桥拦截（拿到导出全文，不开 SAF 弹窗）",
+      "status": "pass",
+      "detail": "ok"
+    },
+    {
+      "group": "feedback",
+      "name": "打开设置弹窗",
+      "status": "pass",
+      "detail": "ok"
+    },
+    {
+      "group": "feedback",
+      "name": "反馈弹窗打开",
+      "status": "pass",
+      "detail": "点击结果=ok"
+    },
+    {
+      "group": "systeminfo",
+      "name": "「保存日志文件」产出可解析 JSON（导出通道可用）",
+      "status": "pass",
+      "detail": "点击=ok 字节=24110 format=deepseek-feedback-diagnostics"
+    },
+    {
+      "group": "systeminfo",
+      "name": "导出 JSON 含 androidVersion(UA 派生) 且与真值一致",
+      "status": "pass",
+      "detail": "payload=12 真值=12"
+    },
+    {
+      "group": "systeminfo",
+      "name": "导出 JSON 含 webviewVersion(UA 派生) 且与真值一致",
+      "status": "pass",
+      "detail": "payload=91.0.4472.114 真值=91.0.4472.114"
+    },
+    {
+      "group": "systeminfo",
+      "name": "导出 JSON 含 androidRelease(原生) 且与真值一致",
+      "status": "pass",
+      "detail": "payload=12 真值=12"
+    },
+    {
+      "group": "systeminfo",
+      "name": "导出 JSON 含 androidSdk(原生) 且与真值一致",
+      "status": "pass",
+      "detail": "payload=31 真值=31"
+    },
+    {
+      "group": "systeminfo",
+      "name": "导出 JSON 含 webviewPackage(原生) 且与真值一致",
+      "status": "pass",
+      "detail": "payload=com.google.android.webview 真值=com.google.android.webview"
+    },
+    {
+      "group": "systeminfo",
+      "name": "导出 JSON 含 webviewVersion(原生) 且与真值一致",
+      "status": "pass",
+      "detail": "payload=91.0.4472.114 真值=91.0.4472.114"
+    },
+    {
+      "group": "systeminfo",
+      "name": "导出 JSON 含 fontScale(原生) 且与真值一致",
+      "status": "pass",
+      "detail": "payload=1 真值=1"
+    },
+    {
+      "group": "systeminfo",
+      "name": "导出 JSON 含 nativePath 且与真值一致",
+      "status": "pass",
+      "detail": "payload=DiagnosticsDevice 真值=DiagnosticsDevice"
+    },
+    {
+      "group": "systeminfo",
+      "name": "导出 JSON 含能力探测字段（capabilities 5 项齐全）",
+      "status": "pass",
+      "detail": "{\"toSorted\":false,\"hasOwn\":false,\"at\":false,\"visualViewport\":true,\"dvh\":false}"
+    },
+    {
+      "group": "systeminfo",
+      "name": "导出里的能力探测与应用自身探测一致",
+      "status": "pass",
+      "detail": "一致"
+    },
+    {
+      "group": "systeminfo",
+      "name": "上传 body 字段（刻意不触发真实提交）",
+      "status": "skip",
+      "detail": "为避免真实提交到反馈服务，矩阵不点击「提交」；上传链路由 integration 层 mock transport 覆盖，导出 JSON 已证明字段真实"
+    },
+    {
+      "group": "systeminfo",
+      "name": "fallback：原生快照被强制失败后 App 仍渲染（未白屏/未崩）",
+      "status": "pass",
+      "detail": "{\"nodeCount\":150,\"textLength\":851,\"hasTextarea\":true,\"head\":\"How can I help you?\\nFast mode\\nExpert mode\\nAI-generated, for reference only\\nSettings\\nGeneral\\nData\\nChannel\\nDeepSeek Offici\"}"
+    },
+    {
+      "group": "feedback",
+      "name": "打开设置弹窗",
+      "status": "pass",
+      "detail": "ok"
+    },
+    {
+      "group": "feedback",
+      "name": "反馈弹窗打开",
+      "status": "pass",
+      "detail": "点击结果=ok"
+    },
+    {
+      "group": "systeminfo",
+      "name": "fallback：反馈弹窗仍可打开",
+      "status": "pass",
+      "detail": "[\"Save log file\",\"Bug report\",\"Log preview45 entries\",\"Check log coverage45 entries\",\"Choose from photos\",\"Clear local logs\",\"Cancel\",\"Submit\"]"
+    },
+    {
+      "group": "systeminfo",
+      "name": "fallback：导出仍产出合法 JSON（降级不阻塞）",
+      "status": "pass",
+      "detail": "nativePath=unavailable androidSdk=null UA 派生 Android=12"
+    },
+    {
+      "group": "systeminfo",
+      "name": "fallback：UA 派生设备字段仍在（androidVersion/webviewVersion 不为 unknown）",
+      "status": "pass",
+      "detail": "12 / 91.0.4472.114"
+    },
+    {
+      "group": "logcat",
+      "name": "无崩溃 / ANR",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "group": "fontscale",
+      "name": "font_scale=1.3 已生效且被采集",
+      "status": "pass",
+      "detail": "插件 fontScale=1.2999999523162842 视口=360x728 rootFont=20.8px"
+    },
+    {
+      "group": "feedback",
+      "name": "打开设置弹窗",
+      "status": "pass",
+      "detail": "ok"
+    },
+    {
+      "group": "feedback",
+      "name": "反馈弹窗打开",
+      "status": "pass",
+      "detail": "点击结果=ok"
+    },
+    {
+      "group": "fontscale",
+      "name": "font_scale=1.3 提交按钮仍可达（未被布局挤掉）",
+      "status": "pass",
+      "detail": "{\"submit\":{\"top\":635,\"bottom\":675,\"h\":40},\"save\":{\"top\":264,\"bottom\":304,\"h\":40},\"submitReachable\":true,\"submitDisabled\":true,\"dialogClipped\":false,\"dialogScroll\":{\"scrollHeight\":667,\"clientHeight\":667},\"textOverflow\":false}"
+    },
+    {
+      "group": "fontscale",
+      "name": "font_scale=1.5 已生效且被采集",
+      "status": "pass",
+      "detail": "插件 fontScale=1.5 视口=360x728 rootFont=24px"
+    },
+    {
+      "group": "feedback",
+      "name": "打开设置弹窗",
+      "status": "pass",
+      "detail": "ok"
+    },
+    {
+      "group": "feedback",
+      "name": "反馈弹窗打开",
+      "status": "pass",
+      "detail": "点击结果=ok"
+    },
+    {
+      "group": "fontscale",
+      "name": "font_scale=1.5 提交按钮仍可达（未被布局挤掉）",
+      "status": "pass",
+      "detail": "{\"submit\":{\"top\":638,\"bottom\":678,\"h\":40},\"save\":{\"top\":315,\"bottom\":355,\"h\":40},\"submitReachable\":true,\"submitDisabled\":true,\"dialogClipped\":false,\"dialogScroll\":{\"scrollHeight\":672,\"clientHeight\":672},\"textOverflow\":false}"
+    }
+  ],
+  "screenshots": [
+    "/root/worktrees/deepseek-compat-matrix/docs/compat/shots/31-startup.png",
+    "/root/worktrees/deepseek-compat-matrix/docs/compat/shots/31-feedback-top.png",
+    "/root/worktrees/deepseek-compat-matrix/docs/compat/shots/31-feedback-bottom.png",
+    "/root/worktrees/deepseek-compat-matrix/docs/compat/shots/31-feedback-save-button.png",
+    "/root/worktrees/deepseek-compat-matrix/docs/compat/shots/31-feedback-keyboard.png",
+    "/root/worktrees/deepseek-compat-matrix/docs/compat/shots/31-import-settings.png",
+    "/root/worktrees/deepseek-compat-matrix/docs/compat/shots/31-import-done.png",
+    "/root/worktrees/deepseek-compat-matrix/docs/compat/shots/31-font-1_5.png"
+  ],
+  "verdict": {
+    "verdict": "kernel-fails",
+    "reasons": [
+      "应用在本内核上有 4 条硬失败",
+      "- [feedback] 首部→尾部真实触摸滚动生效: 0 → 0（内容 2034 / 可视 528），触摸事件 {\"start\":5,\"move\":15,\"end\":5}，通道=adb-input-swipe(down)",
+      "- [feedback] 尾部→首部真实触摸滚动生效: 回到 scrollTop=0，通道=adb-input-swipe(down)",
+      "- [feedback] 取消后重新打开，表单内容保留: 写入=compat-matrix 表单保留自测 取消=ok 重开值=",
+      "- [import] 阶段事件走通（下载/导入 → 完成，未崩）: 阶段=downloading>importing 会话数=0/8"
+    ],
+    "groups": {
+      "device": {
+        "pass": 2,
+        "fail": 0,
+        "skip": 0,
+        "total": 2
+      },
+      "bundle": {
+        "pass": 1,
+        "fail": 1,
+        "skip": 0,
+        "total": 2
+      },
+      "startup": {
+        "pass": 3,
+        "fail": 0,
+        "skip": 0,
+        "total": 3
+      },
+      "capability": {
+        "pass": 14,
+        "fail": 0,
+        "skip": 0,
+        "total": 14
+      },
+      "feedback": {
+        "pass": 14,
+        "fail": 3,
+        "skip": 0,
+        "total": 17
+      },
+      "import": {
+        "pass": 6,
+        "fail": 1,
+        "skip": 0,
+        "total": 7
+      },
+      "systeminfo": {
+        "pass": 25,
+        "fail": 0,
+        "skip": 1,
+        "total": 26
+      },
+      "logcat": {
+        "pass": 1,
+        "fail": 0,
+        "skip": 0,
+        "total": 1
+      },
+      "fontscale": {
+        "pass": 4,
+        "fail": 0,
+        "skip": 0,
+        "total": 4
+      }
+    }
+  },
+  "caveats": [
+    "AOSP google_apis 镜像结果不代表 ColorOS / 荣耀 MagicOS 等 OEM WebView 真机结果：OEM 自带 WebView 版本、输入法、window inset 行为不同，仍需真机复测。",
+    "无头模拟器不弹真软键盘：键盘遮挡若是 simulated=true，则只证明布局在 visualViewport 收缩下不遮挡，不等于真机输入法实测。",
+    "fontScale 通过 system.font_scale 设置，等价于用户调大系统字体，但不等价于 OEM 的「字体+显示大小」组合档位。"
+  ]
+}

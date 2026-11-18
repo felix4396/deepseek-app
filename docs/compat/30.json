@@ -1,0 +1,408 @@
+{
+  "api": 30,
+  "avd": "compat30",
+  "serial": "emulator-5554",
+  "generatedAt": "2026-11-18T06:32:01.052Z",
+  "artifact": {
+    "apk": "/root/worktrees/deepseek-compat-matrix/android/app/build/outputs/apk/debug/app-debug.apk",
+    "sha256": "c0abf1d914553346cc26cb522fae535cc703737b14d6d9875947a26edc200925",
+    "versionName": "see-apk",
+    "note": "built from worktree"
+  },
+  "device": {
+    "release": "11",
+    "sdk": 30,
+    "flavor": "sdk_gphone_x86_64-userdebug",
+    "abi": "x86_64",
+    "manufacturer": "Google",
+    "model": "sdk_gphone_x86_64",
+    "fontScaleSetting": "null",
+    "webview": {
+      "provider": "com.google.android.webview",
+      "version": "83.0.4103.106",
+      "preferred": "com.google.android.webview 83.0.4103.106",
+      "implementation": "webview-provider / multiprocess=true",
+      "multiprocess": "true",
+      "dumpRaw": "Current WebView Update Service state\n  Fallback logic enabled: false\n  Multiprocess enabled: true\n  Current WebView package (name, version): (com.google.android.webview, 83.0.4103.106)\n  Minimum targetSdkVersion: 30\n  Minimum WebView version code: 410410686\n  Number of relros started: 2\n  Number of relros finished: 2\n  WebView package dirty: false\n  Any WebView package installed: true\n  Preferred WebView package (name, version): (com.google.android.webview, 83.0.4103.106)\n  WebView packages:\n    Valid package com.google.android.webview (versionName: 83.0.4103.106, versionCode: 410410686, targetSdkVersion: 30) is  installed/enabled for all users\n    com.google.android.webview.beta is NOT installed.\n    com.google.android.webview.dev is NOT installed.\n    com.google.android.webview.canary is NOT installed.\n    com.google.android.webview.debug is NOT installed.\n    com.android.webview is NOT installed."
+    }
+  },
+  "probe": {
+    "probe": {
+      "ua": "Mozilla/5.0 (Linux; Android 11; sdk_gphone_x86_64 Build/RSR1.240422.006; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/83.0.4103.106 Mobile Safari/537.36",
+      "chromeVersion": "83.0.4103.106",
+      "wvFlag": true,
+      "caps": {
+        "toSorted": "undefined",
+        "toReversed": "undefined",
+        "toSpliced": "undefined",
+        "with": "undefined",
+        "hasOwn": "undefined",
+        "arrayAt": "undefined",
+        "structuredClone": "undefined",
+        "fetch": "function",
+        "AbortController": "function",
+        "ResizeObserver": "function",
+        "visualViewport": true,
+        "TextDecoder": "function",
+        "dvh": false
+      },
+      "viewport": {
+        "innerWidth": 360,
+        "innerHeight": 728,
+        "dpr": 1.5,
+        "vv": {
+          "width": 360,
+          "height": 728,
+          "scale": 1
+        }
+      },
+      "uaParsed": {
+        "android": "11",
+        "webview": "83.0.4103.106"
+      },
+      "navigatorPlatform": "Linux i686"
+    },
+    "capRows": {
+      "toSorted": {
+        "available": false,
+        "needsChrome": 110,
+        "matchesExpectation": true
+      },
+      "toReversed": {
+        "available": false,
+        "needsChrome": 110,
+        "matchesExpectation": true
+      },
+      "toSpliced": {
+        "available": false,
+        "needsChrome": 110,
+        "matchesExpectation": true
+      },
+      "with": {
+        "available": false,
+        "needsChrome": 110,
+        "matchesExpectation": true
+      },
+      "hasOwn": {
+        "available": false,
+        "needsChrome": 93,
+        "matchesExpectation": true
+      },
+      "arrayAt": {
+        "available": false,
+        "needsChrome": 92,
+        "matchesExpectation": true
+      },
+      "structuredClone": {
+        "available": false,
+        "needsChrome": 98,
+        "matchesExpectation": true
+      },
+      "dvh": {
+        "available": false,
+        "needsChrome": 108,
+        "matchesExpectation": true
+      },
+      "fetch": {
+        "available": true,
+        "needsChrome": 0
+      },
+      "AbortController": {
+        "available": true,
+        "needsChrome": 0
+      },
+      "ResizeObserver": {
+        "available": true,
+        "needsChrome": 0
+      },
+      "visualViewport": {
+        "available": true,
+        "needsChrome": 0
+      },
+      "TextDecoder": {
+        "available": true,
+        "needsChrome": 0
+      }
+    }
+  },
+  "startup": {
+    "readyState": "complete",
+    "textLength": 0,
+    "textHead": "",
+    "nodeCount": 12,
+    "rootChildCount": 0,
+    "hasTextarea": false,
+    "textareaPlaceholder": null,
+    "welcome": false,
+    "bodyBackground": "rgb(255, 255, 255)",
+    "title": "API 使用 demo"
+  },
+  "consoleErrors": [
+    "console: Error injecting safe area CSS: TypeError: Cannot read property 'style' of null\n    at <anonymous>:2:28",
+    "console: Error injecting safe area CSS: TypeError: Cannot read property 'style' of null\n    at <anonymous>:2:28",
+    "console: Error injecting safe area CSS: TypeError: Cannot read property 'style' of null\n    at <anonymous>:2:28",
+    "console: SyntaxError: Unexpected token '='",
+    "exception: SyntaxError: Unexpected token '='",
+    "console: SyntaxError: Unexpected token '='",
+    "exception: SyntaxError: Unexpected token '='"
+  ],
+  "logcatCrashes": [],
+  "insights": {
+    "feedback": null,
+    "import": null,
+    "systeminfo": null,
+    "fontscale": null
+  },
+  "checks": [
+    {
+      "group": "device",
+      "name": "镜像确认为 API 30",
+      "status": "pass",
+      "detail": "ro.build.version.sdk=30"
+    },
+    {
+      "group": "device",
+      "name": "google_apis x86_64 镜像（非 Play/非 arm）",
+      "status": "pass",
+      "detail": "sdk_gphone_x86_64-userdebug"
+    },
+    {
+      "group": "bundle",
+      "name": "构建基线（rspack targets）声明的最低 Chrome：chrome >= 105",
+      "status": "pass",
+      "detail": "产物 main.f7d49f79.js（0.57MB）"
+    },
+    {
+      "group": "bundle",
+      "name": "产物里高版本语法/API 与本内核（Chrome 83）兼容",
+      "status": "fail",
+      "detail": "4 处超出：逻辑赋值 ||= / &&= / ??=需85+ @29345，Object.hasOwn需93+ @187855，.at()需92+ @222870，CSS dvh需108+ @562878 ｜示例片段：…ce+\")\"+/(?![\\w$])/.source),lookbehind:!0},operator:/--|\\+\\+|\\*\\*=?|=>|&&=?|\\|\\|=?|[!=]==|<<=?|>>>?=?|[-+*/%&|^!=<>]=?|\\.{3}|\\?\\?=?|\\?\\.?|[~:…"
+    },
+    {
+      "group": "startup",
+      "name": "非白屏（DOM 已渲染出内容）",
+      "status": "fail",
+      "detail": "节点=12 文本长度=0 readyState=complete body=rgb(255, 255, 255)"
+    },
+    {
+      "group": "startup",
+      "name": "欢迎页文案出现",
+      "status": "fail",
+      "detail": ""
+    },
+    {
+      "group": "startup",
+      "name": "ChatInput 渲染（textarea + 占位符）",
+      "status": "fail",
+      "detail": "placeholder=null"
+    },
+    {
+      "group": "startup",
+      "name": "首屏失败原因（JS 运行时异常）",
+      "status": "fail",
+      "detail": "exception: SyntaxError: Unexpected token '='"
+    },
+    {
+      "group": "startup",
+      "name": "缺能力复现（应用实际会抛的错）",
+      "status": "fail",
+      "detail": "{\"hasOwn\":\"throws: TypeError: Object.hasOwn is not a function\",\"at\":\"throws: TypeError: [].at is not a function\",\"rootHtml\":\"\"}"
+    },
+    {
+      "group": "startup",
+      "name": "logcat/Chromium 佐证",
+      "status": "fail",
+      "detail": "11-18 14:31:49.584  6353  6353 E Capacitor: JavaScript Error: {\"type\":\"js.error\",\"error\":{\"message\":\"Uncaught SyntaxError: Unexpected token '='\",\"url\":\"https://localhost/static/js/main.f7d49f79.js\",\"line\":1,\"col\":232976,\"errorObject\":\"{}\"}} | 11-18 14:31:49.585  6353  6353 E Capacitor/Console: File:"
+    },
+    {
+      "group": "capability",
+      "name": "UA 内核版本与 dumpsys 一致（UA 可用于交叉校验）",
+      "status": "pass",
+      "detail": "UA=83.0.4103.106 / dumpsys=83.0.4103.106"
+    },
+    {
+      "group": "capability",
+      "name": "toSorted（需要 Chrome 110+）",
+      "status": "pass",
+      "detail": "实际=false，按内核 83 预期=false"
+    },
+    {
+      "group": "capability",
+      "name": "toReversed（需要 Chrome 110+）",
+      "status": "pass",
+      "detail": "实际=false，按内核 83 预期=false"
+    },
+    {
+      "group": "capability",
+      "name": "toSpliced（需要 Chrome 110+）",
+      "status": "pass",
+      "detail": "实际=false，按内核 83 预期=false"
+    },
+    {
+      "group": "capability",
+      "name": "with（需要 Chrome 110+）",
+      "status": "pass",
+      "detail": "实际=false，按内核 83 预期=false"
+    },
+    {
+      "group": "capability",
+      "name": "hasOwn（需要 Chrome 93+）",
+      "status": "pass",
+      "detail": "实际=false，按内核 83 预期=false"
+    },
+    {
+      "group": "capability",
+      "name": "arrayAt（需要 Chrome 92+）",
+      "status": "pass",
+      "detail": "实际=false，按内核 83 预期=false"
+    },
+    {
+      "group": "capability",
+      "name": "structuredClone（需要 Chrome 98+）",
+      "status": "pass",
+      "detail": "实际=false，按内核 83 预期=false"
+    },
+    {
+      "group": "capability",
+      "name": "dvh（需要 Chrome 108+）",
+      "status": "pass",
+      "detail": "实际=false，按内核 83 预期=false"
+    },
+    {
+      "group": "capability",
+      "name": "fetch 可用",
+      "status": "pass",
+      "detail": "function"
+    },
+    {
+      "group": "capability",
+      "name": "AbortController 可用",
+      "status": "pass",
+      "detail": "function"
+    },
+    {
+      "group": "capability",
+      "name": "ResizeObserver 可用",
+      "status": "pass",
+      "detail": "function"
+    },
+    {
+      "group": "capability",
+      "name": "visualViewport 可用",
+      "status": "pass",
+      "detail": "true"
+    },
+    {
+      "group": "capability",
+      "name": "TextDecoder 可用",
+      "status": "pass",
+      "detail": "function"
+    },
+    {
+      "group": "feedback",
+      "name": "反馈弹窗（滚动/保存日志/取消保留/键盘）",
+      "status": "skip",
+      "detail": "首屏不可用，不可判定"
+    },
+    {
+      "group": "import",
+      "name": "从链接导入全流程",
+      "status": "skip",
+      "detail": "首屏不可用，不可判定"
+    },
+    {
+      "group": "systeminfo",
+      "name": "系统信息字段采集",
+      "status": "skip",
+      "detail": "首屏不可用，不可判定"
+    },
+    {
+      "group": "logcat",
+      "name": "无崩溃 / ANR",
+      "status": "pass",
+      "detail": ""
+    },
+    {
+      "group": "fontscale",
+      "name": "大字体 1.3 / 1.5",
+      "status": "skip",
+      "detail": "首屏不可用，不可判定"
+    }
+  ],
+  "screenshots": [
+    "/root/worktrees/deepseek-compat-matrix/docs/compat/shots/30-startup.png"
+  ],
+  "verdict": {
+    "verdict": "kernel-fails",
+    "reasons": [
+      "应用在本内核上有 6 条硬失败（含首屏未渲染/白屏）",
+      "- [startup] 非白屏（DOM 已渲染出内容）: 节点=12 文本长度=0 readyState=complete body=rgb(255, 255, 255)",
+      "- [startup] 欢迎页文案出现: ",
+      "- [startup] ChatInput 渲染（textarea + 占位符）: placeholder=null",
+      "- [startup] 首屏失败原因（JS 运行时异常）: exception: SyntaxError: Unexpected token '='",
+      "- [startup] 缺能力复现（应用实际会抛的错）: {\"hasOwn\":\"throws: TypeError: Object.hasOwn is not a function\",\"at\":\"throws: TypeError: [].at is not a function\",\"rootHtml\":\"\"}",
+      "- [startup] logcat/Chromium 佐证: 11-18 14:31:49.584  6353  6353 E Capacitor: JavaScript Error: {\"type\":\"js.error\",\"error\":{\"message\":\"Uncaught SyntaxError: Unexpected token '='\",\"url\":\"https://localhost/static/js/main.f7d49f79.js\",\"line\":1,\"col\":232976,\"errorObject\":\"{}\"}} | 11-18 14:31:49.585  6353  6353 E Capacitor/Console: File:"
+    ],
+    "groups": {
+      "device": {
+        "pass": 2,
+        "fail": 0,
+        "skip": 0,
+        "total": 2
+      },
+      "bundle": {
+        "pass": 1,
+        "fail": 1,
+        "skip": 0,
+        "total": 2
+      },
+      "startup": {
+        "pass": 0,
+        "fail": 6,
+        "skip": 0,
+        "total": 6
+      },
+      "capability": {
+        "pass": 14,
+        "fail": 0,
+        "skip": 0,
+        "total": 14
+      },
+      "feedback": {
+        "pass": 0,
+        "fail": 0,
+        "skip": 1,
+        "total": 1
+      },
+      "import": {
+        "pass": 0,
+        "fail": 0,
+        "skip": 1,
+        "total": 1
+      },
+      "systeminfo": {
+        "pass": 0,
+        "fail": 0,
+        "skip": 1,
+        "total": 1
+      },
+      "logcat": {
+        "pass": 1,
+        "fail": 0,
+        "skip": 0,
+        "total": 1
+      },
+      "fontscale": {
+        "pass": 0,
+        "fail": 0,
+        "skip": 1,
+        "total": 1
+      }
+    }
+  },
+  "caveats": [
+    "AOSP google_apis 镜像结果不代表 ColorOS / 荣耀 MagicOS 等 OEM WebView 真机结果：OEM 自带 WebView 版本、输入法、window inset 行为不同，仍需真机复测。",
+    "无头模拟器不弹真软键盘：键盘遮挡若是 simulated=true，则只证明布局在 visualViewport 收缩下不遮挡，不等于真机输入法实测。",
+    "fontScale 通过 system.font_scale 设置，等价于用户调大系统字体，但不等价于 OEM 的「字体+显示大小」组合档位。"
+  ]
+}

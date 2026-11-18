@@ -1,0 +1,134 @@
+{
+  "api": 31,
+  "avd": "compat31",
+  "generatedAt": "2026-11-18T07:27:42.990Z",
+  "deviceTruth": {
+    "androidRelease": "12",
+    "androidSdk": 31,
+    "webviewProvider": "com.google.android.webview",
+    "webviewVersion": "91.0.4472.114",
+    "webviewImplementation": "webview-provider / multiprocess=true",
+    "fontScaleSetting": "1.0",
+    "model": "sdk_gphone64_x86_64"
+  },
+  "native": {
+    "available": true,
+    "snap": {
+      "androidRelease": "12",
+      "androidSdk": 31,
+      "manufacturer": "Google",
+      "brand": "google",
+      "model": "sdk_gphone64_x86_64",
+      "appVersionName": "1.4.0-beta.7",
+      "appVersionCode": 14,
+      "artifactVariant": "standard",
+      "appSource": "PackageManager",
+      "webviewPackage": "com.google.android.webview",
+      "webviewVersion": "91.0.4472.114",
+      "density": 1.5,
+      "fontScale": 1,
+      "screenWidth": 540,
+      "screenHeight": 1128
+    }
+  },
+  "exportPayload": {
+    "format": "deepseek-feedback-diagnostics",
+    "schemaVersion": 1,
+    "delivery": "local-only-not-submitted",
+    "app": {
+      "version": "1.4.0-beta.7",
+      "versionCode": 14,
+      "platform": "android",
+      "buildType": "standard"
+    },
+    "device": {
+      "model": "sdk_gphone64_x86_64",
+      "androidVersion": "12",
+      "webviewVersion": "91.0.4472.114",
+      "screen": "360x800",
+      "locale": "en-US",
+      "pixelRatio": 1.5,
+      "hardwareConcurrency": 2,
+      "deviceMemory": 2,
+      "system": {
+        "appVersionName": "1.4.0-beta.7",
+        "appVersionCode": 14,
+        "artifactVariant": "standard",
+        "appSource": "PackageManager",
+        "networkType": "unknown",
+        "online": true,
+        "capabilities": {
+          "toSorted": false,
+          "hasOwn": false,
+          "at": false,
+          "visualViewport": true,
+          "dvh": false
+        },
+        "browserPath": "browser",
+        "androidRelease": "12",
+        "androidSdk": 31,
+        "manufacturer": "Google",
+        "brand": "google",
+        "model": "sdk_gphone64_x86_64",
+        "webviewPackage": "com.google.android.webview",
+        "webviewVersion": "91.0.4472.114",
+        "density": 1.5,
+        "fontScale": 1,
+        "screenWidth": 540,
+        "screenHeight": 1128,
+        "nativePath": "DiagnosticsDevice"
+      }
+    },
+    "limits": {
+      "maxBytes": 4194304,
+      "originalLogCount": 77,
+      "omittedLogCount": 0,
+      "truncated": false
+    },
+    "logCount": 77,
+    "bytes": 24110
+  },
+  "uploadPayload": null,
+  "fallback": {
+    "exportStillWorks": true,
+    "nativePath": "unavailable",
+    "androidSdk": null,
+    "fontScale": null,
+    "androidVersion": "12",
+    "webviewVersion": "91.0.4472.114"
+  },
+  "fields": {
+    "nativeSnapshot": {
+      "androidRelease": "12",
+      "androidSdk": 31,
+      "webviewPackage": "com.google.android.webview",
+      "webviewVersion": "91.0.4472.114",
+      "fontScale": 1,
+      "model": "sdk_gphone64_x86_64"
+    },
+    "uaParsed": {
+      "androidVersion": "12",
+      "webviewVersion": "91.0.4472.114"
+    },
+    "exportJson": {
+      "androidVersion(UA 派生)": "12",
+      "webviewVersion(UA 派生)": "91.0.4472.114",
+      "androidRelease(原生)": "12",
+      "androidSdk(原生)": 31,
+      "webviewPackage(原生)": "com.google.android.webview",
+      "webviewVersion(原生)": "91.0.4472.114",
+      "fontScale(原生)": 1,
+      "nativePath": "DiagnosticsDevice"
+    },
+    "exportCapabilities": {
+      "toSorted": false,
+      "hasOwn": false,
+      "at": false,
+      "visualViewport": true,
+      "dvh": false
+    }
+  },
+  "caveats": [
+    "fallback 路径下 androidSdk / fontScale 缺失（原生快照不可用时的已知降级），不影响导出与提交，但排查硬件问题会少字段。"
+  ]
+}
