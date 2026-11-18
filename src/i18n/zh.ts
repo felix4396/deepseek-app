@@ -33,6 +33,11 @@ export const zh = {
   copy: '复制',
   copied: '已复制',
   copyFailed: '复制失败，请长按或选中文本后复制',
+  copyTooLargeTitle: '内容过长，未复制',
+  copyTooLargeBody:
+    '这段内容约 {size} KiB，超过剪贴板能稳定写入的上限（{limit} KiB）；直接复制会被截断或静默失败，请改为保存 TXT 后查看。',
+  copyTooLargeSave: '保存为 TXT',
+  copySaveFailed: '保存失败，请重试或长按选中文本后复制',
   send: '发送',
   editMessage: '编辑消息',
   regenerate: '重新生成',
