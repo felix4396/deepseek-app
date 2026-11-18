@@ -557,4 +557,7 @@ export const en = {
     'If the message carries too little information, still give a short best-guess title (for example "Greetings"), without explanation.',
   // Issue #45: unified request timeout notice (kept apart from network failure and 4xx/5xx)
   requestTimeout: 'Request timed out ({seconds}s with no response). Check your network and try again.',
+  // Issue #106: double-tap the mobile title bar to jump back to the first message
+  scrollToFirstMessage: 'Back to the first message (double-tap the title)',
+  scrollToFirstMessageHint: 'Double-tap to top',
 } satisfies Record<keyof typeof zh, string>
