@@ -17,6 +17,7 @@ try {
   await page.goto('http://127.0.0.1:5418/?diag-debug')
   await page.waitForFunction(() => !!window.__diagnostics)
   await page.evaluate(() => { for(let i=0;i<30;i++) window.__diagnostics.recordError('scroll regression log '+i); window.__diagnostics.setFeedbackTransport({name:'offline',send:async()=>({ok:false,error:'network'})}) })
+  const baseOverflow=await page.evaluate(()=>getComputedStyle(document.body).overflow)
   if (!await page.getByRole('dialog').count()) { await page.getByRole('button',{name:/边栏|菜单|sidebar|menu/i}).first().tap(); await page.getByRole('button',{name:/设置|Settings/}).last().tap() }
   await page.getByRole('tab',{name:/数据管理|Data/}).tap()
   await page.getByRole('button',{name:'写反馈',exact:true}).tap()
@@ -71,8 +72,17 @@ try {
    await page.getByRole('dialog').getByRole('button',{name:'关闭',exact:true}).tap(); await page.waitForTimeout(300); assert.equal(await page.getByRole('dialog').count(),0)
    // A tall local message exercises the app's actual main scroller, not document.body.
    if(!keyboard && !legacy) {
+    // 抽屉状态在移动端不确定：先确保 sidebar 已打开，再真实点击「收起边栏」，主会话输入框才可见。
+    const menu=page.getByRole('button',{name:/边栏|菜单|sidebar|menu/i}).first()
+    const inputVisible=async()=>await page.locator('textarea').last().isVisible().catch(()=>false)
+    if(!(await inputVisible()) && await menu.isVisible().catch(()=>false)) { await menu.tap(); await page.waitForTimeout(300) }
     const collapse=page.getByRole('button',{name:'收起边栏',exact:true})
-    if(await collapse.isVisible()) { await collapse.tap(); await page.waitForTimeout(300) }
+    if(await collapse.isVisible().catch(()=>false)) { await collapse.tap(); await page.waitForTimeout(300) }
+    assert(await inputVisible(),'sidebar 已收起，主会话输入框可见')
+    // Modal 关闭后不得残留滚动锁（真实锁未释放则会挡住主会话触控）
+    const lockState=await page.evaluate(()=>{const b=getComputedStyle(document.body);return {overflow:b.overflow,attr:document.body.hasAttribute('data-scroll-lock')}})
+    assert.equal(lockState.attr,false,'Modal 关闭后 body 无 data-scroll-lock 残留')
+    assert.equal(lockState.overflow,baseOverflow,'Modal 关闭后 body overflow 回到基线（无新增滚动锁）')
     await page.route('**/chat/completions',route=>route.fulfill({status:500,body:'offline'}))
     await page.locator('textarea').last().fill('主页面滚动恢复验证\n'.repeat(80))
     await page.getByRole('button',{name:'发送',exact:true}).tap()
