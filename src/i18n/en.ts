@@ -537,4 +537,12 @@ export const en = {
   settingDialogThinkingDisplayCollapsed: 'Collapsed',
   settingDialogThinkingDisplayExpanded: 'Expanded',
   settingDialogThinkingDisplayHidden: 'Hidden',
+  // Issue #18: auto session title system prompt (English side must stay Chinese-free)
+  autoTitlePromptIntro: 'Generate a concise title for this AI conversation from the user message provided.',
+  autoTitlePromptFormat:
+    'Output only the title itself, as one line of plain text: no quotes, prefixes, explanations, Markdown, XML or control characters, and never output code.',
+  autoTitlePromptLanguage: 'Use the language of the message.',
+  autoTitlePromptLength: 'Target length: about 8–14 characters for Chinese, or 3–5 words for English.',
+  autoTitlePromptFallback:
+    'If the message carries too little information, still give a short best-guess title (for example "Greetings"), without explanation.',
 } satisfies Record<keyof typeof zh, string>
