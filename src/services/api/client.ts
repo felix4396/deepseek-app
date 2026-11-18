@@ -5,7 +5,6 @@ import {
   getCurrentSpec,
   getMessagesBaseUrl,
   getMessagesUrl,
-  getModelsUrl,
   normalizeBaseUrl,
 } from './apiConfig.js'
 import { OpenAIStreamError, toOpenAIRequest, translateOpenAIStream } from './openaiAdapter.js'
@@ -140,16 +139,19 @@ const needsAnthropicVersion = (spec: ProviderSpec, baseUrl: string): boolean =>
   Boolean(spec.anthropicVersion && spec.defaults?.baseUrl && sameHost(baseUrl, spec.defaults.baseUrl))
 
 /**
- * 鉴权头完全按当前服务类型的 spec.auth 决定：
+ * 鉴权头完全按服务类型的 spec.auth 决定：
  * - 'x-api-key' → x-api-key（官方端点另带 anthropic-version，Anthropic 风格）
  * - 'bearer'    → Authorization: Bearer（OpenAI 兼容服务类型）
  * beta 为 true 时附带 Files API 的 anthropic-beta。
+ *
+ * `spec` 由调用方传入时就用它：探测/刷新这类「一次请求要同时决定路径和鉴权头」的场景，
+ * 必须让两者来自**同一份 spec**，否则会拼出「A 渠道的路径 + B 渠道的鉴权头」这种请求。
  */
 export const authHeaders = (
   apiKey: string,
-  options: { beta?: boolean; baseUrl?: string } = {}
+  options: { beta?: boolean; baseUrl?: string; spec?: ProviderSpec } = {}
 ): Record<string, string> => {
-  const spec = getCurrentSpec()
+  const spec = options.spec ?? getCurrentSpec()
   const baseUrl = options.baseUrl ?? getBaseUrl()
   const headers: Record<string, string> =
     spec.auth === 'bearer'
@@ -167,12 +169,14 @@ export const authHeaders = (
   return headers
 }
 
-/** 用 GET {paths.models} 校验 API Key（不产生费用）；地址与鉴权头都取当前 spec */
+/** 用 GET {paths.models} 校验 API Key（不产生费用）；地址与鉴权头都取当前 spec，且同源解析一次 */
 export const verifyApiKey = async (apiKey: string, signal?: AbortSignal): Promise<void> => {
   ensureBaseUrl()
-  await request(getModelsUrl(), {
+  const spec = getCurrentSpec()
+  const baseUrl = getBaseUrl()
+  await request(`${baseUrl}${spec.paths.models}`, {
     method: 'GET',
-    headers: authHeaders(apiKey),
+    headers: authHeaders(apiKey, { baseUrl, spec }),
     signal,
   })
 }
@@ -345,15 +349,18 @@ export const probeProvider = async (
   }
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), timeoutMs)
+  // 路径与鉴权头只解析一次 spec：两者必须同源，不能各读一遍当前渠道
+  const spec = getCurrentSpec()
+  const headers = authHeaders(config.apiKey, { baseUrl, spec })
   try {
-    const url = `${baseUrl}${getCurrentSpec().paths.models}`
+    const url = `${baseUrl}${spec.paths.models}`
     let status: number
     let text: string
     let statusText = ''
     let contentType = ''
     if (Capacitor.isNativePlatform()) {
       const response = await Promise.race([
-        CapacitorHttp.get({ url, headers: authHeaders(config.apiKey, { baseUrl }) }),
+        CapacitorHttp.get({ url, headers }),
         new Promise<never>((_, reject) => setTimeout(() => reject(new DOMException('Timed out', 'AbortError')), timeoutMs)),
       ])
       status = response.status
@@ -363,7 +370,7 @@ export const probeProvider = async (
     } else {
       const response = await fetch(url, {
         method: 'GET',
-        headers: authHeaders(config.apiKey, { baseUrl }),
+        headers,
         signal: controller.signal,
       })
       status = response.status
