@@ -88,7 +88,7 @@ export type InviteProfile = {
   keyStatus: string
 }
 
-const parseJson = (text: string): { ok: true; value: unknown } | { ok: false } => {
+export const parseJson = (text: string): { ok: true; value: unknown } | { ok: false } => {
   if (text.trim() === '') {
     return { ok: false }
   }
@@ -100,25 +100,25 @@ const parseJson = (text: string): { ok: true; value: unknown } | { ok: false } =
   }
 }
 
-const asRecord = (value: unknown): Record<string, unknown> | null =>
+export const asRecord = (value: unknown): Record<string, unknown> | null =>
   value !== null && typeof value === 'object' && !Array.isArray(value)
     ? (value as Record<string, unknown>)
     : null
 
-const readString = (record: Record<string, unknown> | null, field: string): string => {
+export const readString = (record: Record<string, unknown> | null, field: string): string => {
   const value = record?.[field]
   return typeof value === 'string' ? value : ''
 }
 
-const readNumber = (record: Record<string, unknown> | null, field: string): number => {
+export const readNumber = (record: Record<string, unknown> | null, field: string): number => {
   const value = record?.[field]
   return typeof value === 'number' && Number.isFinite(value) ? value : 0
 }
 
-const readBoolean = (record: Record<string, unknown> | null, field: string): boolean =>
+export const readBoolean = (record: Record<string, unknown> | null, field: string): boolean =>
   record?.[field] === true
 
-const isSuccessStatus = (status: number): boolean => status >= 200 && status < 300
+export const isSuccessStatus = (status: number): boolean => status >= 200 && status < 300
 
 /** 解析档案；字段缺失不编造默认值，只剩完全无法解释的响应才返回 null */
 export const parseInviteProfile = (value: unknown): InviteProfile | null => {
@@ -147,7 +147,7 @@ export const parseInviteProfile = (value: unknown): InviteProfile | null => {
 }
 
 /** 错误体解析：{ error: { code, message } }（兼容顶层 { code }） */
-const readErrorCode = (value: unknown): string => {
+export const readErrorCode = (value: unknown): string => {
   const record = asRecord(value)
   const nested = asRecord(record?.error)
   return readString(nested, 'code') || readString(record, 'code')
