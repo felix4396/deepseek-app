@@ -496,4 +496,10 @@ export const zh = {
   oursDeviceBackupHintOk: '我知道了',
   oursInviteErrApplyRateLimited: '今天领取次数过多，请明天再试',
   oursInviteErrAlreadyClaimed: '这台设备已经领取过 Key，不能重复领取',
+  // Issue #46：思考过程显示方式三档
+  settingDialogThinkingDisplayLabel: '思考过程',
+  settingDialogThinkingDisplayDescription: '深度思考开启后，思考内容在消息里怎么显示；切换后立即对已打开的会话生效。',
+  settingDialogThinkingDisplayCollapsed: '折叠',
+  settingDialogThinkingDisplayExpanded: '展开',
+  settingDialogThinkingDisplayHidden: '不显示',
 } as const
