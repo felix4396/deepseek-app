@@ -223,25 +223,41 @@ body {
 }
 
 body {
-  --dsw-font-markdown-h1: 700 24px/34px var(--dsw-font-family);
+  /*
+   * 消息正文的字体简写由消息区阅读设置（issue #102）驱动：字号 / 字重 / 行高都是
+   * src/styles/reading.css 里的 --ds-reading-* token，默认档与改造前的写死值逐值一致
+   * （正文 16px/28px/400、次级 14px/24px、表格 15px/25px、标题 24/22/20/16）。
+   * 这批 token 只被消息区的 Markdown / 回复区 / 用户气泡消费，设置面板与输入框不受影响。
+   */
+  --dsw-font-markdown-h1: var(--ds-reading-weight-heading) var(--ds-reading-size-h1) /
+    var(--ds-reading-line-h1) var(--dsw-font-family);
 
-  --dsw-font-markdown-h2: 700 22px/32px var(--dsw-font-family);
+  --dsw-font-markdown-h2: var(--ds-reading-weight-heading) var(--ds-reading-size-h2) /
+    var(--ds-reading-line-h2) var(--dsw-font-family);
 
-  --dsw-font-markdown-h3: 700 20px/30px var(--dsw-font-family);
+  --dsw-font-markdown-h3: var(--ds-reading-weight-heading) var(--ds-reading-size-h3) /
+    var(--ds-reading-line-h3) var(--dsw-font-family);
 
-  --dsw-font-markdown-h4: 600 16px/28px var(--dsw-font-family);
+  --dsw-font-markdown-h4: var(--ds-reading-weight-strong) var(--ds-reading-size-h4) /
+    var(--ds-reading-line-h4) var(--dsw-font-family);
 
-  --dsw-font-markdown-base: 16px/28px var(--dsw-font-family);
+  --dsw-font-markdown-base: var(--ds-reading-weight-body) var(--ds-reading-size-body) /
+    var(--ds-reading-line-body) var(--dsw-font-family);
 
-  --dsw-font-markdown-base-strong: 600 16px/28px var(--dsw-font-family);
+  --dsw-font-markdown-base-strong: var(--ds-reading-weight-strong) var(--ds-reading-size-body) /
+    var(--ds-reading-line-body) var(--dsw-font-family);
 
-  --dsw-font-markdown-table: 15px/25px var(--dsw-font-family);
+  --dsw-font-markdown-table: var(--ds-reading-weight-body) var(--ds-reading-size-table) /
+    var(--ds-reading-line-table) var(--dsw-font-family);
 
-  --dsw-font-markdown-table-head: 500 15px/25px var(--dsw-font-family);
+  --dsw-font-markdown-table-head: var(--ds-reading-weight-table-head)
+    var(--ds-reading-size-table) / var(--ds-reading-line-table) var(--dsw-font-family);
 
-  --dsw-font-markdown-small: 14px/24px var(--dsw-font-family);
+  --dsw-font-markdown-small: var(--ds-reading-weight-body) var(--ds-reading-size-secondary) /
+    var(--ds-reading-line-secondary) var(--dsw-font-family);
 
-  --dsw-font-markdown-small-strong: 600 14px/24px var(--dsw-font-family);
+  --dsw-font-markdown-small-strong: var(--ds-reading-weight-strong)
+    var(--ds-reading-size-secondary) / var(--ds-reading-line-secondary) var(--dsw-font-family);
 
   --dsw-font-markdown-code: 14px/22px var(--ds-font-family-code);
 

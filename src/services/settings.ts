@@ -24,6 +24,15 @@ export type ThemePreference = 'light' | 'dark' | 'system'
 export type ThinkingDisplay = 'collapsed' | 'expanded' | 'hidden'
 
 /**
+ * 消息区阅读设置（issue #102）：字号 / 字重 / 行高各三到四档。
+ * 档位值只是「选了什么」，具体像素落在 src/styles/reading.css 的 token 上；
+ * 默认档（standard / regular / standard）等于仓库改造前的固定字号字重行高。
+ */
+export type ReadingFontSize = 'small' | 'standard' | 'large' | 'xlarge'
+export type ReadingFontWeight = 'regular' | 'medium' | 'bold'
+export type ReadingLineHeight = 'compact' | 'standard' | 'relaxed'
+
+/**
  * 本机设置，存 localStorage：语言、主题、位置、朗读音色、快速/专家模式（= 深度思考档位）、
  * 思考过程显示方式、智能搜索开关、侧边栏收起状态。
  * API Key 不再单独存放，改由 providers.ts 的模型服务配置管理（旧 chat-demo:api-key 仅用于迁移）。
@@ -37,6 +46,9 @@ type Settings = {
   /** 深度思考开关的镜像值，恒等于 chatMode === 'expert'；留着是为了不改读它的旧代码 */
   thinking: boolean
   thinkingDisplay: ThinkingDisplay
+  readingFontSize: ReadingFontSize
+  readingFontWeight: ReadingFontWeight
+  readingLineHeight: ReadingLineHeight
   search: boolean
   siderCollapsed: boolean
 }
@@ -49,6 +61,9 @@ const KEYS = {
   chatMode: 'chat-demo:chat-mode',
   thinking: 'chat-demo:thinking',
   thinkingDisplay: 'chat-demo:thinking-display',
+  readingFontSize: 'chat-demo:reading-font-size',
+  readingFontWeight: 'chat-demo:reading-font-weight',
+  readingLineHeight: 'chat-demo:reading-line-height',
   search: 'chat-demo:search',
   siderCollapsed: 'chat-demo:sider-collapsed',
 } as const
@@ -113,6 +128,24 @@ const initialThinkingDisplay = (): ThinkingDisplay => {
   return saved === 'expanded' || saved === 'hidden' || saved === 'collapsed' ? saved : 'collapsed'
 }
 
+/** 阅读设置默认档 = 改造前的现状（16px / 常规 / 标准行距）；脏值回落默认档 */
+const initialReadingFontSize = (): ReadingFontSize => {
+  const saved = read(KEYS.readingFontSize)
+  return saved === 'small' || saved === 'large' || saved === 'xlarge' || saved === 'standard'
+    ? saved
+    : 'standard'
+}
+
+const initialReadingFontWeight = (): ReadingFontWeight => {
+  const saved = read(KEYS.readingFontWeight)
+  return saved === 'medium' || saved === 'bold' || saved === 'regular' ? saved : 'regular'
+}
+
+const initialReadingLineHeight = (): ReadingLineHeight => {
+  const saved = read(KEYS.readingLineHeight)
+  return saved === 'compact' || saved === 'relaxed' || saved === 'standard' ? saved : 'standard'
+}
+
 /** 未保存过时使用服务端默认音色 stella（海星） */
 const initialTtsVoice = (): TtsVoice => (read(KEYS.ttsVoice) === 'tide' ? 'tide' : 'stella')
 
@@ -135,6 +168,9 @@ export const useSettings = create<Settings>(() => {
     chatMode,
     thinking: chatMode === 'expert',
     thinkingDisplay: initialThinkingDisplay(),
+    readingFontSize: initialReadingFontSize(),
+    readingFontWeight: initialReadingFontWeight(),
+    readingLineHeight: initialReadingLineHeight(),
     search: read(KEYS.search) === 'true',
     siderCollapsed: read(KEYS.siderCollapsed) === 'true',
   }
@@ -178,6 +214,21 @@ export const setThinking = (thinking: boolean) => setChatMode(thinking ? 'expert
 export const setThinkingDisplay = (thinkingDisplay: ThinkingDisplay) => {
   write(KEYS.thinkingDisplay, thinkingDisplay)
   useSettings.setState({ thinkingDisplay })
+}
+
+export const setReadingFontSize = (readingFontSize: ReadingFontSize) => {
+  write(KEYS.readingFontSize, readingFontSize)
+  useSettings.setState({ readingFontSize })
+}
+
+export const setReadingFontWeight = (readingFontWeight: ReadingFontWeight) => {
+  write(KEYS.readingFontWeight, readingFontWeight)
+  useSettings.setState({ readingFontWeight })
+}
+
+export const setReadingLineHeight = (readingLineHeight: ReadingLineHeight) => {
+  write(KEYS.readingLineHeight, readingLineHeight)
+  useSettings.setState({ readingLineHeight })
 }
 
 export const setSearch = (search: boolean) => {

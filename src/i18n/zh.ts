@@ -545,4 +545,19 @@ export const zh = {
   // Issue #106：移动端标题栏双击回到首条消息
   scrollToFirstMessage: '回到首条消息（双击标题）',
   scrollToFirstMessageHint: '双击回顶',
+  // Issue #102：消息区阅读设置（字号 / 字重 / 行高），只作用于消息区
+  settingDialogReadingGroupLabel: '只作用于消息区：聊天正文、思考内容和你自己发的消息；设置面板与输入框不跟着变。',
+  settingDialogReadingFontSize: '字号',
+  settingDialogReadingFontWeight: '字重',
+  settingDialogReadingLineHeight: '行高',
+  settingDialogReadingSizeSmall: '小',
+  settingDialogReadingSizeStandard: '标准',
+  settingDialogReadingSizeLarge: '大',
+  settingDialogReadingSizeXLarge: '特大',
+  settingDialogReadingWeightRegular: '常规',
+  settingDialogReadingWeightMedium: '中等',
+  settingDialogReadingWeightBold: '粗体',
+  settingDialogReadingLineCompact: '紧凑',
+  settingDialogReadingLineStandard: '标准',
+  settingDialogReadingLineRelaxed: '宽松',
 } as const

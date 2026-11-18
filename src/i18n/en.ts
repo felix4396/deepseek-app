@@ -560,4 +560,20 @@ export const en = {
   // Issue #106: double-tap the mobile title bar to jump back to the first message
   scrollToFirstMessage: 'Back to the first message (double-tap the title)',
   scrollToFirstMessageHint: 'Double-tap to top',
+  // Issue #102: message-area reading settings (font size / weight / line height)
+  settingDialogReadingGroupLabel:
+    'Applies to the message area only: chat answers, thinking text and your own messages. The settings panel and the input box stay as they are.',
+  settingDialogReadingFontSize: 'Font size',
+  settingDialogReadingFontWeight: 'Font weight',
+  settingDialogReadingLineHeight: 'Line height',
+  settingDialogReadingSizeSmall: 'Small',
+  settingDialogReadingSizeStandard: 'Standard',
+  settingDialogReadingSizeLarge: 'Large',
+  settingDialogReadingSizeXLarge: 'Extra large',
+  settingDialogReadingWeightRegular: 'Regular',
+  settingDialogReadingWeightMedium: 'Medium',
+  settingDialogReadingWeightBold: 'Bold',
+  settingDialogReadingLineCompact: 'Compact',
+  settingDialogReadingLineStandard: 'Standard',
+  settingDialogReadingLineRelaxed: 'Relaxed',
 } satisfies Record<keyof typeof zh, string>

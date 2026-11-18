@@ -27,10 +27,16 @@ import { useIsMobile } from '../../app/viewport.js'
 import { useChatStore } from '../../services/chat/store.js'
 import {
   setLocale,
+  setReadingFontSize,
+  setReadingFontWeight,
+  setReadingLineHeight,
   setThemePreference,
   setThinkingDisplay,
   setTtsVoice,
   useSettings,
+  type ReadingFontSize,
+  type ReadingFontWeight,
+  type ReadingLineHeight,
   type ThemePreference,
   type ThinkingDisplay,
 } from '../../services/settings.js'
@@ -123,6 +129,7 @@ const SettingsContent = ({ visible }: { visible: boolean }) => {
               <TtsVoiceSetting />
               <ThinkingDisplaySetting />
               <AppUpdateField />
+              <ReadingSettings />
               {/* 「位置信息」已从设置页移除（1.4.0-beta.1）：location 仍在 store 里读取，
                   只用于 latest_reminder 快照，界面上不再暴露入口。 */}
             </>
@@ -1077,5 +1084,85 @@ const ExportHistory = ({ disabled }: { disabled: boolean }) => {
         </Button>
       }
     />
+  )
+}
+/**
+ * 消息区阅读设置（issue #102）：字号 / 字重 / 行高。
+ * 只作用于消息区（聊天正文、思考正文、用户气泡）；设置面板自身与输入框不跟着变。
+ * 三项默认档等于改造前的固定字号字重行高，没动过设置的人看到的观感不变。
+ */
+const readingFontSizeOptions: { value: ReadingFontSize; label: TranslationKey }[] = [
+  { value: 'small', label: 'settingDialogReadingSizeSmall' },
+  { value: 'standard', label: 'settingDialogReadingSizeStandard' },
+  { value: 'large', label: 'settingDialogReadingSizeLarge' },
+  { value: 'xlarge', label: 'settingDialogReadingSizeXLarge' },
+]
+
+const readingFontWeightOptions: { value: ReadingFontWeight; label: TranslationKey }[] = [
+  { value: 'regular', label: 'settingDialogReadingWeightRegular' },
+  { value: 'medium', label: 'settingDialogReadingWeightMedium' },
+  { value: 'bold', label: 'settingDialogReadingWeightBold' },
+]
+
+const readingLineHeightOptions: { value: ReadingLineHeight; label: TranslationKey }[] = [
+  { value: 'compact', label: 'settingDialogReadingLineCompact' },
+  { value: 'standard', label: 'settingDialogReadingLineStandard' },
+  { value: 'relaxed', label: 'settingDialogReadingLineRelaxed' },
+]
+
+const ReadingSettings = () => {
+  const t = useTranslate()
+  const readingFontSize = useSettings((state) => state.readingFontSize)
+  const readingFontWeight = useSettings((state) => state.readingFontWeight)
+  const readingLineHeight = useSettings((state) => state.readingLineHeight)
+  return (
+    <>
+      <SettingCell
+        label={t('settingDialogReadingFontSize')}
+        description={t('settingDialogReadingGroupLabel')}
+        status={null}
+        action={
+          <Select
+            ariaLabel={t('settingDialogReadingFontSize')}
+            value={readingFontSize}
+            options={readingFontSizeOptions.map((option) => ({
+              value: option.value,
+              label: t(option.label),
+            }))}
+            onChange={setReadingFontSize}
+          />
+        }
+      />
+      <SettingCell
+        label={t('settingDialogReadingFontWeight')}
+        status={null}
+        action={
+          <Select
+            ariaLabel={t('settingDialogReadingFontWeight')}
+            value={readingFontWeight}
+            options={readingFontWeightOptions.map((option) => ({
+              value: option.value,
+              label: t(option.label),
+            }))}
+            onChange={setReadingFontWeight}
+          />
+        }
+      />
+      <SettingCell
+        label={t('settingDialogReadingLineHeight')}
+        status={null}
+        action={
+          <Select
+            ariaLabel={t('settingDialogReadingLineHeight')}
+            value={readingLineHeight}
+            options={readingLineHeightOptions.map((option) => ({
+              value: option.value,
+              label: t(option.label),
+            }))}
+            onChange={setReadingLineHeight}
+          />
+        }
+      />
+    </>
   )
 }
