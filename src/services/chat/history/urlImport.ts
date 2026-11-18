@@ -1,4 +1,5 @@
 import { Capacitor, CapacitorHttp, type HttpResponse } from '@capacitor/core'
+import { errorMeta, record, recordAction, recordEvent, redactUrl } from '../../diagnostics/collector.js'
 import { importHistory } from '../backup.js'
 import { fail } from './errors.js'
 
@@ -123,6 +124,11 @@ const isTimeout = (error: unknown): boolean =>
 
 /** 下发请求：网络失败与超时在这里分类，其余错误原样抛出由调用方处理。 */
 const requestArchive = async (url: string): Promise<HttpResponse> => {
+  const startedAt = Date.now()
+  recordEvent('import_stage', 'import: download archive', {
+    stage: 'download',
+    'url.path': redactUrl(url),
+  })
   try {
     return await CapacitorHttp.get({
       url,
@@ -132,7 +138,16 @@ const requestArchive = async (url: string): Promise<HttpResponse> => {
       headers: { Accept: 'application/zip,application/octet-stream,*/*' },
     })
   } catch (error) {
-    return fail(isTimeout(error) ? 'historyImportUrlTimeout' : 'historyImportUrlNetwork')
+    const timeout = isTimeout(error)
+    // 失败必录：阶段 + 耗时 + 错误原文（下载失败是导入失败最常见的一类）
+    record('import_error', 'error', `import download failed: ${timeout ? 'timeout' : 'network'}`, {
+      stage: 'download',
+      'url.path': redactUrl(url),
+      durationMs: Date.now() - startedAt,
+      reason: timeout ? 'timeout' : 'network',
+      ...errorMeta(error),
+    })
+    return fail(timeout ? 'historyImportUrlTimeout' : 'historyImportUrlNetwork')
   }
 }
 
@@ -144,6 +159,13 @@ const downloadArchive = async (url: string, signal?: AbortSignal): Promise<File>
   const response = await requestArchive(url)
   throwIfCancelled(signal)
   if (response.status !== 200) {
+    // 403 / 404 / 5xx：状态码必须落进日志，否则「导入没反应」无从查起
+    record('import_error', 'error', `import download failed: HTTP ${response.status}`, {
+      stage: 'download',
+      'http.status': response.status,
+      'url.path': redactUrl(url),
+      'error.msg': `HTTP ${response.status}`,
+    })
     fail('historyImportUrlHttp', { status: response.status })
   }
   // 先看响应头，超限就连 base64 都不解码。
@@ -178,12 +200,22 @@ export const importHistoryFromUrl = async (
   options: { signal?: AbortSignal } = {}
 ): Promise<number> => {
   if (!Capacitor.isNativePlatform()) {
+    record('import_error', 'error', 'import rejected: not native', {
+      stage: 'validate',
+      'error.msg': 'native platform required',
+    })
     fail('historyImportUrlNativeOnly')
   }
   const link = url.trim()
   if (!/^https?:\/\/\S+$/i.test(link)) {
+    record('import_error', 'error', 'import rejected: invalid url', {
+      stage: 'validate',
+      'url.path': redactUrl(link),
+      'error.msg': 'invalid http(s) url',
+    })
     fail('historyImportUrlInvalid')
   }
+  recordAction('import_start', 'import-history-url', { source: 'url', 'url.path': redactUrl(link) })
   const file = await downloadArchive(link, options.signal)
   // 下载期间点了取消：结果直接丢弃，不进入暂存与替换事务。
   throwIfCancelled(options.signal)

@@ -3,6 +3,7 @@ import type { LinkedMessage, TranslationMessage } from '../i18n/index.js'
 import { uploadFile } from './api/client.js'
 import { classifyApiError, getUploadErrorInfo, isRetryableApiError } from './api/errors.js'
 import type { FilePurpose } from './api/types.js'
+import { errorMeta, record } from './diagnostics/collector.js'
 import { ACCEPT_FILE_EXTS } from './uploadExts.js'
 
 /** 允许上传的扩展名，按扩展名白名单过滤，清单见 uploadExts.ts */
@@ -177,6 +178,9 @@ export const uploadAttachment = (
   }
   const controller = new AbortController()
   setTask(id, { status: 'uploading' })
+  // 关键业务动作：上传请求本身由 net_request / net_response 覆盖；
+  // 这里只在失败时补一条 error 级记录（大小 / 类型 / 耗时，文件名与内容都不记）
+  const startedAt = Date.now()
   const promise = enqueueUpload(apiKey, blob, name, isImage, controller.signal)
     .then((serverId) => {
       setTask(id, { status: 'done', serverId })
@@ -198,6 +202,14 @@ export const uploadAttachment = (
           }
         }
       }
+      record('error', 'error', `file upload failed${controller.signal.aborted ? ' (aborted)' : ''}`, {
+        stage: 'upload',
+        bytes: blob.size,
+        image: isImage,
+        durationMs: Date.now() - startedAt,
+        aborted: controller.signal.aborted,
+        ...errorMeta(error),
+      })
       throw error
     })
     .finally(() => pending.delete(id))

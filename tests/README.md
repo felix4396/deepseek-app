@@ -139,3 +139,23 @@ cd /root/deepseek-app && node tests/test.motion.spec.mjs
 夹具 `archive-fixture.mjs` 用 fflate 生成最小导出 ZIP（manifest + 1 个会话 + index），格式与
 `src/services/chat/history/format.ts` 对齐。断言口径：会话数取 IndexedDB `chat-demo/sessions`，
 「走完链路」还要求 `sessionsStaging` / `filesStaging` 已清空（覆盖事务已提交）。
+
+## 诊断日志与反馈上传（采集 / 上传解耦）
+
+三个 spec 与 `src/services/diagnostics/` 一一对应。页面需带 `?diag-debug` 才会挂 `window.__diagnostics`
+调试入口（正常使用不暴露），spec 通过它读日志、注入 mock transport、断言裁剪结果。
+
+| spec | 覆盖 | 依赖 |
+| --- | --- | --- |
+| `test.diagnostics.spec.mjs` | 环形缓冲（500 条 + 30 分钟双限）、脱敏、截断、hook、transport 可替换、2MB 体积控制、UI 提交流程、`validatePayload` 自检、设置页「检查日志完整性」 | `pnpm build:internal`（dist） |
+| `test.diagnostics-contract.spec.mjs` | 6 类故障注入的字段契约：导入 403 / 发消息 502 / 请求超时 / 未捕获异常 / 配置保存失败 / 长任务 | 自己构建 `dist-standard`（配置项可编辑） |
+| `test.diagnostics-e2e.spec.mjs` | legacy 通道真实提交（`logSize` 回显）、`log` 字符串与 `content` 干净、150KB 裁剪 + `[truncated]`、连接重置后 50KB 降级重试、脱敏、413 可读提示 | 5181 已部署 + 能访问 `62.106.70.167:60012` |
+| `diagnostics-blind-export.mjs` | 盲测取样：断网发消息 → 导出真正会发出的 body 到 `/tmp/feedback-blind.json` | 同上 |
+
+```bash
+cd /root/deepseek-app
+pnpm build:internal && node tests/test.diagnostics.spec.mjs
+node tests/test.diagnostics-contract.spec.mjs
+node tests/test.diagnostics-e2e.spec.mjs      # 会真实提交到后端
+node tests/diagnostics-blind-export.mjs        # 生成盲测样本（不发真后端）
+```

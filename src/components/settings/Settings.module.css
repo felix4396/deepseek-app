@@ -556,3 +556,273 @@
     max-width: 100%;
   }
 }
+
+/* ---------- 反馈与日志 ---------- */
+
+.feedbackDialog {
+  width: 560px;
+  height: auto;
+  max-height: calc(100dvh - 32px);
+  padding-top: 22px;
+}
+
+/* 内容区自己滚动：日志预览展开后弹窗高度不会顶破屏幕 */
+.feedbackMain {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  max-height: min(70dvh, 560px);
+  overflow-y: auto;
+  color: var(--dsw-alias-label-primary);
+}
+
+.feedbackBody {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-height: 0;
+}
+
+.feedbackField {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 12px 0;
+}
+
+.feedbackLabel {
+  display: flex;
+  gap: 2px;
+  color: var(--dsw-alias-label-primary);
+  font-size: 14px;
+  line-height: 22px;
+}
+
+.feedbackRequired {
+  color: var(--dsw-alias-state-error-primary);
+}
+
+.feedbackTextarea {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 108px;
+  padding: 10px 12px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 14px;
+  background: transparent;
+  color: var(--dsw-alias-label-primary);
+  font: inherit;
+  line-height: 22px;
+  resize: vertical;
+  outline: none;
+  transition: border-color var(--ds-transition-duration) var(--ds-ease-in-out);
+
+  &::placeholder {
+    color: var(--dsw-alias-label-caption);
+  }
+
+  &:focus {
+    border-color: var(--dsw-alias-brand-primary);
+  }
+
+  &:disabled {
+    opacity: 0.6;
+  }
+}
+
+.feedbackPreviewToggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--dsw-alias-label-primary);
+  font: inherit;
+  line-height: 22px;
+  text-align: left;
+  cursor: pointer;
+
+  &:hover {
+    color: var(--dsw-alias-brand-text);
+  }
+}
+
+.feedbackLogs {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 180px;
+  margin: 0;
+  padding: 8px 10px;
+  overflow-y: auto;
+  border-radius: 12px;
+  background-color: var(--dsw-alias-bg-layer-3);
+  color: var(--dsw-alias-label-secondary);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  line-height: 18px;
+  list-style: none;
+}
+
+.feedbackLogRow {
+  display: flex;
+  gap: 8px;
+  min-width: 0;
+}
+
+.feedbackLogTime {
+  flex-shrink: 0;
+  color: var(--dsw-alias-label-caption);
+}
+
+.feedbackLogLevel {
+  flex-shrink: 0;
+  width: 34px;
+  text-transform: uppercase;
+  color: var(--dsw-alias-label-caption);
+}
+
+.feedbackLogMsg {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.feedbackHint {
+  color: var(--dsw-alias-label-caption);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.feedbackShotPreview {
+  width: 44px;
+  height: 44px;
+  border-radius: 8px;
+  object-fit: cover;
+}
+
+.feedbackTicket {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  border-radius: 14px;
+  background-color: var(--dsw-alias-bg-layer-3);
+}
+
+.feedbackTicketText {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.feedbackTicketId {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 14px;
+  word-break: break-all;
+}
+
+.feedbackStatus {
+  padding: 8px 0;
+  font-size: 13px;
+  line-height: 20px;
+}
+
+.feedbackFooter {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  width: 100%;
+}
+
+@media not all and (min-width: 768px) {
+  .feedbackDialog {
+    width: 100%;
+    max-width: none;
+  }
+
+  .feedbackMain {
+    max-height: min(64dvh, 520px);
+  }
+}
+
+.feedbackLogKind {
+  flex-shrink: 0;
+  width: 92px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: var(--dsw-alias-brand-text);
+}
+
+/* 提交前自检提示 + 按钮：提示在提交按钮上方，只提示不阻断 */
+.feedbackFooterColumn {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
+  width: 100%;
+}
+
+.feedbackWarnings {
+  align-self: stretch;
+  padding: 8px 10px;
+  border-radius: 12px;
+  background-color: var(--dsw-alias-bg-layer-3);
+  color: var(--dsw-alias-label-secondary);
+
+  ul {
+    margin: 2px 0 0;
+    padding-left: 18px;
+    font-size: 12px;
+    line-height: 18px;
+  }
+}
+
+.feedbackIntegrity {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 10px;
+  border-radius: 12px;
+  background-color: var(--dsw-alias-bg-layer-3);
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  line-height: 18px;
+  word-break: break-all;
+}
+
+.feedbackInput {
+  box-sizing: border-box;
+  width: 100%;
+  height: 40px;
+  padding: 0 12px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 14px;
+  background: transparent;
+  color: var(--dsw-alias-label-primary);
+  font: inherit;
+
+  &::placeholder {
+    color: var(--dsw-alias-label-caption);
+  }
+
+  &:focus {
+    border-color: var(--dsw-alias-brand-primary);
+    outline: none;
+  }
+}
+
+.feedbackTicketLine {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
+}

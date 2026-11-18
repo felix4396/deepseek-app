@@ -2,8 +2,9 @@ import { create } from 'zustand'
 import { createId } from '../../utils/id.js'
 import { ApiError, streamMessage } from '../api/client.js'
 import type { CreateMessageRequest } from '../api/types.js'
-import { extractFileIds, getFileErrorCode, isRetryableApiError } from '../api/errors.js'
+import { classifyApiError, extractFileIds, getFileErrorCode, isRetryableApiError } from '../api/errors.js'
 import { cancelUpload, describeUploadError, uploadAttachment, useUploads } from '../attachments.js'
+import { captureStateSnapshot, errorMeta, record, recordAction, recordEvent } from '../diagnostics/collector.js'
 import { getApiKey, getCurrentSpec, getModel } from '../api/apiConfig.js'
 import { requestGates } from '../api/providers.js'
 import { useSettings } from '../settings.js'
@@ -476,6 +477,9 @@ export const newChat = () => {
 }
 
 export const selectSession = (id: string) => {
+  if (get().activeId !== id) {
+    recordAction('nav', 'select-session', { sessions: get().sessions.length })
+  }
   if (!get().importingHistory && get().sessions.some((session) => session.id === id)) {
     touchSession(id)
     set({ activeId: id })
@@ -588,6 +592,9 @@ export const sendMessage = (targetSessionId: string | null) => {
     return false
   }
   const { text, files } = prepared
+  // 关键业务动作：只记字符数与附件数，正文绝不进日志
+  recordAction('chat_send', 'send-message', { chars: text.length, files: files.length })
+  void captureStateSnapshot('after-chat-send')
   const now = Date.now()
   let sessionId = targetSessionId
   if (
@@ -1046,6 +1053,10 @@ const scheduleAutoTitle = (sessionId: string) => {
  */
 const streamReply = async (sessionId: string, initial: AssistantMessage, request: Request) => {
   const controller = new AbortController()
+  /** 本轮开始时间：chat_first_token / chat_done / 中止都用它算耗时 */
+  const startedAt = Date.now()
+  /** 是否已记过第一个 token（只记一次） */
+  let firstTokenLogged = false
   if (!getSession(sessionId)?.title) {
     titleRequests.add(controller)
   }
@@ -1124,6 +1135,16 @@ const streamReply = async (sessionId: string, initial: AssistantMessage, request
             updateSession(sessionId, (session) => (session.title ? session : { ...session, title }))
             titleRequests.delete(controller)
           }
+          if (
+            !firstTokenLogged &&
+            (event.type === 'content_block_start' || event.type === 'content_block_delta')
+          ) {
+            firstTokenLogged = true
+            recordEvent('chat_first_token', `first token in ${Date.now() - startedAt}ms`, {
+              stage: 'stream',
+              durationMs: Date.now() - startedAt,
+            })
+          }
           reply = applyEvent(reply, event, Date.now(), blockIndexes)
           if (document.visibilityState === 'hidden') {
             flush()
@@ -1132,13 +1153,37 @@ const streamReply = async (sessionId: string, initial: AssistantMessage, request
           }
         }
         reply = settleReply(reply, 'done', Date.now())
+        recordEvent('chat_done', `chat done in ${Date.now() - startedAt}ms`, {
+          stage: 'stream',
+          durationMs: Date.now() - startedAt,
+          chars: reply.blocks.reduce(
+            (total, block) => total + (block.type === 'text' ? block.text.length : 0),
+            0
+          ),
+        })
         finished = true
         break
       } catch (error) {
         if (controller.signal.aborted) {
           reply = settleReply(reply, 'stopped', Date.now())
+          recordEvent('chat_abort', `chat aborted after ${Date.now() - startedAt}ms`, {
+            stage: 'stream',
+            durationMs: Date.now() - startedAt,
+          })
           break
         }
+        // 失败必录：请求阶段、HTTP 状态、耗时、错误原文一次记全
+        record('error', 'error', 'chat stream failed', {
+          stage: preparing ? 'upload' : 'stream',
+          durationMs: Date.now() - startedAt,
+          // 用户在界面上会看到什么：条件分类 + i18n 文案 key（用来核实「到底有没有提示」）
+          'ui.condition': classifyApiError(error),
+          ...(error instanceof ApiError && error.localMessage
+            ? { 'ui.notice': error.localMessage.key }
+            : { 'ui.notice': error instanceof ApiError ? error.kind : 'unknown' }),
+          ...errorMeta(error),
+        })
+        void captureStateSnapshot('after-chat-error')
         if (preparing) {
           reply = settleReply(reply, 'error', Date.now(), {
             kind: 'upload',

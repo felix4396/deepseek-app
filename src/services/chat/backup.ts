@@ -1,4 +1,5 @@
 import { formatDate } from '../../utils/format.js'
+import { captureStateSnapshot, errorMeta, record, recordAction, recordEvent } from '../diagnostics/collector.js'
 import * as db from './db.js'
 import { replaceHistory, useChatStore } from './store.js'
 import type { Session } from './types.js'
@@ -45,9 +46,32 @@ export const exportHistory = (): Promise<{ name: string; blob: Blob }> =>
  */
 export const importHistory = (file: File): Promise<number> =>
   enqueueBackup(async () => {
-    const { checkArchiveFormat, importArchive } = await import('./history/importArchive.js')
-    await checkArchiveFormat(file)
-    return replaceHistory(() => importArchive(file))
+    const startedAt = Date.now()
+    // 关键业务动作：只记字节数、阶段与耗时，归档内容不进日志
+    let stage = 'check'
+    recordAction('import_start', 'import-history', { bytes: file.size, source: 'file' })
+    try {
+      const { checkArchiveFormat, importArchive } = await import('./history/importArchive.js')
+      recordEvent('import_stage', 'import: check archive format', { stage, bytes: file.size })
+      await checkArchiveFormat(file)
+      stage = 'staging'
+      recordEvent('import_stage', 'import: write staging stores', { stage })
+      const count = await replaceHistory(() => importArchive(file))
+      recordAction('import_done', 'import-history', {
+        count,
+        durationMs: Date.now() - startedAt,
+      })
+      void captureStateSnapshot('after-import')
+      return count
+    } catch (error) {
+      // 失败必录：error 级 + 阶段 + 耗时 + 错误原文（BackupError 的 message 就是中文原因）
+      record('import_error', 'error', `import failed at ${stage}`, {
+        stage,
+        durationMs: Date.now() - startedAt,
+        ...errorMeta(error),
+      })
+      throw error
+    }
   })
 
 /** 确认删除后调用：以空历史原子替换全部本地会话与附件，保留 API Key 和其他设置。 */

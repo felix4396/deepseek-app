@@ -36,6 +36,7 @@ import { Select } from '../base/Select.js'
 import { showToast } from '../base/toastState.js'
 import { ApiConfigFields, ApiKeyConfirm, useApiKeyEditor } from './ApiConfigFields.js'
 import { ChatBackgroundField } from './ChatBackgroundField.js'
+import { FeedbackDialog } from './FeedbackDialog.js'
 import { closeSettings, useSettingsDialog, type SettingsSection } from './settingsDialogState.js'
 import { MOTION_EXIT, usePresence } from '../../utils/usePresence.js'
 import styles from './Settings.module.css'
@@ -69,6 +70,8 @@ const SettingsContent = ({ visible }: { visible: boolean }) => {
   const apiKeyEditor = useApiKeyEditor()
   const historyImport = useHistoryImport()
   const historyDelete = useHistoryDelete()
+  // 反馈弹窗：integrity=true 表示从「检查日志完整性」进入，自检面板默认展开
+  const [feedback, setFeedback] = useState({ open: false, integrity: false })
   const replacingHistory = useChatStore((state) => state.importingHistory)
   const historyBusy = historyImport.busy || historyDelete.busy || replacingHistory
   return (
@@ -116,6 +119,32 @@ const SettingsContent = ({ visible }: { visible: boolean }) => {
               <ImportHistory historyImport={historyImport} disabled={historyBusy} />
               <ExportHistory disabled={historyBusy} />
               <SettingCell
+                label={t('feedbackCellLabel')}
+                description={t('feedbackCellDescription')}
+                status={null}
+                action={
+                  <>
+                    <Button
+                      variant="outlined"
+                      size="m"
+                      className={styles.cellButton}
+                      onClick={() => setFeedback({ open: true, integrity: false })}
+                    >
+                      {t('feedbackCellAction')}
+                    </Button>
+                    {/* 用户反馈前可先自检：条数 / 时间跨度 / 事件类型覆盖 / 缺失项 */}
+                    <Button
+                      variant="outlined"
+                      size="m"
+                      className={styles.cellButton}
+                      onClick={() => setFeedback({ open: true, integrity: true })}
+                    >
+                      {t('feedbackIntegrityCheck')}
+                    </Button>
+                  </>
+                }
+              />
+              <SettingCell
                 label={t('deleteAllSessions')}
                 status={null}
                 action={
@@ -137,6 +166,11 @@ const SettingsContent = ({ visible }: { visible: boolean }) => {
       </Modal>
       {historyImport.source ? <ImportConfirm historyImport={historyImport} /> : null}
       {historyDelete.opened ? <DeleteAllConfirm historyDelete={historyDelete} /> : null}
+      <FeedbackDialog
+        open={feedback.open}
+        integrity={feedback.integrity}
+        onClose={() => setFeedback((current) => ({ ...current, open: false }))}
+      />
     </>
   )
 }

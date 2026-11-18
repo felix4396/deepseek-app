@@ -11,6 +11,16 @@ const { version } = JSON.parse(
   readFileSync(new URL('./package.json', import.meta.url), 'utf8')
 ) as { version: string }
 
+/** Android versionCode 从 build.gradle 里读，诊断上报用（读不到记 0） */
+const readVersionCode = (): number => {
+  try {
+    const gradle = readFileSync(path.resolve(root, 'android/app/build.gradle'), 'utf8')
+    return Number(/versionCode\s+(\d+)/.exec(gradle)?.[1] ?? 0)
+  } catch {
+    return 0
+  }
+}
+
 const cssLoader = {
   loader: 'builtin:lightningcss-loader',
   options: { targets },
@@ -94,6 +104,8 @@ export const createConfig = ({
     new rspack.DefinePlugin({
       __API_ORIGIN__: JSON.stringify(apiOrigin),
       __INTERNAL_BUILD__: JSON.stringify(internalBuild),
+      __APP_VERSION__: JSON.stringify(version),
+      __APP_VERSION_CODE__: JSON.stringify(readVersionCode()),
     }),
     new rspack.CopyRspackPlugin({
       patterns: [{ from: path.resolve(root, 'LICENSE'), to: 'LICENSE', toType: 'file' }],

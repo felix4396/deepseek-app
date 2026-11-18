@@ -8,6 +8,7 @@ import {
   setModel,
   setProviderKind,
   useApiConfig,
+  recordConfigRejection,
 } from '../../services/api/apiConfig.js'
 import {
   PROVIDER_SPECS,
@@ -189,6 +190,7 @@ const BaseUrlField = ({ spec }: { spec: ProviderSpec }) => {
       setError(null)
       if (!fallback) {
         setError('settingsBaseUrlRequired')
+        recordConfigRejection('baseUrl', 'required')
         return false
       }
       setBaseUrl('')
@@ -197,7 +199,9 @@ const BaseUrlField = ({ spec }: { spec: ProviderSpec }) => {
     }
     const normalized = normalizeBaseUrl(value)
     if (!normalized) {
+      // 配置保存失败也要留痕：这类「保存后没反应」的问题只看状态是查不出来的
       setError('settingsBaseUrlInvalid')
+      recordConfigRejection('baseUrl', 'invalid')
       return false
     }
     setError(null)

@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import { captureStateSnapshot, recordAction } from '../diagnostics/collector.js'
 import {
   DEFAULT_PROVIDER_KIND,
   getFixedService,
@@ -92,6 +93,20 @@ export const getProviderKind = (): ProviderKind => {
   return isProviderKind(saved) ? saved : DEFAULT_PROVIDER_KIND
 }
 
+/** 配置保存被拒（校验失败）：UI 的保存分支失败时调用，日志里能看到「改了但没生效」 */
+export const recordConfigRejection = (field: 'baseUrl' | 'model' | 'apiKey', reason: string) => {
+  recordAction('config_change', `provider-${field}`, { result: 'rejected', reason })
+}
+
+/** 日志里只记 host：完整地址可能带路径与凭证，没必要写进日志 */
+const readHost = (baseUrl: string): string => {
+  try {
+    return new URL(baseUrl).host
+  } catch {
+    return 'invalid'
+  }
+}
+
 /** 已保存的原始值（空串表示没配置过，使用默认值） */
 export const useApiConfig = create<ApiConfig>(() => ({
   kind: getProviderKind(),
@@ -156,8 +171,11 @@ export const setProviderKind = (kind: ProviderKind) => {
   if (getFixedService()) {
     return
   }
-  write(CONFIG_KEYS.kind, isProviderKind(kind) ? kind : DEFAULT_PROVIDER_KIND)
-  useApiConfig.setState({ kind })
+  const next = isProviderKind(kind) ? kind : DEFAULT_PROVIDER_KIND
+  write(CONFIG_KEYS.kind, next)
+  useApiConfig.setState({ kind: next })
+  recordAction('config_change', 'provider-kind', { result: 'saved', kind: next })
+  void captureStateSnapshot('after-config-change')
 }
 
 /** 保存 API Key；空值等于清除（回到未配置状态） */
@@ -165,6 +183,12 @@ export const setApiKey = (apiKey: string) => {
   const value = apiKey.trim()
   write(CONFIG_KEYS.apiKey, value || null)
   useApiConfig.setState({ apiKey: value })
+  // 只记「有没有 / 多长」，密钥原文绝不进日志
+  recordAction('config_change', 'provider-api-key', {
+    result: value ? 'saved' : 'cleared',
+    present: value.length > 0,
+    length: value.length,
+  })
 }
 
 /** 保存服务地址；非法返回 false 且不写入。空值等于清除（回到内置默认地址） */
@@ -180,10 +204,13 @@ export const setBaseUrl = (baseUrl: string): boolean => {
   }
   const value = normalizeBaseUrl(baseUrl)
   if (!value) {
+    recordAction('config_change', 'provider-base-url', { result: 'invalid', reason: 'normalize' })
     return false
   }
   write(CONFIG_KEYS.baseUrl, value)
   useApiConfig.setState({ baseUrl: value })
+  recordAction('config_change', 'provider-base-url', { result: 'saved', host: readHost(value) })
+  void captureStateSnapshot('after-config-change')
   return true
 }
 
@@ -200,9 +227,12 @@ export const setModel = (model: string, reset = false): boolean => {
   }
   const value = model.trim()
   if (!value) {
+    recordAction('config_change', 'provider-model', { result: 'invalid', reason: 'empty' })
     return false
   }
   write(CONFIG_KEYS.model, value)
   useApiConfig.setState({ model: value })
+  recordAction('config_change', 'provider-model', { result: 'saved', model: value })
+  void captureStateSnapshot('after-config-change')
   return true
 }
