@@ -50,6 +50,19 @@ const readJson = async (entry: ArchiveEntry): Promise<unknown> => {
   }
 }
 
+/** 首个条目必须是 manifest：把「实际是什么 / 期望是什么」带进提示，不再只说「无法识别」（#40）。 */
+const requireManifestFirst = (found: string): never =>
+  fail('backupManifestNotFirst', { found, expected: MANIFEST_PATH })
+
+/**
+ * ZIP 层失败（ArchiveError）要带出真实原因（#40）：能定位到条目就给条目名与序号，
+ * 连目录都读不到就说文件被截断/被重新打包，不再一律折叠成 backupIncomplete。
+ */
+const archiveFailure = (index: number, path: string | undefined): BackupError =>
+  path === undefined
+    ? new BackupError('backupArchiveUnreadable')
+    : new BackupError('backupArchiveDamaged', { index, entry: path })
+
 /**
  * 检查 ZIP 格式、首个 manifest 条目及格式版本。
  * 校验失败时保留正在生成的回答和现有暂存数据。
@@ -58,18 +71,23 @@ export const checkArchiveFormat = async (file: File): Promise<void> => {
   if (!(await isZipFile(file))) {
     fail('backupUnrecognized')
   }
+  /** 已交给调用方的条目序号（1 起）与条目名，仅在报错时用于说明「哪一段校验失败」。 */
+  let index = 0
+  let path: string | undefined
   try {
     for await (const entry of readArchive(file)) {
+      index += 1
+      path = entry.path
       if (entry.path !== MANIFEST_PATH) {
-        fail('backupUnrecognized')
+        requireManifestFirst(entry.path)
       }
       checkManifest(await readJson(entry))
       return
     }
   } catch (error) {
-    throw error instanceof ArchiveError ? new BackupError('backupIncomplete') : error
+    throw error instanceof ArchiveError ? archiveFailure(index, path) : error
   }
-  fail('backupUnrecognized')
+  fail('backupEmptyArchive')
 }
 
 /** 导入进度：已处理会话数 / 会话总数（总数拿不到时不传，界面退化为只显示已处理数）。 */
@@ -99,6 +117,9 @@ export const importArchive = async (file: File, options: ImportArchiveOptions = 
   let manifest = false
   let index: SessionIndexEntry[] | undefined
   let currentSessionId: string | undefined
+  /** 已交给调用方的条目序号（1 起）与条目名，仅在报错时用于说明「哪一段校验失败」。 */
+  let entryIndex = 0
+  let entryPath: string | undefined
 
   const saveImage = async (entry: ArchiveEntry, id: string) => {
     if (stored.has(id)) {
@@ -119,10 +140,12 @@ export const importArchive = async (file: File, options: ImportArchiveOptions = 
         fail('historyImportCancelled')
       }
       const { path } = entry
+      entryIndex += 1
+      entryPath = path
       const sessionId = parseSessionPath(path)
       if (!manifest) {
         if (path !== MANIFEST_PATH) {
-          fail('backupUnrecognized')
+          requireManifestFirst(path)
         }
         checkManifest(await readJson(entry))
         manifest = true
@@ -156,10 +179,10 @@ export const importArchive = async (file: File, options: ImportArchiveOptions = 
       }
     }
   } catch (error) {
-    throw error instanceof ArchiveError ? new BackupError('backupIncomplete') : error
+    throw error instanceof ArchiveError ? archiveFailure(entryIndex, entryPath) : error
   }
   if (!manifest) {
-    fail('backupUnrecognized')
+    fail('backupEmptyArchive')
   }
   // index 只列出成功写出的会话，与会话文件一一对应。
   const listed = new Set(index?.map((entry) => entry.id))
