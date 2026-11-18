@@ -46,6 +46,7 @@ import {
   toRequestMessages,
 } from './reply.js'
 import { STREAM_NOTICE_TIERS } from './streamNotice.js'
+import type { ImportSkip } from './history/toLocal.js'
 import type { TranslationKey } from '../../i18n/index.js'
 import {
   toSessionSummary,
@@ -122,6 +123,8 @@ type ChatState = {
   activeId: string | null
   /** 正在生成回复的会话 */
   streaming: Record<string, AbortController>
+  /** 最近一次历史导入被跳过的条目（损坏的会话 / 消息），供「导入详情」展示（#49） */
+  importSkipped: ImportSkip[]
   /** 还在等首字的会话：当前该显示哪一档等待提示；收到首字或本轮结束就删掉 */
   waitHints: Record<string, TranslationKey>
 }
@@ -136,6 +139,7 @@ export const useChatStore = create<ChatState>(() => ({
   sessionSaveErrors: {},
   activeId: null,
   streaming: {},
+  importSkipped: [],
   waitHints: {},
 }))
 
@@ -503,11 +507,63 @@ const waitForIdle = (sessionId?: string) =>
     })
   })
 
+/** write() 的返回值：本次导入被跳过的条目（损坏会话 / 消息），正常返回即「部分成功」。 */
+export type HistoryImportResult = { skipped?: ImportSkip[] }
+
+/** 从 write() 的返回值里取 skipped；旧调用方不返回值，按「没有跳过」处理。 */
+const readSkipped = (value: unknown): ImportSkip[] => {
+  const skipped = (value as HistoryImportResult | undefined)?.skipped
+  return Array.isArray(skipped) ? skipped : []
+}
+
+/**
+ * write() 抛出本错误表示「已写入暂存 staged 条，其余无法导入」（#49）。
+ * replaceHistory 据此提交已写入部分并记录 skipped，而不是整包回滚。
+ */
+export class PartialHistoryImportError extends Error {
+  /** 被跳过的条目，按会话 / 消息给出定位信息 */
+  skipped: ImportSkip[]
+  /** 已成功写入暂存的会话数；<=0 时仍按整包失败处理 */
+  staged: number
+  constructor(skipped: ImportSkip[], staged: number, cause?: unknown) {
+    super(`history import partially failed: ${skipped.length} skipped`)
+    this.name = 'PartialHistoryImportError'
+    this.skipped = skipped
+    this.staged = staged
+    if (cause !== undefined) {
+      this.cause = cause
+    }
+  }
+}
+
+/** 抛出物是否代表「部分成功」：显式类，或任意带 skipped / staged 的、由导入方构造的错误。 */
+const skippedOf = (error: unknown): { skipped: ImportSkip[]; staged: number } | null => {
+  if (error instanceof PartialHistoryImportError) {
+    return { skipped: error.skipped, staged: error.staged }
+  }
+  const value = error as { skipped?: unknown; staged?: unknown } | null
+  if (!Array.isArray(value?.skipped)) {
+    return null
+  }
+  return {
+    skipped: value.skipped as ImportSkip[],
+    staged: typeof value.staged === 'number' ? value.staged : value.skipped.length,
+  }
+}
+
 /**
  * 替换历史对话：先写入暂存，成功后原子替换旧记录；写入为空即删除全部会话与附件。
- * 期间停止生成并禁止修改会话；失败时清除暂存，保留原有记录。
+ * 期间停止生成并禁止修改会话。
+ *
+ * 事务语义（#49）：仍按「整包一次原子替换」提交（db 的暂存→提交是单事务交换，按条提交需要 db 层的
+ * 逐条事务与摘要记账，不在本条 lane 的所有权内），但**不再整包回滚**——
+ * write() 正常返回并带上 skipped，或抛出「已暂存部分」的部分成功错误时，已写入的会话照常提交，
+ * 失败条目记进 state.importSkipped 上报；只有整包不可用（一条都没写成）才清暂存并抛错。
  */
-export const replaceHistory = async (write: () => Promise<void>): Promise<number> => {
+export const replaceHistory = async (
+  // 允许返回 skipped 清单；返回 void / 数字的旧调用方照旧可用（返回类型统一按 unknown 收）
+  write: () => Promise<unknown>
+): Promise<number> => {
   if (get().importingHistory) {
     throw new Error('History replacement is already in progress')
   }
@@ -524,12 +580,29 @@ export const replaceHistory = async (write: () => Promise<void>): Promise<number
     await waitForIdle()
     await db.clearStaging()
     let summaries: SessionSummary[]
+    let skipped: ImportSkip[] = []
     try {
-      await write()
+      skipped = readSkipped(await write())
       summaries = await db.commitStaging()
     } catch (error) {
-      await db.clearStaging().catch(db.reportStorageError('clear unfinished history replacement'))
-      throw error
+      // 部分成功：调用方已确认有会话写进暂存（staged > 0）并带上了 skipped，
+      // 此时按「能导入的先导入」提交已写入部分，不整包回滚。
+      const partial = skippedOf(error)
+      if (partial === null || partial.staged <= 0) {
+        await db.clearStaging().catch(db.reportStorageError('clear unfinished history replacement'))
+        throw error
+      }
+      skipped = partial.skipped
+      record('import_done', 'warn', 'history import committed partially', {
+        imported: partial.staged,
+        skipped: partial.skipped.length,
+      })
+      try {
+        summaries = await db.commitStaging()
+      } catch (commitError) {
+        await db.clearStaging().catch(db.reportStorageError('clear unfinished history replacement'))
+        throw commitError
+      }
     }
     sessionAccess.clear()
     unsavedSessions.clear()
@@ -542,6 +615,7 @@ export const replaceHistory = async (write: () => Promise<void>): Promise<number
       sessionCache: {},
       sessionLoadErrors: {},
       sessionSaveErrors: {},
+      importSkipped: skipped,
       activeId: null,
     })
     return summaries.length
