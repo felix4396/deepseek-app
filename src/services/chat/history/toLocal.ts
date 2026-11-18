@@ -12,6 +12,7 @@ import type {
   Session,
   UserMessage,
 } from '../types.js'
+import type { TranslationKey } from '../../../i18n/index.js'
 import { fail } from './errors.js'
 import type { ChatMessage, FileEntry, Fragment, SessionFile } from './format.js'
 import { sessionFilesDir } from './paths.js'
@@ -21,6 +22,31 @@ export type LocalSession = {
   /** 本会话目录下应存在的图片：ZIP 条目名 → 文件 ID */
   images: Map<string, string>
 }
+
+/**
+ * 单条导入失败的定位信息（#49）。汇总进导入结果的 skipped[]：
+ * 界面据此显示「成功 N 个 / 跳过 M 个」，并能定位到具体会话、消息。
+ */
+export type ImportSkip = {
+  /** session：整个会话跳过；message：只丢这一条消息；branch：当前分支指针损坏，已回退到最长链 */
+  scope: 'session' | 'message' | 'branch'
+  sessionId: string
+  sessionTitle: string
+  /** 出问题的消息 id；会话级失败为 null */
+  messageId: string | null
+  /** 缺失或冲突的父消息 id，用于定位损坏点 */
+  parentId: string | null
+  /** 提示文案 key（backupInvalidBranches / backupInvalidFiles） */
+  reason: TranslationKey
+}
+
+/**
+ * 单会话转换结果：坏数据降级成 skipped 而不是抛错，一条坏分支不再让整次导入失败（#49）。
+ * ok=false 表示整个会话无法构造，调用方跳过它继续处理其余会话即可。
+ */
+export type LocalSessionResult =
+  | { ok: true; session: LocalSession; skipped: ImportSkip[] }
+  | { ok: false; reason: TranslationKey; skipped: ImportSkip[] }
 
 const time = (value: string) => Date.parse(value)
 
@@ -243,12 +269,26 @@ const toAssistant = (message: ChatMessage): AssistantMessage => {
  * 按 id 排序还原消息树：父消息的 id 必须更小、角色交替、根为提问。
  * current_message_id 到根的路径为当前分支；其余节点默认选中 id 最大的子消息。
  */
-const buildTree = (file: SessionFile): Pick<Session, 'messages' | 'rootMessageId'> => {
+const buildTree = (
+  file: SessionFile
+): Pick<Session, 'messages' | 'rootMessageId'> & { skipped: ImportSkip[] } => {
   // 不用 Array.prototype.toSorted：它是 ES2023（Chrome/WebView 110+），旧 Android WebView 会直接抛
   // 「e.messages.toSorted is not a function」，导致导入全部失败。复制后排序，保持“不改入参”的原语义。
   const sorted = [...file.messages].sort((a, b) => a.id - b.id)
   const byId = new Map<number, Message>()
-  const messages = sorted.map((message) => {
+  const skipped: ImportSkip[] = []
+  // 单条消息损坏只丢这一条（#49）：父消息缺失会让它的子消息陆续被丢，每条都记下来便于定位。
+  const skipMessage = (message: ChatMessage, reason: TranslationKey) => {
+    skipped.push({
+      scope: 'message',
+      sessionId: file.id,
+      sessionTitle: file.title ?? '',
+      messageId: String(message.id),
+      parentId: message.parent_id === null ? null : String(message.parent_id),
+      reason,
+    })
+  }
+  const messages = sorted.flatMap((message) => {
     const { id, parent_id } = message
     const parent = parent_id === null ? undefined : byId.get(parent_id)
     if (
@@ -256,7 +296,8 @@ const buildTree = (file: SessionFile): Pick<Session, 'messages' | 'rootMessageId
       (parent_id === null ? message.role !== 'USER' : !parent) ||
       (parent && parent.role === (message.role === 'USER' ? 'user' : 'assistant'))
     ) {
-      fail('backupInvalidBranches')
+      skipMessage(message, 'backupInvalidBranches')
+      return []
     }
     const local = message.role === 'USER' ? toUser(message) : toAssistant(message)
     local.parentId = parent ? parent.id : null
@@ -264,33 +305,88 @@ const buildTree = (file: SessionFile): Pick<Session, 'messages' | 'rootMessageId
       parent.selectedChildId = local.id
     }
     byId.set(id, local)
-    return local
+    return [local]
   })
   if (messages.length === 0) {
-    return { messages, rootMessageId: null }
+    return { messages, rootMessageId: null, skipped }
   }
-  let current = byId.get(file.current_message_id) ?? fail('backupInvalidBranches')
+  let current = byId.get(file.current_message_id)
+  if (!current) {
+    // 当前分支指针指向不存在 / 已被丢弃的消息：回退到最深的一条链，不中断整次导入。
+    skipped.push({
+      scope: 'branch',
+      sessionId: file.id,
+      sessionTitle: file.title ?? '',
+      messageId: String(file.current_message_id),
+      parentId: null,
+      reason: 'backupInvalidBranches',
+    })
+    current = deepest(messages, byId)
+  }
   // 当前消息就是用户停留的位置，后面即使还有消息也不继续展开。
   current.selectedChildId = undefined
   while (current.parentId) {
-    const parent = byId.get(Number(current.parentId)) ?? fail('backupInvalidBranches')
+    const parent = byId.get(Number(current.parentId))
+    if (!parent) {
+      // 容忍模式下父链必定完整；留一手防御，坏数据也只丢分支不抛错。
+      break
+    }
     parent.selectedChildId = current.id
     current = parent
   }
-  return { messages, rootMessageId: current.id }
+  return { messages, rootMessageId: current.id, skipped }
 }
 
-/** 转换单个会话，并列出本会话目录下需要从 ZIP 读取的图片。 */
-export const toLocalSession = (file: SessionFile): LocalSession => {
+/** 分支指针损坏时的兜底：取最深的一条消息，沿父链回溯出的链就是默认展示分支。 */
+const deepest = (messages: Message[], byId: Map<number, Message>): Message => {
+  let best = messages[messages.length - 1]
+  let bestDepth = -1
+  for (const message of messages) {
+    let depth = 0
+    let current: Message | undefined = message
+    while (current?.parentId) {
+      depth += 1
+      current = byId.get(Number(current.parentId))
+      if (depth > messages.length) {
+        break
+      }
+    }
+    if (depth >= bestDepth) {
+      bestDepth = depth
+      best = message
+    }
+  }
+  return best
+}
+
+/**
+ * 转换单个会话并收集被跳过的条目，坏数据不抛错（#49）。
+ * 整个会话无法构造时返回 ok=false，由调用方把它记进 skipped 后继续处理其余会话。
+ */
+export const toLocalSessionResult = (file: SessionFile): LocalSessionResult => {
+  const tree = buildTree(file)
+  if (tree.messages.length === 0) {
+    tree.skipped.push({
+      scope: 'session',
+      sessionId: file.id,
+      sessionTitle: file.title ?? '',
+      messageId: null,
+      parentId: null,
+      reason: 'backupInvalidBranches',
+    })
+    return { ok: false, reason: 'backupInvalidBranches', skipped: tree.skipped }
+  }
   const session: Session = {
     id: file.id,
     // 空标题按「新对话」显示，导出时还原为 null。
     title: file.title ?? '',
     createdAt: time(file.inserted_at),
     updatedAt: time(file.updated_at),
-    ...buildTree(file),
+    messages: tree.messages,
+    rootMessageId: tree.rootMessageId,
   }
   const images = new Map<string, string>()
+  let filesBroken = false
   for (const message of file.messages) {
     for (const item of message.fragments) {
       if (item.type !== 'FILE') {
@@ -310,11 +406,35 @@ export const toLocalSession = (file: SessionFile): LocalSession => {
           !path.startsWith(sessionFilesDir(file.id)) ||
           (images.get(path) ?? entry.id) !== entry.id
         ) {
-          fail('backupInvalidFiles')
+          filesBroken = true
+          continue
         }
         images.set(path, entry.id)
       }
     }
   }
-  return { session, images }
+  if (filesBroken) {
+    tree.skipped.push({
+      scope: 'session',
+      sessionId: file.id,
+      sessionTitle: file.title ?? '',
+      messageId: null,
+      parentId: null,
+      reason: 'backupInvalidFiles',
+    })
+    return { ok: false, reason: 'backupInvalidFiles', skipped: tree.skipped }
+  }
+  return { ok: true, session: { session, images }, skipped: tree.skipped }
+}
+
+/**
+ * 旧入口（兼容既有调用方）：整个会话不可用时仍抛错，
+ * 单条消息损坏已经降级为 skipped，不再影响其余会话。
+ */
+export const toLocalSession = (file: SessionFile): LocalSession => {
+  const result = toLocalSessionResult(file)
+  if (result.ok) {
+    return result.session
+  }
+  return fail(result.reason)
 }
