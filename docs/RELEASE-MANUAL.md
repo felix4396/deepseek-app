@@ -179,13 +179,26 @@ BT=$HOME/android-sdk/build-tools/35.0.0        # 与实际 build-tools 版本对
 - [ ] **4.5 `debuggable` 必须不存在（发布完整性的硬门禁）**
 
   ```bash
-  $BT/aapt2 dump badging "$APK" | grep -c application-debuggable   # 必须输出 0
+  node scripts/check-apk-debuggable.mjs "$APK"        # 退出码必须是 0
+  $BT/aapt2 dump badging "$APK" | grep -c application-debuggable   # 交叉验证，必须是 0
   ```
 
-  输出必须是 `0`；只要有一条 `application-debuggable`，这个包就是可调试构建，
-  **绝对不准上传**（Issue #60：`1.0.0`～`1.4.0-beta.8` 共 15 个已发包都是这么漏出去的）。
-  这条同时也是"有没有误用 `assembleDebug`"的判据：`assembleRelease` 的产物恒为 0，
-  `assembleDebug` 的产物恒为 1。
+  第一条是仓库自带的关卡脚本（零依赖，直接解 APK 里的 `AndroidManifest.xml` 读
+  `application/android:debuggable`）：退出码 `0` 才算通过，`1` = 这个包是 debuggable 构建，
+  `2` = 判不出来（同样按不通过处理，不许「猜着放行」）。第二条用 aapt2 做交叉验证。
+  只要有一条命中，这个包就是可调试构建，**绝对不准上传**
+  （Issue #60：`1.0.0`～`1.4.0-beta.8` 共 15 个已发包都是这么漏出去的）。
+  这条同时也是"有没有误用 `assembleDebug`"的判据：`assembleRelease` 的产物恒为干净，
+  `assembleDebug` 的产物恒为 debuggable。
+
+  同一道关卡已经内置在三处，人工核对只是兜底：
+
+  | 位置 | 行为 |
+  | --- | --- |
+  | `./build-apk.sh release` | 出包后自动跑关卡，判不过直接失败（debug 模式只告警，因为 debug 变体天生 debuggable） |
+  | `.github/workflows/release.yml` | 下载 APK、校验 MD5 之后、创建 Release 之前拦一道 |
+  | `POST /api/v1/release`（dl 服务端） | 拒收 debuggable 包，返回 `400 APK_DEBUGGABLE` |
+
 
 五项全过才继续。任何一项不过都没有「先发后修」这种选项。
 

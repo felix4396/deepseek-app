@@ -11,6 +11,8 @@
  *   - MD5 由服务端自己算
  *   - packageName / versionCode / versionName 一律由 aapt2 dump badging
  *     从 APK 二进制里解析；meta 里的同名值不采信（冲突只记日志）
+ *   - `android:debuggable` 必须是 false（读 APK 内 AndroidManifest.xml 判定），
+ *     否则 400 APK_DEBUGGABLE 拒收 —— 发布路径不允许出现 debuggable 构建（Issue #60）
  *   - 防降级：versionCode 必须大于 releases.json 当前 latest
  *     （版本号与 latest 完全相同 = 幂等覆盖，允许）
  */
@@ -28,6 +30,7 @@ import {
   resolveVariant,
   VARIANTS,
 } from './variant.mjs';
+import { inspectApkDebugState } from './apk-manifest.mjs';
 
 // ---------------------------------------------------------------- 配置
 const LISTEN_HOST = process.env.DL_LISTEN_HOST || '127.0.0.1';
@@ -385,6 +388,22 @@ async function handleRelease(req, res, ip) {
     await fsp.rm(staging, { force: true });
     log('reject_package', { ip, packageName });
     return fail(res, 400, 'INVALID_APK', `包名必须是 ${REQUIRED_PACKAGE}，实际 ${packageName}`);
+  }
+
+  // (7a) 发布完整性硬门禁：debuggable 构建一律拒收（Issue #60）
+  // 判据直接读 APK 内 AndroidManifest.xml 的 application/android:debuggable，
+  // 不采信任何客户端声明；判不出来（null）同样拒收 —— 发布路径上不做「猜着放行」。
+  const debugState = inspectApkDebugState(staging);
+  if (debugState.debuggable !== false) {
+    await fsp.rm(staging, { force: true });
+    log('reject_debuggable', {
+      ip, sha256, state: String(debugState.debuggable), reason: debugState.reason,
+    });
+    const why = debugState.debuggable === true
+      ? 'APK 是 debuggable 构建（android:debuggable="true"），可被 adb run-as 读取私有数据'
+      : `无法确认 APK 的 debuggable 状态（${debugState.reason}）`;
+    return fail(res, 400, 'APK_DEBUGGABLE',
+      `${why}，拒绝写入。请用 ./gradlew :app:assembleRelease -PartifactVariant=internal 重新出包（Issue #60）`);
   }
 
   // (7b) 变体判定：只认 APK 内标记 或 服务器白名单；客户端 meta 一律不采信

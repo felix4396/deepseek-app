@@ -7,6 +7,7 @@
 #   APK_NO_MARKER=/path/deepseek-chat-1.4.0-beta.4.apk \
 #   APK_NO_MARKER_OLD=/path/deepseek-chat-1.4.0-beta.3.apk \
 #   APK_WITH_MARKER=/path/marker.apk \
+#   APK_DEBUGGABLE=/path/deepseek-chat-1.4.0-beta.8.apk \
 #   bash deploy/dl-release/test/offline-check.sh
 #
 # 缺 AAPT2 或缺其中任一 APK 时跳过对应用例（不会假绿：会明确打印 SKIP 原因）。
@@ -20,6 +21,7 @@ AAPT2=${AAPT2:-}
 APK_NO_MARKER=${APK_NO_MARKER:-}
 APK_NO_MARKER_OLD=${APK_NO_MARKER_OLD:-}
 APK_WITH_MARKER=${APK_WITH_MARKER:-}
+APK_DEBUGGABLE=${APK_DEBUGGABLE:-}
 
 PORT=${PORT:-8788}
 BASE="http://127.0.0.1:${PORT}/api/v1/release"
@@ -166,7 +168,7 @@ else
   skp "未提供 APK_WITH_MARKER（跳过带标记用例 + 冲突用例）"
 fi
 
-# ---------------------------------------------------------------- 6/7) 认证与非法包
+# ------------------------------------------------- 6) 认证与非法包 / 6b) debuggable 拒收
 hdr "6) 错令牌 → 401；7) 非 APK → 400"
 printf 'x\n' > "$WORK/tok.txt"
 OUT=$(post "$WORK/tok.txt" '{"changes":[]}' "wrong-token")
@@ -174,6 +176,28 @@ C=$(code_of "$OUT"); [ "$C" = "401" ] && ok "错令牌 401" || bad "错令牌应
 printf 'not an apk\n' > "$WORK/x.txt"
 OUT=$(post "$WORK/x.txt" '{"changes":[]}')
 C=$(code_of "$OUT"); [ "$C" = "400" ] && ok "非 APK 400" || bad "非 APK 应 400，实际 $C"
+
+hdr "6b) debuggable 的真 APK → 400 APK_DEBUGGABLE（Issue #60 硬门禁）"
+if [ -n "$APK_DEBUGGABLE" ] && [ -f "$APK_DEBUGGABLE" ]; then
+  # 先本地确认这个样例确实是 debuggable（用例本身不能被"挑错样本"糊过去）
+  if node "$REPO/scripts/check-apk-debuggable.mjs" "$APK_DEBUGGABLE" >/dev/null 2>&1; then
+    bad "样例 $APK_DEBUGGABLE 不是 debuggable 包，用例无效（换一个真 debuggable 的历史包）"
+  else
+    ok "样例判定为 debuggable（本地关卡退出码非 0）"
+  fi
+  BEFORE=$(sha_of "$WORK/releases.json")
+  OUT=$(post "$APK_DEBUGGABLE" '{"version":"9.9.9-debuggable-test","versionCode":99,"changes":["should-be-rejected"]}')
+  C=$(code_of "$OUT"); B=$(body_of "$OUT")
+  echo "  http=$C body=$B"
+  [ "$C" = "400" ] && ok "上传被拒 400" || bad "debuggable 包应 400，实际 $C"
+  [ "$(printf '%s' "$B" | jget '["error"]' | tr -d '"')" = "APK_DEBUGGABLE" ] \
+    && ok "错误码 APK_DEBUGGABLE" || bad "错误码不是 APK_DEBUGGABLE"
+  [ "$(sha_of "$WORK/releases.json")" = "$BEFORE" ] && ok "releases.json 未被改动" || bad "被拒的包改动了清单"
+  ls "$WORK"/apk/*9.9.9* >/dev/null 2>&1 && bad "被拒的 APK 残留在发布目录" || ok "被拒的 APK 未落盘"
+  grep -q reject_debuggable "$WORK/server.log" 2>/dev/null && ok "日志有 reject_debuggable" || bad "日志缺 reject_debuggable"
+else
+  skp "未提供 APK_DEBUGGABLE（拿 1.4.0-beta.8 这类历史 debuggable 包，用例会真实跑一遍拒收）"
+fi
 
 # ---------------------------------------------------------------- 8) 清单校验器自检
 hdr "8) 产出的 releases.json 必须通过清单校验器"

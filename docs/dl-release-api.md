@@ -84,6 +84,7 @@ curl -sS -X POST https://dl.rose7.cn/api/v1/release \
 | --- | --- | --- |
 | 400 | `BAD_REQUEST` | 不是 multipart、缺 `apk`/`meta`、`meta` 不是合法 JSON 对象、`changes` 不是字符串数组 |
 | 400 | `INVALID_APK` | `aapt2` 解析失败（不是 APK / 损坏），或包名不是 `com.example.deepseekchat` |
+| 400 | `APK_DEBUGGABLE` | APK 里 `application/android:debuggable` 为 `true`，或无法确认该属性（fail-closed）。可调试包会被 `adb run-as` 读私有数据，发布路径一律拒收（Issue #60） |
 | 401 | `UNAUTHORIZED` | 令牌缺失/错误（常数时间比较） |
 | 404 | `NOT_FOUND` | 路径不是 `/api/v1/release` |
 | 405 | `METHOD_NOT_ALLOWED` | 非 POST |
@@ -102,6 +103,7 @@ curl -sS -X POST https://dl.rose7.cn/api/v1/release \
 | 3 | 服务端算 MD5 | `crypto.createHash('md5')` 对收到的字节流计算，不接受客户端提供的 md5 |
 | 4 | 解析真实 versionName/versionCode/packageName | `aapt2 dump badging`（二进制位于 `/opt/dl-release/bin/aapt2`，从 Google Maven `com.android.tools.build:aapt2` 的 `aapt2-<ver>-linux.jar` 解出；ECS 上原本没有 Android SDK） |
 | 5 | 包名白名单 | 必须是 `com.example.deepseekchat` |
+| 5b | 拒绝 debuggable 包 | 解 APK 内 `AndroidManifest.xml`（二进制 AXML，见 `deploy/dl-release/apk-manifest.mjs`），`application/android:debuggable` 为 `true` 或判不出来 → `400 APK_DEBUGGABLE`；与客户端 meta 无关 |
 | 6 | 防降级 | APK 真值 `versionCode` 必须 > `releases.json` 当前 latest 的 `versionCode`，否则 `409` |
 | 6b | 算 sha256 | 与 md5 同时计算，写入记录，供 App 内更新做完整性强校验（App 不用 md5 决策） |
 | 6c | 判定构建变体 | APK 内 `com.example.deepseekchat.ARTIFACT_VARIANT` 标记（`aapt2 dump xmltree`）> 服务器 sha256 白名单 > unknown；**客户端 meta 不采信** |

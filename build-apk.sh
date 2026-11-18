@@ -128,3 +128,21 @@ if command -v aapt2 >/dev/null 2>&1 || ls "$ANDROID_HOME"/build-tools/*/aapt2 >/
 fi
 printf '安装命令     : adb install -r "%s"\n' "$APK_PATH"
 printf '\033[1;32m==============================================\033[0m\n'
+
+# ------------------------------------- 4. 发布完整性关卡：android:debuggable 必须为 false
+# Issue #60：1.0.0～1.4.0-beta.8 共 15 个已发布包都是 debug 变体产物，带 android:debuggable="true"，
+# 任何已授权 adb 的机器都能 run-as 读私有数据。这道关卡读 APK 内的 AndroidManifest.xml（不依赖 aapt2），
+# release 模式判不过就直接失败，产物留在原地但不许上传/分发。
+log "步骤 4：发布完整性关卡（android:debuggable 必须为 false）"
+if node "$PROJECT_ROOT/scripts/check-apk-debuggable.mjs" "$APK_PATH"; then
+  DEBUGBLE_STATE=clean
+else
+  DEBUGBLE_STATE=dirty
+fi
+if [ "$MODE" = "release" ]; then
+  [ "$DEBUGBLE_STATE" = "clean" ] || die "release 产物带 android:debuggable=true，禁止上传 dl / 禁止分发（Issue #60）。
+  APK: $APK_PATH
+  重出包：cd android && ./gradlew :app:assembleRelease -PartifactVariant=internal"
+else
+  printf '\033[1;33m[警告] debug 变体天生就是 debuggable：只许本地联调 / 模拟器烟测，禁止上传 dl.rose7.cn、禁止当发布包分发（Issue #60）\033[0m\n'
+fi

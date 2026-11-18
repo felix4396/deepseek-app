@@ -139,8 +139,10 @@ ${keystoreFixHint}""".stripIndent())
        本次 release keystore      : ${releaseCertSha}
        换证书会让所有已装用户无法覆盖升级（必须卸载重装）。
        这是签名迁移，必须单独规划；禁止在本仓库顺手切换证书。
-       当前可用做法：按 docs/RELEASE-MANUAL.md 用 internal 变体（assembleDebug）出包，
-       它沿用 AGP 默认的 /root/.android/debug.keystore（即已发布证书）。
+       当前可用做法：按 docs/RELEASE-MANUAL.md §1，把 keystore.properties 的
+       storeFileRelease / storePasswordRelease / keyAliasRelease 指向已发布证书
+       （/root/.android/debug.keystore），再跑 assembleRelease。
+       不要退回 assembleDebug：它的产物编译进 android:debuggable="true"，禁止发布（Issue #60）。
 ${keystoreFixHint}""".stripIndent())
     }
 }
