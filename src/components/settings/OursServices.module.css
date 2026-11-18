@@ -45,6 +45,8 @@
 /* ---------- 弹层 ---------- */
 .dialog {
   width: 440px;
+  /* dvh 回退：WebView 83 只认 vh（issue #13） */
+  max-height: calc(100vh - 48px);
   max-height: calc(100dvh - 48px);
   padding-top: 20px;
 }
@@ -218,6 +220,8 @@
     align-self: flex-end;
     width: 100%;
     max-width: none;
+    /* dvh 回退：WebView 83 只认 vh（issue #13） */
+    max-height: calc(100vh - 48px);
     max-height: calc(100dvh - 48px);
     border-radius: 24px 24px 0 0;
     --modal-motion-duration: var(--motion-duration-slow);
