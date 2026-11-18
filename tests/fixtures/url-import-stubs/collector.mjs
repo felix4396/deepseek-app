@@ -17,3 +17,12 @@ export const errorMeta = (error) => ({
   'error.name': error instanceof Error ? error.name : typeof error,
   'error.msg': error instanceof Error ? error.message : String(error),
 })
+
+// 与 src/services/diagnostics/redact.ts 同语义：只保留 path，query / hash / host 全丢。
+export const redactUrl = (value) => {
+  try {
+    return new URL(value, 'http://redacted.local').pathname || '/'
+  } catch {
+    return (value.split(/[?#]/)[0] ?? value) || '/'
+  }
+}
