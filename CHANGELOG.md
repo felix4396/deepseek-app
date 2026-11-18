@@ -2,6 +2,21 @@
 
 本文件记录 deepseek-app 的重要变更，版本倒序排列。
 
+## 1.4.0-beta.6 (2026-11-18) — 新增会话置顶：常用会话可置顶 [未过门禁]
+
+- 新增会话置顶：常用会话可置顶，置顶状态会保留
+- 修复：手机窄屏下设置页操作按钮挤压与溢出
+- 修复：提交反馈时附带的截图不再丢失
+- 内测版本，建议保留重要聊天记录；遇到问题请通过反馈入口提交
+
+> 内部验收记录（不进 dl 用户说明）：
+  - 源码范围：origin/main 3f1b160 + 图片 4f81952 + 设置溢出 bb3dbf1 + 置顶 ccf51af/54acfea/44a518b + ours 改协议 763f13d + 置顶分支 lint 补花括号 9a55a1e；不含模型列表 8cd686a、导入、clipboard、test-runtime
+  - focused：tsc 0 错、oxlint 0 警 0 错、unit 4/4（app-update / feedback-images / openai-adapter / provider-ours）
+  - ours 真实 UI E2E（用户授权 key 仅走环境变量，未落盘未打印）：POST http://62.106.70.167:60010/v1/chat/completions、Authorization Bearer、model=deepseek-v4.1-flash、首个助手文字 1693ms、回复非空；仅测 ours，未测其他渠道
+  - 置顶：手机截图视觉验收（图钉/省略号/40px 更多入口/中文取消菜单无溢出）+ 持久化修复为代码级；真机逐项未复测。溢出：浏览器 280–412 通过，真机字体倍率未验。图片：images=1 仅接收成功，不冒称持久化
+  - 未跑：整仓 integration 全量、其他渠道真上游、模型列表；真实 Android 覆盖安装未在 code13 设备复测
+  - 本次 --skip-tests：只跑了本次 focused 验收，全量测试套件未跑
+
 ## 1.4.0-beta.5 (2026-11-18) — 新增检查更新：设置里可检查是否有新版本 [未过门禁]
 
 - 新增检查更新：设置里可检查是否有新版本，有新版时可下载安装
