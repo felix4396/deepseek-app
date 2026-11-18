@@ -10,25 +10,60 @@ const subscribe = (onChange: () => void) => {
 
 export const useIsMobile = () => useSyncExternalStore(subscribe, () => query.matches)
 
-const preventPageScroll = (event: TouchEvent) => {
-  if (event.touches.length !== 1) {
-    return
-  }
+/** 声明了可滚动的 overflow —— 判断「这里能不能滚」只认 CSS，不认现测出来的溢出量 */
+const SCROLLABLE_OVERFLOW = /auto|scroll/
+
+/**
+ * 从 target 往上找「声明了可滚」的容器（含 target 自身，不含 body）。
+ *
+ * 不用 scrollHeight/clientHeight 现测：高度链一退化（--modal-viewport-height 缺失、父弹窗
+ * 没算出有界盒子），滚动容器的 scrollHeight 会等于 clientHeight，能滚的容器被误判成「不可滚」，
+ * 于是整页锁接管掉每一次 touchmove —— 触摸事件全到、内容一像素不动、零报错（issue #30）。
+ */
+const findScrollableAncestor = (target: Element) => {
   for (
-    let element = event.target instanceof Element ? event.target : null;
+    let element: Element | null = target;
     element && element !== document.body;
     element = element.parentElement
   ) {
     const style = getComputedStyle(element)
-    const scrollsY =
-      /auto|scroll/.test(style.overflowY) && element.scrollHeight > element.clientHeight
-    const scrollsX =
-      /auto|scroll/.test(style.overflowX) && element.scrollWidth > element.clientWidth
-    if (scrollsY || scrollsX) {
-      return
+    if (SCROLLABLE_OVERFLOW.test(style.overflowY) || SCROLLABLE_OVERFLOW.test(style.overflowX)) {
+      return element
     }
   }
-  event.preventDefault()
+  return null
+}
+
+/**
+ * 这条 touchmove 要不要拦。
+ *
+ * 条件锁 + 默认 fail-open：只有同时满足
+ *   1. 单指（多指是双指缩放，交给浏览器）；
+ *   2. target 落在锁范围内（默认整页；锁范围外的浮层目标一律放行）；
+ *   3. 祖先链上没有任何声明了 auto|scroll 的容器；
+ * 才 preventDefault。其余一律放行 —— 静默锁死比漏拦一次糟得多。
+ */
+export const shouldPreventTouchMove = (
+  event: TouchEvent,
+  lockRoot: Element | null = document.body
+) => {
+  if (event.touches.length !== 1) {
+    return false
+  }
+  const target = event.target instanceof Element ? event.target : null
+  if (!target || !lockRoot || !lockRoot.contains(target)) {
+    return false
+  }
+  if (findScrollableAncestor(target)) {
+    return false
+  }
+  return true
+}
+
+const onTouchMove = (event: TouchEvent) => {
+  if (shouldPreventTouchMove(event)) {
+    event.preventDefault()
+  }
 }
 
 /** 阻止移动端整页滚动，保留内部可滚动区域的滚动和双指缩放。 */
@@ -37,9 +72,30 @@ export const usePreventPageScroll = (enabled: boolean) => {
     if (!enabled) {
       return
     }
-    document.addEventListener('touchmove', preventPageScroll, { passive: false })
-    return () => document.removeEventListener('touchmove', preventPageScroll)
+    document.addEventListener('touchmove', onTouchMove, { passive: false })
+    return () => document.removeEventListener('touchmove', onTouchMove)
   }, [enabled])
+}
+
+/**
+ * 把真实可视高度写进浮层。
+ *
+ * `--modal-viewport-height` 是 .feedbackDialog 高度链的唯一来源（见 Settings.module.css），
+ * 缺了它内容区就不溢出 → 不可滚。所以这个变量**无条件下发**，包括双指缩放
+ * （visualViewport.scale !== 1）的时候：按真实可视高度写，总比不写安全。
+ * top / height 的像素值仍然只在未缩放时跟 —— 缩放中跟着改会让浮层随视觉视口乱跳。
+ */
+export const syncModalViewport = (overlay: HTMLElement | null, viewport: VisualViewport | null) => {
+  if (!overlay) {
+    return
+  }
+  const height = viewport?.height ?? window.innerHeight
+  overlay.style.setProperty('--modal-viewport-height', `${height}px`)
+  if (viewport && viewport.scale !== 1) {
+    return
+  }
+  overlay.style.top = `${viewport?.offsetTop ?? 0}px`
+  overlay.style.height = `${height}px`
 }
 
 /** 移动端页面跟随视觉视口，键盘弹出后顶栏和输入框仍留在可见区域。 */

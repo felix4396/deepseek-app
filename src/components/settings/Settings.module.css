@@ -801,9 +801,15 @@
   flex-direction: column;
   min-height: 0;
   flex: 1 1 auto;
-  /* 这里不用 dvh/vh：可见高度由上面 .feedbackDialog 的 --modal-viewport-height 决定，
-     内容区只是在这个高度里自己滚动（max-height 只是个上限，不跟视口走）。 */
-  max-height: 560px;
+  /* 兜底上界（issue #30）：不依赖上面那条 --modal-viewport-height 高度链。
+     高度链只要有一环没兜住（变量缺失 / 父弹窗没算出有界盒子），这里仍然给出一个有界盒子，
+     内容区照旧自己滚，而不是退化成「不溢出 → 不可滚」。
+     dvh 仍然只出现在 @supports 里（理由同 .feedbackDialog，见 issue #13）：83 上这条规则不存在，
+     生效的是上面那条带 vh 的声明，不会把已生效的值打成 initial。 */
+  max-height: min(560px, calc(100vh - 200px));
+  @supports (max-height: 100dvh) {
+    max-height: min(560px, calc(100dvh - 200px));
+  }
   overflow-y: auto;
   touch-action: pan-y;
   overscroll-behavior-y: contain;

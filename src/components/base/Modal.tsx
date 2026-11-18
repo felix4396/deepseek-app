@@ -5,6 +5,7 @@ import { useTranslate } from '../../i18n/index.js'
 import { IconCloseOutline16 } from './icons.js'
 import { IconButton } from './IconButton.js'
 import { prefersReducedMotion } from '../../utils/usePresence.js'
+import { syncModalViewport } from '../../app/viewport.js'
 import styles from './Modal.module.css'
 
 /** 当前打开的弹窗，后打开的在末尾；叠放时 Esc 只关闭最上层 */
@@ -59,17 +60,9 @@ export const Modal = ({
   const overlayRef = useRef<HTMLDivElement>(null)
   // Portals live outside the app frame: follow the keyboard's visual viewport here too.
   useLayoutEffect(() => {
-    const overlay = overlayRef.current
     const viewport = window.visualViewport
-    const update = () => {
-      if (!overlay || (viewport && viewport.scale !== 1)) {
-        return
-      }
-      const height = viewport?.height ?? window.innerHeight
-      overlay.style.setProperty('--modal-viewport-height', `${height}px`)
-      overlay.style.top = `${viewport?.offsetTop ?? 0}px`
-      overlay.style.height = `${height}px`
-    }
+    // 变量无条件下发（含双指缩放）：它是弹窗高度链的唯一来源，不写就只有「不溢出 → 不可滚」（issue #30）
+    const update = () => syncModalViewport(overlayRef.current, viewport)
     update()
     viewport?.addEventListener('resize', update)
     viewport?.addEventListener('scroll', update)
