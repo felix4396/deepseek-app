@@ -37,6 +37,11 @@ export const en = {
   copy: 'Copy',
   copied: 'Copied',
   copyFailed: 'Copy failed. Please long-press or select the text to copy.',
+  copyTooLargeTitle: 'Content too long to copy',
+  copyTooLargeBody:
+    'This content is about {size} KiB, past the {limit} KiB the clipboard handles reliably. Copying would truncate or silently fail — save it as a TXT file instead.',
+  copyTooLargeSave: 'Save as TXT',
+  copySaveFailed: 'Save failed. Try again or long-press to select and copy the text.',
   send: 'Send',
   editMessage: 'Edit message',
   regenerate: 'Regenerate',

@@ -26,3 +26,25 @@ export const copyText = async (text: string): Promise<boolean> => {
     textarea.remove()
   }
 }
+
+/** 剪贴板能稳定写入的上限：超过后浏览器/WebView 会静默截断或返回伪成功，改为提供「保存 TXT」出口。 */
+export const COPY_LIMIT_BYTES = 512 * 1024
+
+/**
+ * UTF-8 字节数：中文 3 字节、emoji 4 字节，不能按字符数判断。
+ * 不用 TextEncoder 是为了和 `services/diagnostics/export.ts`、`services/exportText.ts` 的计数口径一致
+ * （老 WebView 上 TextEncoder 可能缺失，这几条路径都必须能走）。
+ */
+export const utf8ByteLength = (text: string): number => {
+  let bytes = 0
+  for (const character of text) {
+    const point = character.codePointAt(0) ?? 0
+    bytes += point <= 0x7f ? 1 : point <= 0x7ff ? 2 : point <= 0xffff ? 3 : 4
+  }
+  return bytes
+}
+
+export const exceedsCopyLimit = (text: string): boolean => utf8ByteLength(text) > COPY_LIMIT_BYTES
+
+/** 提示里显示的 KiB 数（向上取整） */
+export const kibibytes = (text: string): number => Math.ceil(utf8ByteLength(text) / 1024)
