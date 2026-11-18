@@ -16,6 +16,8 @@ import { MobileHeader } from '../components/session/MobileHeader.js'
 import { Welcome } from '../components/session/Welcome.js'
 import { ensureApiKey } from '../components/settings/settingsDialogState.js'
 import { SettingsDialog } from '../components/settings/SettingsDialog.js'
+import { CardpayPanel } from '../components/cardpay/CardpayPanel.js'
+import { closeCardpay, useCardpayDialog } from '../components/cardpay/cardpayDialogState.js'
 import { Toast } from '../components/base/Toast.js'
 import { showToast } from '../components/base/toastState.js'
 import { initChatBackground, useChatBackground } from '../services/chat/background.js'
@@ -52,6 +54,7 @@ export const App = () => {
   const activeId = useChatStore((state) => state.activeId)
   // 聊天背景图存在 IndexedDB，刷新/重开后读回；只作用于聊天主区域
   const backgroundUrl = useChatBackground((state) => state.url)
+  const cardpayOpen = useCardpayDialog((state) => state.open)
 
   usePreventPageScroll(isMobile)
 
@@ -147,6 +150,7 @@ export const App = () => {
         <SearchPanel />
       </div>
       <SettingsDialog />
+      {cardpayOpen ? <CardpayPanel onClose={closeCardpay} /> : null}
       <Toast />
     </>
   )
