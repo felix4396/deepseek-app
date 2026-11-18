@@ -45,6 +45,23 @@ const CHUNK_RETRIES = 1
 const CONNECT_TIMEOUT_MS = 10_000
 const CHUNK_READ_TIMEOUT_MS = 12_000
 
+/**
+ * 下载阶段的 wall-clock 总预算：覆盖首块与所有重试。
+ *
+ * 为什么必须有这一层：CapacitorHttp 没有 abort，实测原生层会把 Promise **永久挂起**
+ * （120s 内只有 1 次请求、无重试、无任何终态），此时「单次请求超时」这条防线根本不会被触发，
+ * 界面只能无限转圈。预算到点必须由 JS 写入失败终态，而不是继续等原生层。
+ * 正常弱网实测 20MB 约 35s，这里留了 3 倍余量；到期后界面仍可「重试」。
+ */
+const DOWNLOAD_TOTAL_BUDGET_MS = 120_000
+
+/**
+ * 周期性心跳间隔：替代原来「一次性 15s 静默看门狗」。
+ * 原生请求挂住时，每 5s 一条「最后活着的时刻 + 卡在哪一块 + 已下载多少」，
+ * 只记录，不中止业务（真正兜底由 DOWNLOAD_TOTAL_BUDGET_MS 负责）。
+ */
+const HEARTBEAT_INTERVAL_MS = 5_000
+
 /** 403 响应体里带 OBS 错误码；只解前面一小段足够判定。 */
 const ERROR_BODY_CHARS = 4096
 
@@ -53,6 +70,14 @@ export class UrlImportCancelled extends Error {
   constructor() {
     super('URL import cancelled')
     this.name = 'UrlImportCancelled'
+  }
+}
+
+/** 整段下载的 wall-clock 预算耗尽：这是兜底终态，不是单次请求超时。 */
+class DownloadBudgetExceeded extends Error {
+  constructor() {
+    super('download budget exceeded')
+    this.name = 'DownloadBudgetExceeded'
   }
 }
 
@@ -70,6 +95,8 @@ export type UrlImportProgress =
 export type ImportTraceKind =
   | 'start'
   | 'download'
+  /** 周期心跳：这一段没有任何新字节时的「还活着」标记（下载停滞的唯一在线证据） */
+  | 'heartbeat'
   | 'check'
   | 'session'
   | 'image'
@@ -97,6 +124,10 @@ export type UrlImportOptions = {
   onProgress?: (progress: UrlImportProgress) => void
   /** 导入详情回调：节流与条数上限由 UI 负责，这里只按事实发生点上报。 */
   onTrace?: (entry: ImportTraceEntry) => void
+  /** 下载阶段总预算（毫秒）；默认 DOWNLOAD_TOTAL_BUDGET_MS，UI 不传，只在诊断/测试里调小。 */
+  downloadBudgetMs?: number
+  /** 心跳周期（毫秒）；默认 HEARTBEAT_INTERVAL_MS，同样只给诊断/测试用。 */
+  heartbeatIntervalMs?: number
 }
 
 /** 原生（APK）才具备绕过 CORS 的原生 HTTP；网页版不提供该能力。 */
@@ -296,9 +327,131 @@ const recordDownloadFailure = (
   })
 
 /**
+ * 整段下载的共享状态：心跳与总预算都读它（只读来记录，不改变业务结果）。
+ * downloaded 是「已确认到手并计入 chunks」的字节，from/span/attempt 说明当前卡在哪一块。
+ */
+type DownloadState = {
+  startedAt: number
+  downloaded: number
+  total: number | undefined
+  from: number
+  span: number
+  attempt: number
+  /** 整段下载的绝对截止时刻（= startedAt + 总预算） */
+  deadline: number
+}
+
+/** 字节 → 人话（与界面 formatBytes 同档：KB 之前不换算成小数）。 */
+const formatSize = (bytes: number): string => {
+  if (bytes < 1024) {
+    return `${bytes}B`
+  }
+  if (bytes < 1024 * 1024) {
+    return `${(bytes / 1024).toFixed(bytes < 10 * 1024 ? 1 : 0)}KB`
+  }
+  return `${(bytes / 1024 / 1024).toFixed(1)}MB`
+}
+
+/**
+ * 给一次原生请求套上「整段下载剩余预算」与取消：
+ * - 预算到期 → DownloadBudgetExceeded（由 downloadArchive 统一记失败终态）
+ * - 用户取消 → UrlImportCancelled（取消优先于失败，不误报「下载失败」）
+ *
+ * 提前结束时把底层 Promise 的 rejection 吞掉：CapacitorHttp 不能 abort，
+ * 迟到的原生响应必须彻底丢弃——不写入任何数据、不上报进度、也不变成未处理拒绝。
+ */
+const withinBudget = <T>(work: Promise<T>, state: DownloadState, signal?: AbortSignal): Promise<T> =>
+  new Promise<T>((resolve, reject) => {
+    let timer: ReturnType<typeof setTimeout> | undefined
+    let settled = false
+    const onAbort = () => finish(() => reject(new UrlImportCancelled()))
+    const finish = (apply: () => void) => {
+      if (settled) {
+        return
+      }
+      settled = true
+      if (timer !== undefined) {
+        clearTimeout(timer)
+      }
+      signal?.removeEventListener('abort', onAbort)
+      apply()
+    }
+    const discard = () => {
+      work.catch(() => {})
+    }
+    if (signal?.aborted) {
+      discard()
+      finish(() => reject(new UrlImportCancelled()))
+      return
+    }
+    const remain = state.deadline - Date.now()
+    if (remain <= 0) {
+      recordEvent('import_stage', 'import: download budget exhausted', {
+        stage: 'download',
+        'download.bytes': state.downloaded,
+        'request.from': state.from,
+        'request.span': state.span,
+        attempt: state.attempt,
+      })
+      discard()
+      finish(() => reject(new DownloadBudgetExceeded()))
+      return
+    }
+    timer = setTimeout(() => {
+      recordEvent('import_stage', 'import: download budget exhausted', {
+        stage: 'download',
+        'download.bytes': state.downloaded,
+        'request.from': state.from,
+        'request.span': state.span,
+        attempt: state.attempt,
+        'budget.ms': state.deadline - state.startedAt,
+      })
+      discard()
+      finish(() => reject(new DownloadBudgetExceeded()))
+    }, remain)
+    signal?.addEventListener('abort', onAbort, { once: true })
+    work.then(
+      (value) => finish(() => resolve(value)),
+      (error) => finish(() => reject(error))
+    )
+  })
+
+/**
+ * 周期心跳：原生请求被永久挂起时，日志里至少能看出「最后活着的时刻 + 卡在哪一块 + 已下载多少」。
+ * 只记录，不中止业务；调用方必须在 finally 里停（成功/失败/取消/卸载都不能留 interval）。
+ */
+const startDownloadHeartbeat = (
+  state: DownloadState,
+  trace: ((entry: ImportTraceEntry) => void) | undefined,
+  intervalMs: number
+): (() => void) => {
+  let lastBytes = -1
+  const timer = setInterval(() => {
+    const elapsed = Date.now() - state.startedAt
+    recordEvent('import_stage', 'import: download heartbeat', {
+      stage: 'download',
+      'download.bytes': state.downloaded,
+      ...(state.total === undefined ? {} : { 'download.total': state.total }),
+      'request.from': state.from,
+      'request.span': state.span,
+      attempt: state.attempt,
+      elapsedMs: elapsed,
+      'budget.leftMs': Math.max(0, state.deadline - Date.now()),
+    })
+    // 详情只在「这一段时间没有新字节」时补一条：有进展时块级采样已经记过，
+    // 心跳的作用是证明还活着，不是刷进度。
+    if (state.downloaded === lastBytes) {
+      trace?.({ at: elapsed, kind: 'heartbeat', bytes: state.downloaded, totalBytes: state.total })
+    }
+    lastBytes = state.downloaded
+  }, intervalMs)
+  return () => clearInterval(timer)
+}
+
+/**
  * 一次带 Range 的 GET；超时/断网在这里抛出，由调用方分类。
  * readTimeout 是「两次读到字节之间的空转上限」，慢而稳的链路不受影响，
- * 断网 / 服务端不再吐数据时最多等一块（20s）就报错。
+ * 断网 / 服务端不再吐数据时最多等一块（12s）就报错。
  */
 const requestRange = async (url: string, from: number, to: number): Promise<HttpResponse> =>
   CapacitorHttp.get({
@@ -378,18 +531,19 @@ const fetchChunk = async (
   url: string,
   from: number,
   to: number,
-  state: {
-    startedAt: number
-    downloaded: number
-    total: number | undefined
-    trace?: (entry: ImportTraceEntry) => void
-  }
+  state: DownloadState,
+  trace: ((entry: ImportTraceEntry) => void) | undefined,
+  signal?: AbortSignal
 ): Promise<{ response: HttpResponse; requested: number }> => {
   let lastError: unknown
   for (let attempt = 0; attempt <= CHUNK_RETRIES; attempt += 1) {
     // 重试时指数缩小块（4KB → 2KB → 1KB）：极差链路上也能一点点往前推，而不是整包重来
     const span = Math.max(MIN_CHUNK_BYTES / 4, Math.floor((to - from + 1) / 2 ** attempt))
     const attemptStartedAt = Date.now()
+    // 心跳据此说明「卡在哪一块、第几次尝试」（只读这份状态，不参与业务判断）
+    state.from = from
+    state.span = span
+    state.attempt = attempt
     // 阶段埋点（只记录，不改行为）：把「原生请求是否返回」与「主线程是否停摆」分开。
     recordEvent('import_stage', 'import: native request begin', {
       stage: 'download',
@@ -397,19 +551,10 @@ const fetchChunk = async (
       'request.span': span,
       attempt,
     })
-    // 静默看门狗：原生层若吞掉超时不 resolve，JS 也要在日志里留下痕迹（15s 一次，不中止请求）
-    const silentTimer = setTimeout(() => {
-      recordEvent('import_stage', 'import: native request silent >15s', {
-        stage: 'download',
-        'request.from': from,
-        'request.span': span,
-        attempt,
-        elapsedMs: Date.now() - attemptStartedAt,
-      })
-    }, 15_000)
     try {
-      const response = await requestRange(url, from, from + span - 1)
-      clearTimeout(silentTimer)
+      // 兜底只看这一层：原生 Promise 可能永不 settle，所以每次请求都同时受
+      // 「整段下载剩余预算」和「用户取消」约束，到期立刻结束而不是等原生超时。
+      const response = await withinBudget(requestRange(url, from, from + span - 1), state, signal)
       recordEvent('import_stage', 'import: native response', {
         stage: 'download',
         'request.from': from,
@@ -420,7 +565,6 @@ const fetchChunk = async (
       })
       return { response, requested: span }
     } catch (error) {
-      clearTimeout(silentTimer)
       recordEvent('import_stage', 'import: native request error', {
         stage: 'download',
         'request.from': from,
@@ -429,6 +573,10 @@ const fetchChunk = async (
         elapsedMs: Date.now() - attemptStartedAt,
         ...errorMeta(error),
       })
+      // 预算耗尽 / 取消都是终态：不再重试，也不当成网络错误去分类。
+      if (error instanceof DownloadBudgetExceeded || error instanceof UrlImportCancelled) {
+        throw error
+      }
       lastError = error
       // 弱网会在块中途丢流：同一起点更小的块重试即可续上
       if (attempt < CHUNK_RETRIES) {
@@ -438,7 +586,7 @@ const fetchChunk = async (
   }
   {
     const error = lastError
-    const { startedAt, downloaded, total, trace } = state
+    const { startedAt, downloaded, total } = state
     const percent = total === undefined || total === 0 ? 0 : Math.round((downloaded / total) * 100)
     if (isTimeout(error)) {
       // 超时且已经下到一半：说明链路慢，不是链接坏了。
@@ -467,6 +615,12 @@ const fetchChunk = async (
 /**
  * 分块下载并校验 ZIP。
  * 进度按字节实时上报；取消在块边界生效；失败按 断网 / 超时 / 403（过期·签名·其他）/ 超限 / 非 ZIP 分类。
+ *
+ * 兜底终态（本次新增，不改变任何既有超时/重试语义）：
+ * - 整段下载有 wall-clock 总预算（DOWNLOAD_TOTAL_BUDGET_MS），覆盖首块与所有重试；
+ *   原生 Promise 被永久挂起时由它给出失败终态，而不是无限转圈。
+ * - 全程每 HEARTBEAT_INTERVAL_MS 一条心跳，日志/详情里能看出「最后活着的时刻」。
+ * - 心跳 interval 在成功/失败/取消/卸载的每条分支上都由 finally 停掉，不留残留。
  */
 const downloadArchive = async (
   url: string,
@@ -474,99 +628,151 @@ const downloadArchive = async (
   trace?: (entry: ImportTraceEntry) => void
 ): Promise<File> => {
   const startedAt = Date.now()
+  const budgetMs = Math.max(1, options.downloadBudgetMs ?? DOWNLOAD_TOTAL_BUDGET_MS)
+  const state: DownloadState = {
+    startedAt,
+    downloaded: 0,
+    total: undefined,
+    from: 0,
+    span: 0,
+    attempt: 0,
+    deadline: startedAt + budgetMs,
+  }
   recordEvent('import_stage', 'import: download archive', {
     stage: 'download',
+    'budget.ms': budgetMs,
   })
+  const stopHeartbeat = startDownloadHeartbeat(
+    state,
+    trace,
+    Math.max(1, options.heartbeatIntervalMs ?? HEARTBEAT_INTERVAL_MS)
+  )
   const chunks: Uint8Array<ArrayBuffer>[] = []
-  let downloaded = 0
-  let total: number | undefined
   let chunkSize = FIRST_CHUNK_BYTES
   let lastTraceBytes = 0
   let lastTracePercent = -1
   let lastTraceAt = 0
-  for (;;) {
-    throwIfCancelled(options.signal)
-    const from = downloaded
-    const to = from + chunkSize - 1
-    const chunkStartedAt = Date.now()
-    const { response, requested } = await fetchChunk(url, from, to, {
-      startedAt,
-      downloaded,
-      total,
-      trace,
-    })
-    const status = response.status
-    // 416：请求范围越界 = 上一块正好是最后一块（服务端更严格时走这里）。
-    if (status === 416 && from > 0) {
-      response.data = null
-      break
-    }
-    if (status !== 200 && status !== 206) {
-      await failForStatus(response, url, startedAt, downloaded, total, trace)
-    }
-    if (status === 200 && from > 0) {
-      // 中途不再支持分段：继续拼会拼错，直接按失败处理（包体不完整）。
-      response.data = null
-      recordDownloadFailure('range-lost', url, startedAt, { 'download.bytes': downloaded })
-      fail('historyImportUrlBadResponse')
-    }
-    let data: unknown = response.data
-    response.data = null
-    const bytes = toBytes(data)
-    data = null
-    if (total === undefined) {
-      total = contentRangeTotal(response.headers) ?? contentLength(response.headers)
-      if (total !== undefined && total > MAX_ARCHIVE_BYTES) {
-        tooLarge()
+  try {
+    for (;;) {
+      throwIfCancelled(options.signal)
+      const from = state.downloaded
+      const to = from + chunkSize - 1
+      const chunkStartedAt = Date.now()
+      const { response, requested } = await fetchChunk(url, from, to, state, trace, options.signal)
+      const status = response.status
+      // 416：请求范围越界 = 上一块正好是最后一块（服务端更严格时走这里）。
+      if (status === 416 && from > 0) {
+        response.data = null
+        break
       }
-    }
-    if (bytes.byteLength > 0) {
-      chunks.push(bytes)
-      downloaded += bytes.byteLength
-      if (downloaded > MAX_ARCHIVE_BYTES) {
-        tooLarge()
+      if (status !== 200 && status !== 206) {
+        await failForStatus(response, url, startedAt, state.downloaded, state.total, trace)
       }
-      options.onProgress?.({ phase: 'downloading', downloadedBytes: downloaded, totalBytes: total })
-      {
-        // 详情里只留少量「人话」采样：首个、每跨 10%、以及至少 1s 间隔
-        const percent = total ? Math.floor((downloaded / total) * 10) : undefined
-        const checkpoint = lastTraceBytes === 0 || (percent !== undefined && percent !== lastTracePercent) || Date.now() - lastTraceAt >= 1000
-        if (checkpoint) {
-          lastTraceBytes = downloaded
-          lastTracePercent = percent ?? 0
-          lastTraceAt = Date.now()
-          trace?.({ at: Date.now() - startedAt, kind: 'download', bytes: downloaded, totalBytes: total })
+      if (status === 200 && from > 0) {
+        // 中途不再支持分段：继续拼会拼错，直接按失败处理（包体不完整）。
+        response.data = null
+        recordDownloadFailure('range-lost', url, startedAt, { 'download.bytes': state.downloaded })
+        fail('historyImportUrlBadResponse')
+      }
+      let data: unknown = response.data
+      response.data = null
+      const bytes = toBytes(data)
+      data = null
+      if (state.total === undefined) {
+        state.total = contentRangeTotal(response.headers) ?? contentLength(response.headers)
+        if (state.total !== undefined && state.total > MAX_ARCHIVE_BYTES) {
+          tooLarge()
         }
       }
+      if (bytes.byteLength > 0) {
+        chunks.push(bytes)
+        state.downloaded += bytes.byteLength
+        if (state.downloaded > MAX_ARCHIVE_BYTES) {
+          tooLarge()
+        }
+        options.onProgress?.({
+          phase: 'downloading',
+          downloadedBytes: state.downloaded,
+          totalBytes: state.total,
+        })
+        {
+          // 详情里只留少量「人话」采样：首个、每跨 10%、以及至少 1s 间隔
+          const percent = state.total ? Math.floor((state.downloaded / state.total) * 10) : undefined
+          const checkpoint =
+            lastTraceBytes === 0 ||
+            (percent !== undefined && percent !== lastTracePercent) ||
+            Date.now() - lastTraceAt >= 1000
+          if (checkpoint) {
+            lastTraceBytes = state.downloaded
+            lastTracePercent = percent ?? 0
+            lastTraceAt = Date.now()
+            trace?.({
+              at: Date.now() - startedAt,
+              kind: 'download',
+              bytes: state.downloaded,
+              totalBytes: state.total,
+            })
+          }
+        }
+      }
+      // 200 = 服务端忽略了 Range，整包已经到手；不足请求的那一块 = 已经是最后一块。
+      if (status === 200 || bytes.byteLength < requested) {
+        break
+      }
+      // 自适应块大小：慢网小块、快网大块，进度大致每秒一次。
+      const elapsed = Math.max(1, Date.now() - chunkStartedAt)
+      chunkSize = clamp((bytes.byteLength / elapsed) * CHUNK_TARGET_MS, MIN_CHUNK_BYTES, MAX_CHUNK_BYTES)
     }
-    // 200 = 服务端忽略了 Range，整包已经到手；不足请求的那一块 = 已经是最后一块。
-    if (status === 200 || bytes.byteLength < requested) {
-      break
+    throwIfCancelled(options.signal)
+    if (state.downloaded === 0) {
+      recordDownloadFailure('empty', url, startedAt, { 'download.bytes': 0 })
+      fail('historyImportUrlBadResponse')
     }
-    // 自适应块大小：慢网小块、快网大块，进度大致每秒一次。
-    const elapsed = Math.max(1, Date.now() - chunkStartedAt)
-    chunkSize = clamp((bytes.byteLength / elapsed) * CHUNK_TARGET_MS, MIN_CHUNK_BYTES, MAX_CHUNK_BYTES)
-  }
-  throwIfCancelled(options.signal)
-  if (downloaded === 0) {
-    recordDownloadFailure('empty', url, startedAt, { 'download.bytes': 0 })
-    fail('historyImportUrlBadResponse')
-  }
-  if (total !== undefined && downloaded < total) {
-    // 链路中途断掉：块级别已经拿到结果但字节不足，绝不能当成功导入。
-    recordDownloadFailure('incomplete', url, startedAt, {
+    if (state.total !== undefined && state.downloaded < state.total) {
+      // 链路中途断掉：块级别已经拿到结果但字节不足，绝不能当成功导入。
+      recordDownloadFailure('incomplete', url, startedAt, {
+        'download.bytes': state.downloaded,
+        'download.total': state.total,
+      })
+      fail('historyImportUrlInterrupted', {
+        percent: Math.round((state.downloaded / state.total) * 100),
+      })
+    }
+    const bytes = concatChunks(chunks, state.downloaded)
+    if (!isZip(bytes)) {
+      fail('historyImportUrlNotZip')
+    }
+    return new File([bytes], ARCHIVE_NAME, { type: 'application/zip' })
+  } catch (error) {
+    if (!(error instanceof DownloadBudgetExceeded)) {
+      throw error
+    }
+    // 取消优先：用户点了取消时，预算只是把挂起的原生请求解开，不能算成「下载失败」。
+    throwIfCancelled(options.signal)
+    const { downloaded, total } = state
+    recordDownloadFailure('stalled', url, startedAt, {
       'download.bytes': downloaded,
-      'download.total': total,
+      ...(total === undefined ? {} : { 'download.total': total }),
+      'budget.ms': budgetMs,
+      'request.from': state.from,
+      'request.span': state.span,
+      attempt: state.attempt,
+      retryable: 'yes',
     })
-    fail('historyImportUrlInterrupted', {
-      percent: Math.round((downloaded / total) * 100),
+    trace?.({
+      at: Date.now() - startedAt,
+      kind: 'error',
+      bytes: downloaded,
+      totalBytes: total,
+      message: 'stalled',
     })
+    // 终态必须可读：阶段（下载）+ 已下载/总字节 + 原因（长时间无响应）+ 可重试。
+    return total === undefined
+      ? fail('historyImportUrlStalledUnknownTotal', { done: formatSize(downloaded) })
+      : fail('historyImportUrlStalled', { done: formatSize(downloaded), total: formatSize(total) })
+  } finally {
+    stopHeartbeat()
   }
-  const bytes = concatChunks(chunks, downloaded)
-  if (!isZip(bytes)) {
-    fail('historyImportUrlNotZip')
-  }
-  return new File([bytes], ARCHIVE_NAME, { type: 'application/zip' })
 }
 
 /**

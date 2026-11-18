@@ -522,6 +522,14 @@ const traceLine = (t: ReturnType<typeof useTranslate>, entry: ImportTraceEntry):
             done: formatBytes(entry.bytes ?? 0),
             total: formatBytes(entry.totalBytes),
           })
+    case 'heartbeat':
+      // 心跳：这一段没有任何新字节，只用来证明「最后活着的时刻」+ 已下载多少
+      return entry.totalBytes === undefined
+        ? t('importTraceHeartbeatUnknown', { done: formatBytes(entry.bytes ?? 0) })
+        : t('importTraceHeartbeat', {
+            done: formatBytes(entry.bytes ?? 0),
+            total: formatBytes(entry.totalBytes),
+          })
     case 'check':
       return entry.totalSessions === undefined
         ? t('importTraceCheckUnknown')
@@ -551,9 +559,11 @@ const traceLine = (t: ReturnType<typeof useTranslate>, entry: ImportTraceEntry):
                   ? t('importTraceReasonSignature')
                   : entry.message === 'forbidden'
                     ? t('importTraceReasonForbidden')
-                    : entry.status !== undefined && entry.status > 0
-                      ? t('importTraceReasonHttp', { status: entry.status })
-                      : t('importTraceReasonNetwork')
+                    : entry.message === 'stalled'
+                      ? t('importTraceReasonStalled', { done: formatBytes(entry.bytes ?? 0) })
+                      : entry.status !== undefined && entry.status > 0
+                        ? t('importTraceReasonHttp', { status: entry.status })
+                        : t('importTraceReasonNetwork')
       const stage =
         entry.status === undefined || entry.status === 0
           ? t('importTraceStageDownload')

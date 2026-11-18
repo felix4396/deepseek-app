@@ -145,6 +145,10 @@ export const en = {
     'Connection dropped ({percent}% downloaded). Check your network and retry.',
   historyImportUrlTimeoutPartial:
     'Download timed out ({percent}% downloaded). Try a faster network.',
+  historyImportUrlStalled:
+    'Download stalled and was stopped automatically ({done}/{total}). Tap Retry to download again.',
+  historyImportUrlStalledUnknownTotal:
+    'Download stalled and was stopped automatically ({done} downloaded). Tap Retry to download again.',
   historyImportCancelled: 'Import cancelled',
   importTraceTitle: 'Import details ({count})',
   importTraceCopy: 'Copy details',
@@ -170,6 +174,9 @@ export const en = {
   importTraceReasonSignature: 'signature mismatch',
   importTraceReasonForbidden: 'no permission (403)',
   importTraceReasonHttp: 'HTTP {status}',
+  importTraceReasonStalled: 'stalled (downloaded {done})',
+  importTraceHeartbeat: 'still downloading… ({done} / {total} downloaded)',
+  importTraceHeartbeatUnknown: 'still downloading… ({done} downloaded)',
   importTraceReasonFormat: 'invalid archive format',
   detailsExpand: 'Show more',
   detailsCollapse: 'Show less',
