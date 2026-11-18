@@ -1,5 +1,5 @@
 import { isTranslationKey, translate } from '../../i18n/index.js'
-import { classifyStatus } from '../api/errors.js'
+import { classifyApiFailure } from '../api/errors.js'
 import type { AssistantMessage } from './types.js'
 
 export type Notice = {
@@ -18,7 +18,7 @@ const getTemplateText = (reply: AssistantMessage) =>
 /** 回复出错或未正常结束时展示的提示 */
 export const describeReply = (reply: AssistantMessage): Notice | null => {
   if (reply.status === 'error' && reply.error) {
-    const { kind, status, localMessage } = reply.error
+    const { kind, localMessage } = reply.error
     // 导入的历史可能来自不同版本；不识别的文案沿用保存时的原文。
     const message =
       localMessage && isTranslationKey(localMessage.key)
@@ -31,7 +31,9 @@ export const describeReply = (reply: AssistantMessage): Notice | null => {
     if (kind === 'network') {
       return { text: translate('commonNetworkErrorToast') }
     }
-    switch (classifyStatus(status)) {
+    switch (classifyApiFailure(reply.error)) {
+      case 'quotaExhausted':
+        return { text: translate('replyUpstreamQuotaExhausted'), action: 'apiKey' }
       case 'unauthorized':
         return { text: translate('replyInvalidApiKey'), action: 'apiKey' }
       case 'insufficientBalance':

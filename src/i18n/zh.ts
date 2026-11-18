@@ -74,6 +74,7 @@ export const zh = {
   commonNetworkErrorToast: '网络异常，请检查你的网络状况',
   replyInvalidApiKey: 'API Key 无效或已被删除，请更换后重试',
   replyInsufficientBalance: '账户余额不足，请充值后重试',
+  replyUpstreamQuotaExhausted: '上游额度不足，请更换 Key 后重试',
   replyRateLimited: '请求过于频繁，请稍后再试',
   completionServerBusyToast: '服务器繁忙，请稍后再试',
   unknownError: '未知错误',

@@ -49,7 +49,9 @@ export class ApiError extends Error {
     message: string | TranslationMessage,
     readonly status?: number,
     /** 机器可读的错误码，给需要精确分支的调用方用 */
-    readonly code?: ApiErrorCode
+    readonly code?: ApiErrorCode,
+    /** 仅保留错误语义与允许列表响应头；不保存响应正文或凭证。 */
+    readonly upstream?: { code?: string; type?: string; headers?: Record<string, string> }
   ) {
     super(typeof message === 'string' ? message : translate(message.key, message.params))
     this.name = 'ApiError'
@@ -70,15 +72,26 @@ const readErrorResponse = async (
 ): Promise<ApiError> => {
   const text = await response.text().catch(() => '')
   let message = text || fallback
+  let code: string | undefined
+  let type: string | undefined
   try {
     const body: unknown = JSON.parse(text)
     if (isErrorBody(body)) {
       message = body.error.message
+      code = typeof body.error.code === 'string' ? body.error.code : undefined
+      type = typeof body.error.type === 'string' ? body.error.type : undefined
     }
   } catch {
     // 非 JSON 响应体直接展示原文
   }
-  return new ApiError(kind, message, response.status)
+  const headers: Record<string, string> = {}
+  for (const name of ['retry-after', 'x-request-id', 'request-id']) {
+    const value = response.headers.get(name)
+    if (value) {
+      headers[name] = value
+    }
+  }
+  return new ApiError(kind, message, response.status, undefined, { code, type, headers })
 }
 
 /**

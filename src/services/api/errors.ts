@@ -7,6 +7,7 @@ import { ApiError } from './client.js'
 export type ApiErrorCondition =
   | 'unauthorized'
   | 'insufficientBalance'
+  | 'quotaExhausted'
   | 'tooLarge'
   | 'rateLimited'
   | 'serverBusy'
@@ -33,6 +34,24 @@ export const classifyStatus = (status: number | undefined): ApiErrorCondition =>
   return 'other'
 }
 
+/** 429 不是额度语义：仅信任明确的机器码；无语义时保留原文而非猜测限流。 */
+export const classifyApiFailure = (error: {
+  status?: number
+  upstream?: { code?: string; type?: string }
+}): ApiErrorCondition => {
+  if (error.status === 429) {
+    const tags = [error.upstream?.code, error.upstream?.type]
+    if (tags.some((tag) => tag && /^(insufficient_quota|quota_exhausted|insufficient_balance|balance_insufficient|credit_balance_too_low)$/.test(tag))) {
+      return 'quotaExhausted'
+    }
+    if (tags.some((tag) => tag && /^(rate_limit_exceeded|rate_limit_error|rate_limited|too_many_requests)$/.test(tag))) {
+      return 'rateLimited'
+    }
+    return 'other'
+  }
+  return classifyStatus(error.status)
+}
+
 export const classifyApiError = (error: unknown): ApiErrorCondition => {
   if (!(error instanceof ApiError)) {
     return 'other'
@@ -40,7 +59,7 @@ export const classifyApiError = (error: unknown): ApiErrorCondition => {
   if (error.status === undefined) {
     return error.kind === 'network' ? 'network' : 'other'
   }
-  return classifyStatus(error.status)
+  return classifyApiFailure(error)
 }
 
 /** 重试可能成功的情况：网络、限流、服务端繁忙；参数或鉴权类错误重试无用 */

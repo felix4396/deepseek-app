@@ -65,6 +65,8 @@ export const describeReadAloudError = (error: unknown): TranslationMessage | str
   switch (classifyApiError(error)) {
     case 'unauthorized':
       return { key: 'apiKeyInvalidRetry' }
+    case 'quotaExhausted':
+      return { key: 'replyUpstreamQuotaExhausted' }
     case 'insufficientBalance':
       return { key: 'insufficientBalance' }
     case 'rateLimited':

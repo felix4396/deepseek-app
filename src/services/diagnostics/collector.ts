@@ -158,6 +158,17 @@ export const errorMeta = (error: unknown): LogMeta => {
   if (typeof status === 'number') {
     meta['http.status'] = status
   }
+  const upstream = (error as { upstream?: { code?: unknown; type?: unknown; headers?: Record<string, unknown> } } | null)?.upstream
+  for (const [key, value] of Object.entries({
+    'upstream.code': upstream?.code,
+    'upstream.type': upstream?.type,
+    'upstream.retry_after': upstream?.headers?.['retry-after'],
+    'upstream.request_id': upstream?.headers?.['x-request-id'] ?? upstream?.headers?.['request-id'],
+  })) {
+    if (typeof value === 'string') {
+      meta[key] = truncate(redact(value), MAX_META_LENGTH)
+    }
+  }
   return meta
 }
 

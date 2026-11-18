@@ -79,6 +79,7 @@ export const en = {
   replyInvalidApiKey:
     'The API Key is invalid or has been deleted. Please replace it and try again.',
   replyInsufficientBalance: 'Insufficient account balance. Please top up and try again.',
+  replyUpstreamQuotaExhausted: 'Upstream quota exhausted. Please replace your API Key and try again.',
   replyRateLimited: 'Too many requests. Please try again later.',
   completionServerBusyToast: 'Server busy, please try again later.',
   unknownError: 'Unknown error',

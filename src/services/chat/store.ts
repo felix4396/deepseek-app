@@ -1228,6 +1228,7 @@ const streamReply = async (sessionId: string, initial: AssistantMessage, request
             kind: error.kind,
             message: error.message,
             status: error.status,
+            upstream: error.upstream,
             localMessage: error.localMessage,
           })
         } else {
