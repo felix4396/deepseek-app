@@ -1185,6 +1185,76 @@ export type CollectorOptions = {
  * 3. 起 30 秒一次的周期快照。
  * 重复调用是安全的（不会重复装 hook，也不会换 sessionId）。
  */
+// ---------------------------------------------------------------- 原生渲染进程事件（Issue #44）
+
+/** 原生侧入口：MainActivity 接管 onRenderProcessGone 后把事件写进 SharedPreferences，这里只读回显 */
+const RENDER_EVENTS_PLUGIN = 'DiagnosticsDevice'
+/** 已消费到的时间水位线：同一条原生记录不重复入日志 */
+const RENDER_EVENTS_SEEN_KEY = 'chat-demo:render-process-events-seen-at'
+
+const readRenderEventsWatermark = (): number => {
+  try {
+    const raw = localStorage.getItem(RENDER_EVENTS_SEEN_KEY)
+    const value = raw === null ? 0 : Number(raw)
+    return Number.isFinite(value) ? value : 0
+  } catch {
+    return 0
+  }
+}
+
+const writeRenderEventsWatermark = (value: number): void => {
+  try {
+    localStorage.setItem(RENDER_EVENTS_SEEN_KEY, String(value))
+  } catch {
+    // 隐私模式 / 存储满：水位线写不进去最多让下次重复记一条，不影响主流程。
+  }
+}
+
+type NativeRenderEvent = { at?: number; event?: string; didCrash?: boolean; detail?: string }
+
+/**
+ * 把原生层落盘的渲染进程事件搬进诊断日志。
+ *
+ * onRenderProcessGone 的接管发生在原生层，日志缓冲却活在渲染进程里：进程一死，这段记忆
+ * 就一起没了。所以 MainActivity 先写 SharedPreferences，渲染进程重建后由这里补记一条
+ * warning —— 用户下次提交反馈时才看得到「什么时候死过、有没有自愈」。
+ */
+const drainNativeRenderProcessEvents = async (): Promise<void> => {
+  if (readPlatform() !== 'android') {
+    return
+  }
+  try {
+    const plugin = Capacitor.registerPlugin<{
+      renderProcessEvents(): Promise<{ events?: NativeRenderEvent[] }>
+    }>(RENDER_EVENTS_PLUGIN)
+    const result = await plugin.renderProcessEvents()
+    const events = Array.isArray(result?.events) ? result.events : []
+    const watermark = readRenderEventsWatermark()
+    let next = watermark
+    for (const item of events) {
+      const at = typeof item?.at === 'number' ? item.at : 0
+      if (!(at > watermark)) {
+        continue
+      }
+      if (at > next) {
+        next = at
+      }
+      const event = typeof item?.event === 'string' ? item.event : 'unknown'
+      record('warning', item?.didCrash === true ? 'error' : 'warn', `render process ${event}`, {
+        event,
+        didCrash: item?.didCrash === true,
+        detail: typeof item?.detail === 'string' ? item.detail : '',
+        nativeAt: at,
+      })
+    }
+    if (next > watermark) {
+      writeRenderEventsWatermark(next)
+    }
+  } catch {
+    // 老版本 APK / 插件缺失：静默跳过，诊断缺这一条也要能用。
+  }
+}
+
 export const initCollector = async (options: CollectorOptions = {}): Promise<void> => {
   if (options.facts) {
     factsProvider = options.facts
@@ -1209,6 +1279,8 @@ export const initCollector = async (options: CollectorOptions = {}): Promise<voi
   if (options.installHooks !== false) {
     installHooks()
   }
+  // 渲染进程死过一次的话，这里把它补回诊断日志（原生侧落盘 -> JS 缓冲）。
+  await drainNativeRenderProcessEvents()
   await restore()
   void captureStateSnapshot('launch')
   snapshotTimer ??= setInterval(() => {
