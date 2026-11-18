@@ -7,19 +7,31 @@ import { rspack, type Configuration } from '@rspack/core'
 const dev = process.env.NODE_ENV !== 'production'
 const targets = ['chrome >= 105', 'edge >= 105', 'safari >= 16', 'firefox >= 110']
 const root = path.dirname(fileURLToPath(import.meta.url))
-const { version } = JSON.parse(
+// package.json 的 version 只是**网页示例的版本**（0.1.x），和 App 真实版本无关：
+// App 的发版版本号只认 android/app/build.gradle 的 versionName / versionCode。
+const { version: pkgVersion } = JSON.parse(
   readFileSync(new URL('./package.json', import.meta.url), 'utf8')
 ) as { version: string }
 
-/** Android versionCode 从 build.gradle 里读，诊断上报用（读不到记 0） */
-const readVersionCode = (): number => {
+const readGradle = (): string => {
   try {
-    const gradle = readFileSync(path.resolve(root, 'android/app/build.gradle'), 'utf8')
-    return Number(/versionCode\s+(\d+)/.exec(gradle)?.[1] ?? 0)
+    return readFileSync(path.resolve(root, 'android/app/build.gradle'), 'utf8')
   } catch {
-    return 0
+    return ''
   }
 }
+
+/** Android versionCode（诊断上报用，读不到记 0） */
+const readVersionCode = (): number => Number(/versionCode\s+(\d+)/.exec(readGradle())?.[1] ?? 0) || 0
+
+/** App 版本名（诊断上报用，读不到回退 package.json） */
+const readVersionName = (): string => /versionName\s+"([^"]+)"/.exec(readGradle())?.[1] ?? pkgVersion
+
+/**
+ * 构建期注入的版本号优先级：环境变量 APP_VERSION > gradle versionName > package.json。
+ * 环境变量留给出包脚本（CI 传 tag 名）覆盖，本地构建直接吃 gradle —— 这是唯一权威来源。
+ */
+const appVersion = process.env.APP_VERSION?.trim() || readVersionName()
 
 const cssLoader = {
   loader: 'builtin:lightningcss-loader',
@@ -99,12 +111,12 @@ export const createConfig = ({
     new rspack.HtmlRspackPlugin({
       template: './src/index.html',
       scriptLoading: 'defer',
-      meta: { 'application-version': version },
+      meta: { 'application-version': appVersion },
     }),
     new rspack.DefinePlugin({
       __API_ORIGIN__: JSON.stringify(apiOrigin),
       __INTERNAL_BUILD__: JSON.stringify(internalBuild),
-      __APP_VERSION__: JSON.stringify(version),
+      __APP_VERSION__: JSON.stringify(appVersion),
       __APP_VERSION_CODE__: JSON.stringify(readVersionCode()),
     }),
     new rspack.CopyRspackPlugin({

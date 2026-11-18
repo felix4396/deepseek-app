@@ -83,8 +83,45 @@ export const redactUrl = (value: string): string => {
   }
 }
 
+
 const truncate = (text: string, limit: number): string =>
   text.length > limit ? text.slice(0, limit) : text
+
+export const UNKNOWN_HOST = 'unknown'
+
+/**
+ * 只取 host（**不含端口、不含 query/fragment、不含 userinfo**），用于区分「直连官方」还是「自建中转」。
+ *
+ * - 绝对地址：取 URL.hostname —— 它是 IP 就照实记 IP（如 123.207.199.196），排查必需；
+ * - 相对地址（/v1/messages）：真实目标是当前页面的 origin，取 location.hostname；
+ * - 解析失败：正则兜底，剥协议头、userinfo、端口，再走一遍脱敏规则，确保 host 不会绕过脱敏。
+ */
+export const redactHost = (value: string): string => {
+  // 绝对地址（https://host/x）与协议相对地址（//host/x）都能直接解析出 host
+  const absolute = /^[a-z][a-z0-9+.-]*:\/\//i.test(value)
+  const protocolRelative = value.startsWith('//')
+  if (absolute || protocolRelative) {
+    try {
+      const host = new URL(protocolRelative ? `http:${value}` : value).hostname
+      if (host) {
+        return truncate(redact(host), 120)
+      }
+    } catch {
+      // 落到下面的兜底
+    }
+  } else if (typeof location !== 'undefined' && location.hostname) {
+    // 相对地址：记当前页面 host（同源请求的真实目标）
+    return truncate(redact(location.hostname), 120)
+  }
+  try {
+    const withoutScheme = value.replace(/^[a-z][a-z0-9+.-]*:\/\//i, '')
+    const authority = withoutScheme.split(/[/?#]/)[0] ?? ''
+    const hostOnly = (authority.split('@').pop() ?? authority).split(':')[0] ?? ''
+    return truncate(redact(hostOnly), 120) || UNKNOWN_HOST
+  } catch {
+    return UNKNOWN_HOST
+  }
+}
 
 const safeString = (value: unknown): string => {
   if (typeof value === 'string') {
@@ -228,7 +265,24 @@ export const record = (
     ...(meta && Object.keys(meta).length > 0 ? { meta: redactMeta(meta) } : {}),
   }
   push(entry)
+  maybeProbeUiNotice(kind, entry.meta)
   return entry
+}
+
+/**
+ * 关键失败路径自动挂一次「提示是否真的渲染」的探测：
+ * - chat 失败：业务侧写 error 时带了 `ui.condition`（说明它会弹提示）；
+ * - 导入失败：import_error。
+ * 采集层不 import 业务代码，靠日志自身的特征识别，业务侧无需改动。
+ */
+const maybeProbeUiNotice = (kind: EventKind, meta?: LogMeta): void => {
+  if (kind === 'import_error') {
+    scheduleUiNoticeProbe('import-error')
+    return
+  }
+  if (kind === 'error' && meta?.['ui.condition'] !== undefined) {
+    scheduleUiNoticeProbe('chat-error')
+  }
 }
 
 /** 按 kind 自动选级别的记录入口 */
@@ -350,6 +404,84 @@ const parseAndroidFromUA = (ua: string) => {
   return { androidVersion, model, webviewVersion }
 }
 
+/** Network Information API（Chromium / Android WebView 有，Safari / Firefox 多数没有） */
+type NetworkInformation = {
+  effectiveType?: string
+  downlink?: number
+  rtt?: number
+  saveData?: boolean
+  type?: string
+}
+
+/**
+ * 网络状态快照：区分「飞行模式」与「弱网」的关键证据。
+ *
+ * - `onLine=false` → 设备侧认为自己离线（飞行模式 / 没连 Wi-Fi）；
+ * - `onLine=true` + `effectiveType=2g/3g` + 大 `rtt` → 弱网（onLine 骗人，请求照样失败）；
+ * - 两个都取不到 → 只有 error.msg（比如某些 WebView 阉割了 Network Information API）。
+ * 非标准 API 一律 try/catch，拿不到就不写这个 key（不写 unknown，避免和「真的是 4g」混淆）。
+ */
+export const readNetworkStatus = (): LogMeta => {
+  const meta: LogMeta = {}
+  try {
+    if (typeof navigator !== 'undefined' && typeof navigator.onLine === 'boolean') {
+      meta.onLine = navigator.onLine
+    }
+  } catch {
+    // 取不到就不写
+  }
+  try {
+    const connection = (navigator as Navigator & { connection?: NetworkInformation }).connection
+    if (connection) {
+      if (connection.effectiveType) {
+        meta.effectiveType = connection.effectiveType
+      }
+      if (typeof connection.downlink === 'number' && Number.isFinite(connection.downlink)) {
+        meta.downlink = connection.downlink
+      }
+      if (typeof connection.rtt === 'number' && Number.isFinite(connection.rtt)) {
+        meta.rtt = connection.rtt
+      }
+      if (typeof connection.saveData === 'boolean') {
+        meta.saveData = connection.saveData
+      }
+      if (connection.type) {
+        meta.netType = connection.type
+      }
+    }
+  } catch {
+    // 同上：没有这个 API 就只留 onLine
+  }
+  return meta
+}
+
+/** web 端补充信息：UA（截断 200）/ devicePixelRatio / 逻辑核数 / 内存（非标准，取不到就不写） */
+const readWebExtras = () => {
+  const extras: Pick<
+    DeviceInfo,
+    'userAgent' | 'pixelRatio' | 'hardwareConcurrency' | 'deviceMemory'
+  > = {}
+  if (typeof navigator !== 'undefined') {
+    if (navigator.userAgent) {
+      extras.userAgent = truncate(navigator.userAgent, 200)
+    }
+    const extended = navigator as Navigator & {
+      hardwareConcurrency?: number
+      deviceMemory?: number
+    }
+    if (typeof extended.hardwareConcurrency === 'number' && extended.hardwareConcurrency > 0) {
+      extras.hardwareConcurrency = extended.hardwareConcurrency
+    }
+    if (typeof extended.deviceMemory === 'number' && extended.deviceMemory > 0) {
+      extras.deviceMemory = extended.deviceMemory
+    }
+  }
+  if (typeof window !== 'undefined' && typeof window.devicePixelRatio === 'number') {
+    extras.pixelRatio = window.devicePixelRatio
+  }
+  return extras
+}
+
 const readDeviceInfo = (): DeviceInfo => {
   const ua = typeof navigator === 'undefined' ? '' : navigator.userAgent
   const parsed = parseAndroidFromUA(ua)
@@ -358,11 +490,14 @@ const readDeviceInfo = (): DeviceInfo => {
       ? `${window.screen.width}x${window.screen.height}`
       : UNKNOWN
   return {
+    // 真机（Capacitor）机型优先靠 UA 解析：本项目没有装 @capacitor/device，
+    // 所以解析不出来时保持 unknown（装了之后可以在这一处接 Device.getInfo() 覆盖）。
     model: parsed.model,
     androidVersion: parsed.androidVersion,
     webviewVersion: parsed.webviewVersion,
     screen,
     locale: typeof navigator === 'undefined' ? UNKNOWN : navigator.language || UNKNOWN,
+    ...readWebExtras(),
   }
 }
 
@@ -507,6 +642,175 @@ export const recordAction = (kind: EventKind, action: string, meta: LogMeta = {}
   return entry
 }
 
+// ---------------------------------------------------------------- 界面提示是否真的渲染
+
+/**
+ * 「后端返回了错误但前端没显示」这类 bug 只能靠 DOM 侧证据区分：
+ * 有 error 日志、但页面上没有任何可见提示 → 说明问题在渲染层，不在网络层。
+ *
+ * 采集层不认识业务组件（也不该认识），所以用**候选节点 + 可见性**的方式做通用探测：
+ * 只要失败路径上有 alert/live 区域或带 notice/toast/error 的类名节点，就把文案抓下来。
+ */
+const NOTICE_SELECTOR =
+  '[role="alert"],[role="status"],[aria-live],[class*="notice"],[class*="toast"],[class*="error"]'
+
+/** 触发时刻的「已有提示」快照：用来排除上一次失败留下的旧提示（避免张冠李戴） */
+type NoticeBaseline = Map<Element, string>
+
+export type RenderedNotice = {
+  /** 实际渲染的文案（已压缩空白、已脱敏、截断 200 字） */
+  text: string
+  /** 是否可见（getComputedStyle + 布局盒判断，display:none / visibility:hidden / opacity:0 / 无布局都算不可见） */
+  visible: boolean
+  /** 命中方式（role=alert / class*=notice …），排查用 */
+  match: string
+  /** true = 这是失败发生前就已经在页面上的旧提示（文本与触发前一致），仅供参考 */
+  stale?: boolean
+}
+
+const describeMatch = (element: Element): string => {
+  const role = element.getAttribute('role')
+  if (role) {
+    return `role=${role}`
+  }
+  if (element.getAttribute('aria-live')) {
+    return `aria-live=${element.getAttribute('aria-live')}`
+  }
+  const className = element.getAttribute('class') ?? ''
+  const hit = /notice|toast|error/i.exec(className)
+  return hit ? `class*=${hit[0].toLowerCase()}` : element.tagName.toLowerCase()
+}
+
+const isRendered = (element: Element): boolean => {
+  if (typeof window === 'undefined') {
+    return false
+  }
+  // 有布局盒就说明参与了排版（含 position: fixed 的情况）
+  if (element.getClientRects().length === 0 && (element as HTMLElement).offsetParent === null) {
+    return false
+  }
+  const style = window.getComputedStyle(element)
+  if (style.display === 'none' || style.visibility === 'hidden') {
+    return false
+  }
+  const opacity = Number(style.opacity === '' ? '1' : style.opacity)
+  return !(Number.isFinite(opacity) && opacity <= 0.01)
+}
+
+/**
+ * 读当前页面上的「提示」：优先可见的，同优先级取文档里靠后的（最新渲染的那个）。
+ * 找不到任何候选节点返回 null。测试与业务侧都可以直接调用。
+ */
+/** 记下当前页面上所有提示节点的文案（探测前调用，用于排除旧提示） */
+const captureNoticeBaseline = (): NoticeBaseline => {
+  const baseline: NoticeBaseline = new Map()
+  if (typeof document === 'undefined') {
+    return baseline
+  }
+  for (const element of document.querySelectorAll(NOTICE_SELECTOR)) {
+    baseline.set(element, (element.textContent ?? '').replace(/\s+/g, ' ').trim())
+  }
+  return baseline
+}
+
+export const readRenderedNotice = (baseline?: NoticeBaseline): RenderedNotice | null => {
+  if (typeof document === 'undefined') {
+    return null
+  }
+  let freshVisible: RenderedNotice | null = null
+  let visibleHit: RenderedNotice | null = null
+  let anyHit: RenderedNotice | null = null
+  for (const element of document.querySelectorAll(NOTICE_SELECTOR)) {
+    const text = (element.textContent ?? '').replace(/\s+/g, ' ').trim()
+    if (text.length < 2) {
+      continue
+    }
+    const candidate: RenderedNotice = {
+      text: truncate(redact(text), 200),
+      visible: isRendered(element),
+      match: describeMatch(element),
+    }
+    // 与触发前文案一模一样 = 旧提示（这次失败没有刷新它）
+    const stale = baseline ? baseline.get(element) === text : false
+    anyHit = { ...candidate, ...(stale ? { stale: true } : {}) }
+    if (candidate.visible) {
+      visibleHit = anyHit
+      if (!stale) {
+        freshVisible = anyHit
+      }
+    }
+  }
+  // 优先「新出现的、可见的」→「可见的（可能旧）」→「存在但不可见」
+  return freshVisible ?? visibleHit ?? anyHit
+}
+
+/** 探测节拍：先快照一次（React 同步渲染），再补两次（异步渲染 / 网络回包后才出现提示） */
+const UI_PROBE_DELAYS_MS = [150, 700, 1600]
+let uiProbeSeq = 0
+
+/**
+ * 失败路径专用：延迟探测「提示到底有没有渲染出来」，写一条 ui_rendered。
+ * 新一轮失败会作废上一轮未完成的探测（以最近一次失败为准）。
+ */
+export const scheduleUiNoticeProbe = (trigger: string): void => {
+  if (typeof window === 'undefined' || typeof document === 'undefined') {
+    return
+  }
+  uiProbeSeq += 1
+  const token = uiProbeSeq
+  // 先记下触发前的提示，后面只认「新出现的」那个
+  const baseline = captureNoticeBaseline()
+  let recorded = false
+  UI_PROBE_DELAYS_MS.forEach((delay, index) => {
+    setTimeout(() => {
+      if (token !== uiProbeSeq || recorded) {
+        return
+      }
+      const notice = readRenderedNotice(baseline)
+      const isLast = index === UI_PROBE_DELAYS_MS.length - 1
+      if (notice?.visible) {
+        recorded = true
+        record('ui_rendered', 'info', `ui_rendered: ${trigger} notice shown`, {
+          trigger,
+          visible: true,
+          noticeText: notice.text,
+          match: notice.match,
+          delayMs: delay,
+          ...(notice.stale ? { stale: true } : {}),
+        })
+        return
+      }
+      if (isLast) {
+        recorded = true
+        // visible=false 本身就是有效结论：错误发生了，但界面上没给用户任何可见提示
+        record(
+          'ui_rendered',
+          notice ? 'warn' : 'error',
+          notice ? `ui_rendered: ${trigger} notice invisible` : `ui_rendered: ${trigger} no notice`,
+          {
+            trigger,
+            visible: false,
+            noticeText: notice?.text ?? '',
+            match: notice?.match ?? 'none',
+            delayMs: delay,
+          }
+        )
+      }
+    }, delay)
+  })
+}
+
+/** 立即读一次并写 ui_rendered（业务侧若想手动确认提示，可显式调用） */
+export const captureUiNotice = (trigger: string): LogEntry => {
+  const notice = readRenderedNotice()
+  return record('ui_rendered', notice?.visible ? 'info' : 'warn', `ui_rendered: ${trigger}`, {
+    trigger,
+    visible: notice?.visible ?? false,
+    noticeText: notice?.text ?? '',
+    match: notice?.match ?? 'none',
+  })
+}
+
 // ---------------------------------------------------------------- hooks
 
 let hooksInstalled = false
@@ -605,12 +909,15 @@ const installFetchHook = (): void => {
     const url = request ? request.url : String(input)
     const method = (init?.method ?? request?.method ?? 'GET').toUpperCase()
     const path = redactUrl(url)
+    // 只记 host（不带端口 / query），用来区分直连官方还是自建中转
+    const host = redactHost(url)
     // CapacitorHttp 自己会记一条，避免重复
     const quiet = inNativeHttp > 0
     const requestId = newRequestId()
     if (!quiet) {
-      record('net_request', 'info', `request: ${method} ${path}`, {
+      record('net_request', 'info', `request: ${method} ${host}${path}`, {
         method,
+        'url.host': host,
         'url.path': path,
         requestId,
         ...(init?.body === undefined
@@ -625,9 +932,10 @@ const installFetchHook = (): void => {
         record(
           'net_response',
           ok ? 'info' : 'error',
-          `response: ${method} ${path} → ${response.status}`,
+          `response: ${method} ${host}${path} → ${response.status}`,
           {
             method,
+            'url.host': host,
             'url.path': path,
             requestId,
             'http.status': response.status,
@@ -645,9 +953,12 @@ const installFetchHook = (): void => {
         record(
           'net_error',
           aborted && !timeout ? 'info' : 'error',
-          `request error: ${method} ${path} ${aborted ? '(aborted)' : timeout ? '(timeout)' : safeString(error)}`,
+          `request error: ${method} ${host}${path} ${aborted ? '(aborted)' : timeout ? '(timeout)' : safeString(error)}`,
           {
+            // 网络状态放最前：断网（onLine:false）与弱网（2g/3g、大 rtt）一眼可辨
+            ...readNetworkStatus(),
             method,
+            'url.host': host,
             'url.path': path,
             requestId,
             durationMs: Date.now() - startedAt,
@@ -676,11 +987,14 @@ const installCapacitorHttpHook = (): void => {
     target[name] = async (options: Record<string, unknown>): Promise<NativeHttpResponse> => {
       const startedAt = Date.now()
       const method = String(options?.method ?? name).toUpperCase()
-      const path = redactUrl(String(options?.url ?? ''))
+      const rawUrl = String(options?.url ?? '')
+      const path = redactUrl(rawUrl)
+      const host = redactHost(rawUrl)
       const requestId = newRequestId()
       inNativeHttp += 1
-      record('net_request', 'info', `request: ${method} ${path}`, {
+      record('net_request', 'info', `request: ${method} ${host}${path}`, {
         method,
+        'url.host': host,
         'url.path': path,
         requestId,
         native: true,
@@ -692,9 +1006,10 @@ const installCapacitorHttpHook = (): void => {
         record(
           'net_response',
           ok ? 'info' : 'error',
-          `response: ${method} ${path} → ${status}`,
+          `response: ${method} ${host}${path} → ${status}`,
           {
             method,
+            'url.host': host,
             'url.path': path,
             requestId,
             'http.status': status,
@@ -710,9 +1025,11 @@ const installCapacitorHttpHook = (): void => {
         record(
           'net_error',
           'error',
-          `request error: ${method} ${path} ${timeout ? '(timeout)' : safeString(error)}`,
+          `request error: ${method} ${host}${path} ${timeout ? '(timeout)' : safeString(error)}`,
           {
+            ...readNetworkStatus(),
             method,
+            'url.host': host,
             'url.path': path,
             requestId,
             durationMs: Date.now() - startedAt,
@@ -851,25 +1168,20 @@ export const initCollector = async (options: CollectorOptions = {}): Promise<voi
   if (options.facts) {
     factsProvider = options.facts
   }
-  const clientId = readClientId()
-  const sessionId = readSessionId()
   const app = readAppInfo()
   const device = readDeviceInfo()
   if (!launchRecorded) {
     launchRecorded = true
-    // 启动即写：先落 app_launch，后面的 restore / hook 都不影响「缓冲区非空」
+    // 启动即写：先落 app_launch，后面的 restore / hook 都不影响「缓冲区非空」。
+    // 机型/Android/WebView/屏幕/语言与 clientId/sessionId 都已在 header 行里（不占 meta 的 300 字额度）。
     record('app_launch', 'info', `launch ${app.version}(${app.versionCode}) ${app.buildType} on ${app.platform}`, {
       version: app.version,
       versionCode: app.versionCode,
       buildType: app.buildType,
       platform: app.platform,
-      model: device.model,
-      androidVersion: device.androidVersion,
-      webviewVersion: device.webviewVersion,
-      screen: device.screen,
-      locale: device.locale,
-      clientId,
-      sessionId,
+      // 启动瞬间的网络状态：与后面的 net_error 对照，才能分清「一直断」还是「中途掉」
+      ...readNetworkStatus(),
+      device: `${device.model}/${device.screen}/${device.locale}`,
     })
   }
   if (options.installHooks !== false) {

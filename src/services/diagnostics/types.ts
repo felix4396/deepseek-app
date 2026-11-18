@@ -35,6 +35,7 @@ export type EventKind =
   | 'error'
   | 'warning'
   | 'longtask'
+  | 'ui_rendered'
   | 'state_snapshot'
 
 /** 日志附加信息只允许可序列化的原始值，避免把 DOM / Blob 之类的对象写进 payload */
@@ -64,7 +65,7 @@ export type FeedbackContent = {
 }
 
 export type AppInfo = {
-  /** 应用版本号，取自构建时注入的 package.json version */
+  /** 应用版本号：优先构建期注入（gradle versionName / APP_VERSION），web 兜底 package.json */
   version: string
   /** Android versionCode */
   versionCode: number
@@ -85,6 +86,14 @@ export type DeviceInfo = {
   screen: string
   /** 界面语言 */
   locale: string
+  /** 浏览器 UA（截断 200 字）：web 端机型解析不出来时靠它定位环境 */
+  userAgent?: string
+  /** 设备像素比（devicePixelRatio） */
+  pixelRatio?: number
+  /** 逻辑核数（navigator.hardwareConcurrency） */
+  hardwareConcurrency?: number
+  /** 内存 GB（navigator.deviceMemory，非标准） */
+  deviceMemory?: number
 }
 
 export type ClientInfo = {

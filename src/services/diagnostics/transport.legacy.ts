@@ -94,14 +94,28 @@ export const formatLogLine = (entry: LogEntry): string => {
   return truncate(redactForLog(parts.join(' ')), LEGACY_LOG_LINE_MAX)
 }
 
-/** 环境信息不进 content，改为 log 开头的三行 header */
+/**
+ * 环境信息不进 content，改为 log 开头的 header 行（header 不参与 meta 的 300 字截断）。
+ * 第一行固定 `=== app <version>(<versionCode>) <buildType> ===`，用来看版本；平台挪到 device 行。
+ */
 const headerLines = (payload: FeedbackPayload): string[] => {
   const { app, device, client } = payload
-  return [
-    `=== app ${app.version}(${app.versionCode}) ${app.buildType} ${app.platform} ===`,
-    `=== device ${device.model} / Android ${device.androidVersion} / WebView ${device.webviewVersion} / ${device.screen} / ${device.locale} ===`,
+  const lines = [
+    `=== app ${app.version}(${app.versionCode}) ${app.buildType} ===`,
+    `=== device ${device.model} / Android ${device.androidVersion} / WebView ${device.webviewVersion} / ${device.screen} / ${device.locale} / ${app.platform} ===`,
     `=== session ${client.sessionId} client ${client.clientId} ===`,
   ]
+  // web 端补充：UA（截断 200）/ 像素比 / 逻辑核数 / 内存。真机没有这些字段时整行不出现。
+  const web = [
+    device.userAgent ? `ua ${device.userAgent}` : '',
+    device.pixelRatio === undefined ? '' : `dpr ${device.pixelRatio}`,
+    device.hardwareConcurrency === undefined ? '' : `cores ${device.hardwareConcurrency}`,
+    device.deviceMemory === undefined ? '' : `mem ${device.deviceMemory}GB`,
+  ].filter((part) => part !== '')
+  if (web.length > 0) {
+    lines.push(`=== web ${web.join(' / ')} ===`)
+  }
+  return lines
 }
 
 /** 永不删除的条目：所有 error + 最后一次 import_* / chat_* / state_snapshot */

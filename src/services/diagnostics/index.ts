@@ -1,21 +1,26 @@
 import {
   captureStateSnapshot,
+  captureUiNotice,
   clearLogs,
   flushLogs,
   getActionTrail,
   getLogCount,
   getSnapshot,
   initCollector,
+  readNetworkStatus,
+  readRenderedNotice,
   record,
   recordAction,
   recordError,
   recordEvent,
   recordUserAction,
   redact,
+  redactHost,
   redactUrl,
   setSnapshotFactsProvider,
   type ActionRecord,
   type CollectorOptions,
+  type RenderedNotice,
   type SnapshotFacts,
 } from './collector.js'
 import {
@@ -268,6 +273,9 @@ export { describeFeedbackError }
 /** 应用侧记录业务动作 / 错误（带上事件类型，便于按类型切片） */
 export { recordAction, recordError, recordEvent, recordUserAction, setSnapshotFactsProvider }
 
+/** 提示是否真的渲染出来了（chat / import 失败路径已在采集层自动探测，也可手动确认） */
+export { captureUiNotice, readRenderedNotice, readNetworkStatus, redactHost, type RenderedNotice }
+
 /** 两套 transport 实现都对外暴露，便于测试注入与后端扩展后切换 */
 export { HttpTransport } from './transport.http.js'
 export { LegacyTransport, buildLegacyLog, buildLegacyRequest } from './transport.legacy.js'
@@ -311,6 +319,10 @@ export const installDiagnosticsDebugHandle = (): void => {
       recordUserAction,
       redact,
       redactUrl,
+      redactHost,
+      readNetworkStatus,
+      readRenderedNotice,
+      captureUiNotice,
       fitPayload,
       payloadBytes,
       prepareScreenshot,
