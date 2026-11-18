@@ -748,8 +748,6 @@
 }
 
 .deleteConfirm {
-  /* dvh 回退：WebView 83 只认 vh（issue #13） */
-  max-height: calc(100vh - 32px);
   max-height: calc(100dvh - 32px);
   overflow-y: auto;
 }
@@ -779,7 +777,7 @@
 .feedbackDialog {
   width: 560px;
   height: auto;
-  /* vh 回退：WebView 83 只认 vh（issue #13）；新版走 Modal 提供的动态视口高度 */
+  /* vh fallback also works before dynamic viewport units; Modal supplies keyboard height. */
   max-height: calc(100vh - 32px);
   max-height: calc(var(--modal-viewport-height, 100vh) - 32px);
   padding-top: 22px;
@@ -792,9 +790,7 @@
   flex-direction: column;
   min-height: 0;
   flex: 1 1 auto;
-  /* dvh 回退：WebView 83 只认 vh（issue #13） */
-  max-height: min(70vh, 560px);
-  max-height: min(70dvh, 560px);
+  max-height: 560px;
   overflow-y: auto;
   touch-action: pan-y;
   overscroll-behavior-y: contain;
@@ -974,9 +970,7 @@
   }
 
   .feedbackMain {
-    /* dvh 回退：WebView 83 只认 vh（issue #13） */
-    max-height: min(64vh, 520px);
-    max-height: min(64dvh, 520px);
+    max-height: 520px;
   }
 }
 
