@@ -8,11 +8,13 @@
 //     我们在这里返回构造好的响应（data 为 ArrayBuffer 或 base64，两种都覆盖）。
 //
 // 因此断言走的是真实代码：CapacitorHttp.get → urlImport 解析 → importHistory → staging → IndexedDB。
+import { fileURLToPath } from 'node:url'
 import { chromium } from 'playwright'
 import { buildArchiveZip, textPayload } from '../fixtures/archive-fixture.mjs'
 
 const APP_URL = process.env.APP_URL || 'http://127.0.0.1:5181'
-const SHOT_DIR = new URL('../../docs/ui/', import.meta.url).pathname
+// fileURLToPath：Windows 下 pathname 是 /D:/...，当路径用会变成 D:\D:\...
+const SHOT_DIR = fileURLToPath(new URL('../../docs/ui/', import.meta.url))
 const ZIP_URL = 'https://obs.example.test/deepseek_data-2026-11-01.zip'
 const SESSION_TITLE = '链接导入测试会话'
 const OVER_LIMIT_BYTES = 300 * 1024 * 1024

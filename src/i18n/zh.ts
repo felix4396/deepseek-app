@@ -377,7 +377,6 @@ export const zh = {
   oursClaimAction: '领取 / 重新领取',
   oursClaimBusy: '领取中…',
   oursClaimAuto: '首次使用，正在自动领取…',
-  // #100：打开弹层只做只读查询，先让用户选凭据来源
   oursOpenChoiceTitle: '先选一种方式',
   oursOpenChoiceHint:
     '本机还没有可用的 Key：点「领取新 Key」由服务端发一把，或者把你在别处已有的 Key 绑到本机。',
@@ -531,4 +530,10 @@ export const zh = {
   settingDialogThinkingDisplayCollapsed: '折叠',
   settingDialogThinkingDisplayExpanded: '展开',
   settingDialogThinkingDisplayHidden: '不显示',
+  // Issue #18：会话自动标题的 system prompt（zh 侧逐字沿用修复前的硬编码文案）
+  autoTitlePromptIntro: '根据提供的用户消息，为这段 AI 对话生成一个简洁标题。',
+  autoTitlePromptFormat: '只输出标题本身，一行纯文本，不要引号、前缀、解释、Markdown、XML 或控制字符，不允许输出代码。',
+  autoTitlePromptLanguage: '使用消息的语言。',
+  autoTitlePromptLength: '目标长度：约 8–14 个中文字符（或 3–5 个英文单词）。',
+  autoTitlePromptFallback: '如果消息信息量太少，也要给一个简短的最佳猜测标题（如「打招呼」），不要解释。',
 } as const
