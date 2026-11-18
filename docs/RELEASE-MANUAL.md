@@ -15,7 +15,7 @@
    FAIL（哪怕和本次发版无关）就完全不能发布。测试基线与发版被人为绑死。
 
 手工清单的取舍：**每一步都是独立、可单独重跑的命令**，失败时只重跑那一步，不需要复原别人的工作区。
-代价是没有自动门禁与自动校验 —— 所以下面第 4 节那四项**人工核对必须逐项做**，这是发布前唯一的硬关卡。
+代价是没有自动门禁与自动校验 —— 所以下面第 4 节那五项**人工核对必须逐项做**，这是发布前唯一的硬关卡。
 
 `.github/workflows/release.yml` 的逻辑没有改：它仍然只在 tag 推送后**镜像**已上传的 APK 到 GitHub Release，
 不在 CI 里构建、不接触 keystore。
@@ -26,7 +26,7 @@
 
 | 项目 | 做法 | 校验 |
 | --- | --- | --- |
-| 签名材料 | 发布用 `assembleDebug`（见 §3）：AGP 默认读 `/root/.android/debug.keystore`，口令 `android`、别名 `androiddebugkey` | `keytool -list -v -keystore /root/.android/debug.keystore -storepass android -alias androiddebugkey \| grep SHA256`，必须是 `e7c5baee…aa8a1` |
+| 签名材料 | 发布用 **release 构建类型**（`assembleRelease`，见 §3），签名指向已发布证书：`android/keystore/keystore.properties` 里 `storeFileRelease=/root/.android/debug.keystore`、`storePasswordRelease=android`、`keyAliasRelease=androiddebugkey` | `keytool -list -v -keystore /root/.android/debug.keystore -storepass android -alias androiddebugkey \| grep SHA256`，必须是 `e7c5baee…aa8a1` |
 | 发布令牌 | 在 ECS 上取：`ssh aliyun 'cat /etc/dl-release/token' > ~/.config/dl-release/token && chmod 600 ~/.config/dl-release/token` | `ls -l ~/.config/dl-release/token` 应为 `-rw-------`；**不 echo、不贴日志、不进仓库** |
 | Android SDK / JDK | 默认 `/root/android-sdk`、JDK 21 | `ls $HOME/android-sdk/build-tools/`、`java -version` |
 | gh（只用于观察） | 可选 | `gh auth status`；Release 由 workflow 的内置 `GITHUB_TOKEN` 创建 |
@@ -51,7 +51,15 @@ e7c5baee517ca2b2258950e934521f2fad448d00f72f2ff7297bdf4fa00aa8a1
 
 所以：
 
-1. **发布包用 `assembleDebug`（AGP 默认 debug 签名）出的才是现网同一证书**。本条是历史事实，不是推荐做法。
+1. **发布包 = 已发布证书 + release 构建类型（两者都要，缺一不可）**。证书必须是
+   `/root/.android/debug.keystore`（历史事实，不是推荐做法）；但构建类型必须是 **release**，
+   因为 `assembleDebug` 出的包带 `android:debuggable="true"`。**这一点曾经出过事**：
+   `1.0.0`～`1.4.0-beta.8` 共 15 个已发布包全是 debuggable 构建（可被 `adb`/`run-as` 读取私有数据），
+   `1.4.0-beta.9` 起才改正。详见 Issue #60，**不要再把 `assembleDebug` 的产物发出去**。
+   - 想让 `assembleRelease` 通过下面的指纹闸门，把 `keystore.properties` 的 release 三项指向
+     `/root/.android/debug.keystore`（见 §1）即可；闸门判的是**证书指纹**，不是文件路径。
+   - 不要为了通过闸门去改 `EXPECTED_CERT_SHA256`，也不要把 release keystore 换成
+     `android/keystore/release.keystore`（那是 `63669393…`，换它 = 已装用户无法覆盖升级）。
 2. `android/app/build.gradle` 里有指纹闸门 `EXPECTED_CERT_SHA256`：`assembleRelease` 只有在
    `android/keystore/keystore.properties` 指向的证书指纹**等于**上面那一串时才允许，
    否则直接 `GradleException` 中止（缺 keystore.properties / 缺字段 / keystore 不存在同样中止）。
@@ -96,7 +104,7 @@ e7c5baee517ca2b2258950e934521f2fad448d00f72f2ff7297bdf4fa00aa8a1
 ```bash
 pnpm build:internal                       # 产物 -> dist/
 npx cap sync android                      # dist -> android/app/src/main/assets/public
-cd android && ./gradlew assembleDebug -PartifactVariant=internal
+cd android && ./gradlew assembleRelease -PartifactVariant=internal
 ```
 
 对外构建（`standard`）：
@@ -104,26 +112,29 @@ cd android && ./gradlew assembleDebug -PartifactVariant=internal
 ```bash
 pnpm build
 npx cap sync android
-cd android && ./gradlew assembleDebug    # 不传 -PartifactVariant，默认 standard
+cd android && ./gradlew assembleRelease   # 不传 -PartifactVariant，默认 standard
 ```
 
 要点：
 
+- **一律 `assembleRelease`，不要 `assembleDebug`。** debug 变体编译进 `android:debuggable="true"`，
+  发出去就是发布完整性缺陷（Issue #60：1.0.0～1.4.0-beta.8 全部中招）。
 - **web 构建与 `-PartifactVariant` 必须同源**：`build:internal` ↔ `internal`，`build` ↔ `standard`。
   两者不一致时 App 侧变体标记是错的，自动更新会推错包。
 - `INTERNAL_BUILD` 环境变量与 `-PartifactVariant` 冲突时 gradle 直接报错（这是有意的）。
-- 产物路径：`android/app/build/outputs/apk/debug/app-debug.apk`。
-- `assembleRelease` 现在会被签名闸门拒绝（`[签名] 签名证书与已发布版本不一致，已中止`）——
-  因为现网证书是 debug key，仓库里 `android/keystore/` 那两个自生成 keystore 都不是它。
-  **这不是 bug，别为了绕过它去改 `EXPECTED_CERT_SHA256`。**
+- 产物路径：`android/app/build/outputs/apk/release/app-release.apk`。
+- `assembleRelease` 前必须先有 `android/keystore/keystore.properties`，且 release 三项指向
+  `/root/.android/debug.keystore`（§1）。缺文件 / 缺字段 / 指纹不符时构建会按下面的报错中止
+  （`[签名] 签名证书与已发布版本不一致，已中止`）——**这不是 bug，别去改 `EXPECTED_CERT_SHA256` 绕，
+  也别退回 `assembleDebug`**，按 §1 把 release 三项指向已发布证书即可。
 - 构建完先确认产物存在再往下做，别急着上传。
 
 ---
 
-## 4. 步骤 3 — 四项人工核对（**全部通过才准上传**）
+## 4. 步骤 3 — 五项人工核对（**全部通过才准上传**）
 
 ```bash
-APK=android/app/build/outputs/apk/debug/app-debug.apk
+APK=android/app/build/outputs/apk/release/app-release.apk
 BT=$HOME/android-sdk/build-tools/35.0.0        # 与实际 build-tools 版本对齐
 ```
 
@@ -165,7 +176,18 @@ BT=$HOME/android-sdk/build-tools/35.0.0        # 与实际 build-tools 版本对
   stat -c%s "$APK"          # 字节数，与 releases.json 的 size 对比（上限 50 MB）
   ```
 
-四项全过才继续。任何一项不过都没有「先发后修」这种选项。
+- [ ] **4.5 `debuggable` 必须不存在（发布完整性的硬门禁）**
+
+  ```bash
+  $BT/aapt2 dump badging "$APK" | grep -c application-debuggable   # 必须输出 0
+  ```
+
+  输出必须是 `0`；只要有一条 `application-debuggable`，这个包就是可调试构建，
+  **绝对不准上传**（Issue #60：`1.0.0`～`1.4.0-beta.8` 共 15 个已发包都是这么漏出去的）。
+  这条同时也是"有没有误用 `assembleDebug`"的判据：`assembleRelease` 的产物恒为 0，
+  `assembleDebug` 的产物恒为 1。
+
+五项全过才继续。任何一项不过都没有「先发后修」这种选项。
 
 ---
 
@@ -175,7 +197,7 @@ BT=$HOME/android-sdk/build-tools/35.0.0        # 与实际 build-tools 版本对
 服务端自己解析 APK 真身、自己算 MD5/sha256、原子更新 `releases.json`：
 
 ```bash
-APK=android/app/build/outputs/apk/debug/app-debug.apk
+APK=android/app/build/outputs/apk/release/app-release.apk
 curl -sS -X POST https://dl.rose7.cn/api/v1/release \
   -H "Authorization: Bearer $(cat ~/.config/dl-release/token)" \
   -F "apk=@$APK" \
