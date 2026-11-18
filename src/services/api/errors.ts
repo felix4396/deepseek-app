@@ -49,8 +49,12 @@ export const classifyApiError = (error: unknown): ApiErrorCondition => {
   return classifyStatus(error.status)
 }
 
-/** 重试可能成功的情况：网络、断流、限流、服务端繁忙；参数或鉴权类错误重试无用 */
+/** 重试可能成功的情况：网络、超时、断流、限流、服务端繁忙；参数或鉴权类错误重试无用 */
 export const isRetryableApiError = (error: unknown): boolean => {
+  // 超时等价于「这一轮没等到响应」：重试是有效的，不能因为没状态码就归到 other
+  if (error instanceof ApiError && error.kind === 'timeout') {
+    return true
+  }
   const condition = classifyApiError(error)
   return (
     !(error instanceof ApiError) ||
