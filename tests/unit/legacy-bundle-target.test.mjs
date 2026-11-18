@@ -8,13 +8,29 @@
 //   D 所有 dvh 声明都有同值 vh 回退（Chrome 108+ 才有 dvh）
 //   E 产物自检（dist 存在时跑）：每个 JS 文件都能被 Chrome 83 解析，且没有裸 dvh —— 用
 //     scripts/check-bundle-syntax.mjs 的同一套判定，release 前 `npm run check:legacy` 跑的就是它
+//   F 闸门自证（issue #95）：用一个自造的坏产物 fixture 证明 E 的判定**真的会红**，再来一个合规
+//     fixture 证明它**不是恒定红**
+//
+// issue #95：E-1/E-2 以前在缺 dist 时是 `if (无产物) { test.skip?.(); return }` —— 用例体一个断言都不跑，
+// 但外层用例仍被 node:test 记为 `ok`（`test.skip` 在用例体内只会新注册一条匿名子测试，不跳过当前用例）。
+// 于是「产物自检通过」和「产物自检根本没跑」在报告里、在只看 `# fail`/退出码的 CI 里完全一样。
+// 现在改为**声明期跳过**：缺产物时 E-1/E-2 自己那条就是 `# SKIP`，`# skipped` 计数直接对着它们；
+// 需要在缺产物时硬红的 CI（release 前置）可以置 `LEGACY_REQUIRE_DIST=1`，本文件加载即失败。
 import assert from 'node:assert/strict'
 import { createHash } from 'node:crypto'
-import { existsSync, readdirSync, readFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { test } from 'node:test'
-import { checkCssUnits, checkJavaScript, findForbiddenSyntax, stripLiterals } from '../../scripts/check-bundle-syntax.mjs'
+import {
+  checkCssUnits,
+  checkJavaScript,
+  checkRuntimeApis,
+  findForbiddenSyntax,
+  POLYFILL_FLAG,
+  stripLiterals,
+} from '../../scripts/check-bundle-syntax.mjs'
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
 const read = (relative) => readFileSync(path.join(ROOT, relative), 'utf8')
@@ -38,6 +54,42 @@ const walk = (dir, suffix) => {
   }
   return out
 }
+
+/**
+ * 产物自检的判定内核（E-1/E-2/F-1 共用同一份逻辑，闸门被测的就是它）。
+ * 返回三层结果；`problems` 为空数组 = 合格。
+ */
+const auditDist = (distDir) => {
+  const jsFiles = walk(path.join(distDir, 'static/js'), '.js')
+  const cssFiles = walk(path.join(distDir, 'static/css'), '.css')
+  const js = checkJavaScript(jsFiles)
+  const css = checkCssUnits(cssFiles)
+  const runtime = checkRuntimeApis(distDir, jsFiles)
+  return {
+    jsFiles,
+    cssFiles,
+    js,
+    css,
+    runtime,
+    problems: [...js.lexical, ...js.ast, ...css.problems, ...runtime.violations],
+  }
+}
+
+const DIST = path.join(ROOT, 'dist')
+const hasBundle = (distDir) =>
+  walk(path.join(distDir, 'static/js'), '.js').length > 0 &&
+  walk(path.join(distDir, 'static/css'), '.css').length > 0
+
+// 缺产物：默认**显式跳过**（报告里 E-1/E-2 自己那条是 `# SKIP`，`# skipped` 直接对着它们），
+// 而不是以前那种「用例体 return、外层仍记 ok」的假绿。
+const NO_DIST_REASON =
+  'dist/ 没有产物（dist/static/js 或 dist/static/css 为空）：先跑 `pnpm run build:internal`（或 `pnpm run build`）再来核对产物'
+const DIST_READY = hasBundle(DIST)
+// 需要「缺产物即红」的 CI（release 前置）置 LEGACY_REQUIRE_DIST=1：跳过不再是一种可能。
+if (!DIST_READY && process.env.LEGACY_REQUIRE_DIST === '1') {
+  throw new Error(`LEGACY_REQUIRE_DIST=1，但${NO_DIST_REASON}`)
+}
+const DIST_SKIP = DIST_READY ? false : NO_DIST_REASON
 
 test('A browserslist 以 chrome 83 为下限（产物语法唯一来源）', () => {
   assert.ok(Array.isArray(pkg.browserslist), 'package.json 必须有 browserslist 字段')
@@ -185,23 +237,29 @@ test('D 每处 dvh 都有同值 vh 回退（统一写法：变量/字面量 + dv
   assert.ok(dvhCount >= 6, `预期至少 6 处 dvh 声明（App/ChatInput/OursServices/Settings），实际 ${dvhCount}`)
 })
 
-test('E-1 产物自检：全部 JS 能用 Chrome 83 的语法解析（无 ||= / &&= / ??= / 类静态块）', () => {
-  const jsFiles = walk(path.join(ROOT, 'dist/static/js'), '.js')
-  if (jsFiles.length === 0) {
-    test.skip?.('dist 未构建，跳过产物自检（先 npm run build）')
-    return
-  }
-  const result = checkJavaScript(jsFiles)
-  const all = [...result.lexical, ...result.ast]
+test('E-1 产物自检：全部 JS 能用 Chrome 83 的语法解析（无 ||= / &&= / ??= / 类静态块）', { skip: DIST_SKIP }, () => {
+  const audit = auditDist(DIST)
+  const all = [...audit.js.lexical, ...audit.js.ast]
   assert.deepEqual(all, [], `产物里有低内核解析不了的语法：\n${JSON.stringify(all.slice(0, 5), null, 2)}`)
-  assert.ok(result.files >= 40, `产物 JS 文件数异常：${result.files}`)
+  assert.ok(audit.js.files >= 40, `产物 JS 文件数异常：${audit.js.files}`)
+  // 运行时 API 层（issue #39）：语法过了不代表低内核能跑 —— replaceAll 这类内置 API 缺失是 TypeError。
+  // 产物里出现 Chrome 83 没有的 API 时，必须能在入口脚本里找到 polyfill 标记，否则低内核必白屏。
+  assert.deepEqual(
+    audit.runtime.violations,
+    [],
+    `产物里有 Chrome 83 没有、又没在入口脚本里补上的内置 API：\n${JSON.stringify(audit.runtime.violations.slice(0, 5), null, 2)}`
+  )
+  assert.ok(
+    audit.runtime.polyfillInEntries.length > 0,
+    '产物入口脚本里找不到 legacy polyfill 标记（懒加载 chunk 里补等于没补）'
+  )
 
   // 主包单独再确认一遍：三个逻辑赋值运算符在**剥掉字面量之后**一次都不出现
   // 路径匹配不能写死分隔符：walk() 走 path.join，Windows 上产出的是
   // `D:\...\dist\static\js\main.<hash>.js`，写死 /\/main\./ 会恒定匹配不到（假红）。
   // 用 basename 比较，等价于把 [\\/] 写进正则，但也不受 walk() 的拼接方式影响；
   // 反过来只认反斜杠会在 POSIX 上把这条测回假红，所以两边都不写死。
-  const mainFile = jsFiles.find((file) => /^main\.[0-9a-f]+\.js$/.test(path.basename(file)))
+  const mainFile = audit.jsFiles.find((file) => /^main\.[0-9a-f]+\.js$/.test(path.basename(file)))
   assert.ok(mainFile, '找不到 main 包')
   const main = readFileSync(mainFile, 'utf8')
   const stripped = stripLiterals(main)
@@ -214,17 +272,13 @@ test('E-1 产物自检：全部 JS 能用 Chrome 83 的语法解析（无 ||= / 
   console.log(`    main=${path.basename(mainFile)} sha256=${hash}`)
 })
 
-test('E-2 产物自检：CSS 里没有裸 dvh，且守卫在业务包之前', () => {
-  const cssFiles = walk(path.join(ROOT, 'dist/static/css'), '.css')
-  const jsFiles = walk(path.join(ROOT, 'dist/static/js'), '.js')
-  if (cssFiles.length === 0 || jsFiles.length === 0) {
-    test.skip?.('dist 未构建，跳过产物自检（先 npm run build）')
-    return
-  }
-  const css = checkCssUnits(cssFiles)
-  assert.deepEqual(css.problems, [])
-  assert.ok(css.dvhTotal >= 6, `产物里 dvh 声明应有 6 处，实际 ${css.dvhTotal}`)
-  assert.equal(css.fallbackTotal, css.dvhTotal, '每处 dvh 都要有配对 vh 回退')
+test('E-2 产物自检：CSS 里没有裸 dvh，且守卫在业务包之前', { skip: DIST_SKIP }, () => {
+  const audit = auditDist(DIST)
+  assert.ok(audit.jsFiles.length > 0, 'dist/static/js 里没有产物 JS')
+  assert.ok(audit.cssFiles.length > 0, 'dist/static/css 里没有产物 CSS')
+  assert.deepEqual(audit.css.problems, [])
+  assert.ok(audit.css.dvhTotal >= 6, `产物里 dvh 声明应有 6 处，实际 ${audit.css.dvhTotal}`)
+  assert.equal(audit.css.fallbackTotal, audit.css.dvhTotal, '每处 dvh 都要有配对 vh 回退')
 
   const html = read('dist/index.html')
   assert.ok(html.indexOf('compatibility-error') >= 0, '产物 HTML 里应有守卫的提示容器')
@@ -238,5 +292,70 @@ test('E-2 产物自检：CSS 里没有裸 dvh，且守卫在业务包之前', ()
   assert.ok(inlineTags.length >= 1, '产物 HTML 里应有 inline 守卫脚本')
   for (const tag of inlineTags) {
     assert.doesNotMatch(tag, /\b(?:async|defer)\b/, 'inline 守卫必须是同步执行的（不能带 async/defer）')
+  }
+})
+
+// ── F 闸门自证（issue #95）──────────────────────────────────────────────────
+// E-1/E-2 以前有一个「缺产物就静默 return」的假绿路径，而它们本身从没被验证过：没有任何用例证明
+// 这两个闸门在**真的有产物且产物违规**时会红。这里用临时目录自造一份极简 dist（入口 + 一个带违规
+// API 的 JS + 一段裸 dvh 的 CSS），走 E-1/E-2 用的同一个 auditDist()，断言坏产物必红、合规产物必绿。
+// 用后清理：临时目录在 finally 里删掉，不落进仓库。
+
+/** 按 { 相对路径: 内容 } 写出一份最小产物 */
+const writeFixture = (dir, files) => {
+  for (const [relative, content] of Object.entries(files)) {
+    const full = path.join(dir, relative)
+    mkdirSync(path.dirname(full), { recursive: true })
+    writeFileSync(full, content)
+  }
+}
+
+const fixtureHtml = (entry) => `<!doctype html>\n<html><body><script src="${entry}" defer></script></body></html>\n`
+
+test('F-1 自造产物 fixture：E-1/E-2 的判定在「有产物且含违规」时真的会红（闸门不是摆设）', () => {
+  const temp = mkdtempSync(path.join(tmpdir(), 'legacy-bundle-'))
+  try {
+    // 坏产物：main 包用逻辑赋值 + 裸 replaceAll（入口没有 polyfill 标记），CSS 用裸 dvh
+    const badDir = path.join(temp, 'bad')
+    writeFixture(badDir, {
+      'index.html': fixtureHtml('static/js/main.0badf00d.js'),
+      'static/js/main.0badf00d.js':
+        "var label = 'x'\nlabel ||= 'y'\nvar slug = '-'.replaceAll('-', '_')\nconsole.log(label, slug)\n",
+      'static/css/app.css': '.hero { height: 100dvh; }\n',
+    })
+    const bad = auditDist(badDir)
+    assert.ok(
+      bad.js.lexical.some((finding) => finding.kind === 'logical-assignment'),
+      `语法层应命中 ||=（实际：${JSON.stringify(bad.js.lexical)}）`
+    )
+    assert.ok(
+      bad.runtime.violations.some((violation) => violation.id === 'string-replaceAll'),
+      `运行时 API 层应拦下裸 replaceAll（实际：${JSON.stringify(bad.runtime.violations)}）`
+    )
+    assert.ok(
+      bad.css.problems.some((problem) => problem.kind === 'missing-vh-fallback'),
+      `CSS 层应命中裸 dvh（实际：${JSON.stringify(bad.css.problems)}）`
+    )
+    // E-1/E-2 用的就是这三条断言：在坏产物上必须炸
+    assert.throws(() => assert.deepEqual([...bad.js.lexical, ...bad.js.ast], []), '语法层断言在坏产物上必须失败')
+    assert.throws(() => assert.deepEqual(bad.runtime.violations, []), '运行时 API 层断言在坏产物上必须失败')
+    assert.throws(() => assert.deepEqual(bad.css.problems, []), 'CSS 层断言在坏产物上必须失败')
+
+    // 对照产物：同样有 replaceAll，但入口脚本带 polyfill 标记；dvh 有同值 vh 回退 —— 必须全部放行，
+    // 否则「闸门会红」只说明它恒定红，不能说明它认得对错。
+    const goodDir = path.join(temp, 'good')
+    writeFixture(goodDir, {
+      'index.html': fixtureHtml('static/js/main.0feedbee.js'),
+      'static/js/main.0feedbee.js':
+        `var label = 'x'\nvar slug = '-'.replaceAll('-', '_')\nwindow.${POLYFILL_FLAG} = true\nconsole.log(label, slug)\n`,
+      'static/css/app.css': '.hero { height: 100vh; height: 100dvh; }\n',
+    })
+    const good = auditDist(goodDir)
+    assert.deepEqual([...good.js.lexical, ...good.js.ast], [], '合规产物的语法层应放行')
+    assert.deepEqual(good.runtime.violations, [], '入口脚本带 polyfill 标记时运行时 API 层应放行')
+    assert.deepEqual(good.css.problems, [], 'vh 回退齐全时 CSS 层应放行')
+    assert.ok(good.runtime.polyfillInEntries.length > 0, '入口脚本应被认出带 polyfill 标记')
+  } finally {
+    rmSync(temp, { recursive: true, force: true })
   }
 })
