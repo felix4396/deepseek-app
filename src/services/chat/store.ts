@@ -348,7 +348,10 @@ export const bindChatPersistence = () => {
   }
 }
 
-/** 按当前开关创建回复：深度思考对应 thinking，智能搜索控制 deepseek_web_search。 */
+/**
+ * 按当前开关创建回复：快速/专家模式（settings.chatMode）对应 thinking，
+ * 智能搜索控制 deepseek_web_search。模式一并写进回复快照，请求体由 streamReply 组装。
+ */
 const createReply = (): AssistantMessage => {
   const { thinking, search } = useSettings.getState()
   return {
@@ -695,8 +698,13 @@ export const sendMessage = (targetSessionId: string | null) => {
     return false
   }
   const { text, files } = prepared
-  // 关键业务动作：只记字符数与附件数，正文绝不进日志
-  recordAction('chat_send', 'send-message', { chars: text.length, files: files.length })
+  // 关键业务动作：只记字符数、附件数与本轮模式，正文绝不进日志
+  // （模式进日志是为了 issue #25 的取证口径：用户反馈「专家模式和快速没区别」时能直接对上）
+  recordAction('chat_send', 'send-message', {
+    chars: text.length,
+    files: files.length,
+    mode: useSettings.getState().chatMode,
+  })
   void captureStateSnapshot('after-chat-send')
   const now = Date.now()
   let sessionId = targetSessionId

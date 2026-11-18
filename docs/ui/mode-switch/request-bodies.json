@@ -1,0 +1,70 @@
+{
+  "rawEqual": false,
+  "fast": {
+    "model": "deepseek-flash",
+    "system": "该助手为DeepSeek，由深度求索公司创造。",
+    "messages": [
+      {
+        "role": "latest_reminder",
+        "content": "2026-11-18,星期三,Web,中文"
+      },
+      {
+        "role": "user",
+        "content": "同一个问题：把「快速 / 专家」讲清楚"
+      }
+    ],
+    "thinking": {
+      "type": "disabled"
+    },
+    "safety_check": {
+      "level": "high"
+    },
+    "tools": [
+      {
+        "type": "deepseek_read_url",
+        "name": "deepseek_read_url"
+      }
+    ],
+    "title": {
+      "enabled": true
+    },
+    "stream": true
+  },
+  "expert": {
+    "model": "deepseek-flash",
+    "system": "该助手为DeepSeek，由深度求索公司创造。",
+    "messages": [
+      {
+        "role": "latest_reminder",
+        "content": "2026-11-18,星期三,Web,中文"
+      },
+      {
+        "role": "user",
+        "content": "同一个问题：把「快速 / 专家」讲清楚"
+      }
+    ],
+    "thinking": {
+      "type": "enabled"
+    },
+    "safety_check": {
+      "level": "high"
+    },
+    "tools": [
+      {
+        "type": "deepseek_read_url",
+        "name": "deepseek_read_url"
+      }
+    ],
+    "title": {
+      "enabled": true
+    },
+    "stream": true
+  },
+  "changed": [
+    {
+      "key": "thinking",
+      "fast": "{\"type\":\"disabled\"}",
+      "expert": "{\"type\":\"enabled\"}"
+    }
+  ]
+}

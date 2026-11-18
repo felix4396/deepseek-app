@@ -289,9 +289,12 @@ for (const [clicked, expected] of sequence) {
 expect(toggleOk, '3 次切换后选中态与计算样式始终一致')
 
 const storage = await page.evaluate(() => Object.keys(window.localStorage).sort())
+// issue #25：控件不再是纯样式，点它会写自己的两个键（新键 + 同步的旧「深度思考」键）
 expect(
-  storage.every((key) => key === 'chat-demo:api-key'),
-  '控件没有写入 localStorage（只剩预先种下的 api-key）',
+  storage.every((key) =>
+    ['chat-demo:api-key', 'chat-demo:chat-mode', 'chat-demo:thinking'].includes(key)
+  ) && storage.includes('chat-demo:chat-mode'),
+  '控件只写 chat-demo:chat-mode 与同步的 chat-demo:thinking',
   storage.join(',')
 )
 
