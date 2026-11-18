@@ -3,11 +3,13 @@
 import { mkdtemp, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { chromium } from 'playwright'
 import { buildArchiveZip } from '../fixtures/archive-fixture.mjs'
 
 const APP_URL = process.env.APP_URL || 'http://127.0.0.1:5181'
-const SHOT_DIR = new URL('../../docs/ui/', import.meta.url).pathname
+// fileURLToPath：Windows 下 pathname 是 /D:/...，当路径用会变成 D:\D:\...
+const SHOT_DIR = fileURLToPath(new URL('../../docs/ui/', import.meta.url))
 const SESSION_TITLE = '网页上传测试会话'
 
 const failures = []

@@ -1,11 +1,53 @@
 // Focused real Chromium touch regression; CSS/keyboard capability simulations are not an old WebView.
 import assert from 'node:assert/strict'
-import { spawn } from 'node:child_process'
-import { mkdir, writeFile } from 'node:fs/promises'
+import { createReadStream } from 'node:fs'
+import { mkdir, stat, writeFile } from 'node:fs/promises'
+import { createServer } from 'node:http'
+import path from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { chromium } from 'playwright'
-const out = new URL('../../docs/ui/feedback-scroll/', import.meta.url).pathname
+// 路径一律走 fileURLToPath：Windows 下 pathname 是 /D:/... （前导斜杠 + 盘符），拼出来会变成 D:\D:\...
+const ROOT = fileURLToPath(new URL('../..', import.meta.url))
+const out = fileURLToPath(new URL('../../docs/ui/feedback-scroll/', import.meta.url))
 await mkdir(out, { recursive: true })
-const server = spawn('python3', ['-m','http.server','5418','--bind','127.0.0.1','--directory','dist-scroll'], { stdio:'ignore' })
+// 产物目录与端口都可覆盖（默认保持 dist-scroll / 5418）；端口被占用时自动挑空闲端口。
+const DIST_DIR = path.resolve(ROOT, process.env.SCROLL_DIST_DIR || 'dist-scroll')
+const PREFERRED_PORT = Number(process.env.SCROLL_PORT || 5418)
+const MIME = { '.html':'text/html; charset=utf-8', '.js':'text/javascript; charset=utf-8', '.mjs':'text/javascript; charset=utf-8', '.css':'text/css; charset=utf-8', '.json':'application/json; charset=utf-8', '.svg':'image/svg+xml', '.png':'image/png', '.jpg':'image/jpeg', '.ico':'image/x-icon', '.woff2':'font/woff2', '.map':'application/json; charset=utf-8', '.txt':'text/plain; charset=utf-8' }
+const staticServer = createServer(async (req, res) => {
+  try {
+    const { pathname } = new URL(req.url, 'http://127.0.0.1')
+    const rel = decodeURIComponent(pathname === '/' ? '/index.html' : pathname)
+    const file = path.resolve(DIST_DIR, '.' + rel)
+    if (file !== DIST_DIR && !file.startsWith(DIST_DIR + path.sep)) { res.writeHead(403).end('forbidden'); return }
+    const info = await stat(file).catch(() => null)
+    if (!info || !info.isFile()) { res.writeHead(404).end('not found'); return }
+    res.writeHead(200, { 'content-type': MIME[path.extname(file).toLowerCase()] || 'application/octet-stream', 'content-length': info.size })
+    createReadStream(file).pipe(res)
+  } catch (error) { res.writeHead(500).end(String(error)) }
+})
+const listening = (server, port) => new Promise((resolve, reject) => {
+  const onError = (error) => { server.off('listening', onListening); reject(error) }
+  const onListening = () => { server.off('error', onError); resolve(server.address().port) }
+  server.once('error', onError)
+  server.once('listening', onListening)
+  server.listen(port, '127.0.0.1')
+})
+// 忘了建产物就直说，别让它表现成「连不上端口」。
+if (!(await stat(DIST_DIR).catch(() => null))) {
+  throw new Error(`静态产物目录不存在：${DIST_DIR}\n先构建：DIST_OUT=${path.basename(DIST_DIR)} NODE_ENV=production npx rspack build -c rspack.config.ts\n或用 SCROLL_DIST_DIR 指向已构建的目录。`)
+}
+let port
+try {
+  port = await listening(staticServer, PREFERRED_PORT)
+} catch (error) {
+  if (error.code !== 'EADDRINUSE') throw error
+  port = await listening(staticServer, 0)
+  console.log(`端口 ${PREFERRED_PORT} 已被占用，自动改用空闲端口 ${port}`)
+}
+const server = staticServer
+const BASE_URL = `http://127.0.0.1:${port}`
+console.log(`静态服务：${DIST_DIR} → ${BASE_URL}`)
 const browser = await chromium.launch({ headless:true })
 const results = []
 const baseline = process.env.BASELINE === '1'
@@ -14,7 +56,7 @@ try {
   const context = await browser.newContext({ viewport:{width,height}, isMobile:true, hasTouch:true, locale:'zh-CN', reducedMotion:'reduce' })
   await context.addInitScript(() => localStorage.setItem('chat-demo:api-key','sk-scroll-local-fixture'))
   const page = await context.newPage()
-  await page.goto('http://127.0.0.1:5418/?diag-debug')
+  await page.goto(`${BASE_URL}/?diag-debug`)
   await page.waitForFunction(() => !!window.__diagnostics)
   await page.evaluate(() => { for(let i=0;i<30;i++) window.__diagnostics.recordError('scroll regression log '+i); window.__diagnostics.setFeedbackTransport({name:'offline',send:async()=>({ok:false,error:'network'})}) })
   const baseOverflow=await page.evaluate(()=>getComputedStyle(document.body).overflow)
@@ -107,4 +149,4 @@ try {
   }
   await context.close()
  }
-} finally {await writeFile(out+(baseline?'before':'after')+'.json',JSON.stringify(results,null,2)); console.log(JSON.stringify(results.map(({name,before,after})=>({name,before,after})),null,2)); await browser.close();server.kill()}
+} finally {await writeFile(out+(baseline?'before':'after')+'.json',JSON.stringify(results,null,2)); console.log(JSON.stringify(results.map(({name,before,after})=>({name,before,after})),null,2)); await browser.close();server.close()}
