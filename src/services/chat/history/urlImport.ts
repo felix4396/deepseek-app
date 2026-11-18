@@ -1,5 +1,5 @@
 import { Capacitor, CapacitorHttp, type HttpResponse } from '@capacitor/core'
-import { errorMeta, record, recordAction, recordEvent } from '../../diagnostics/collector.js'
+import { errorMeta, record, recordAction, recordEvent, redactUrl } from '../../diagnostics/collector.js'
 import { importHistory } from '../backup.js'
 import { BackupError, fail } from './errors.js'
 
@@ -313,7 +313,7 @@ const isStreamBroken = (error: unknown): boolean =>
 /** 下载失败必录：阶段 + 已下载字节 + 耗时 + 错误原文（回查「导入没反应」靠这条）。 */
 const recordDownloadFailure = (
   reason: string,
-  _url: string,
+  url: string,
   startedAt: number,
   extra: Record<string, string | number> = {},
   error?: unknown
@@ -322,8 +322,11 @@ const recordDownloadFailure = (
     stage: 'download',
     durationMs: Date.now() - startedAt,
     reason,
+    // 只留 path（签名与 token 都在 query 里），否则事后无法把一条失败对上具体文件（#19）
+    'url.path': redactUrl(url),
     ...extra,
-    ...(error === undefined ? {} : errorMeta(error)),
+    // error.msg 一律给：没有异常对象时用失败原因兜底，日志里不留空字段（#19）
+    ...(error === undefined ? { 'error.msg': reason } : errorMeta(error)),
   })
 
 /**
@@ -679,9 +682,19 @@ const downloadArchive = async (
       const bytes = toBytes(data)
       data = null
       if (state.total === undefined) {
-        state.total = contentRangeTotal(response.headers) ?? contentLength(response.headers)
-        if (state.total !== undefined && state.total > MAX_ARCHIVE_BYTES) {
-          tooLarge()
+        // 总长度只认可信来源：
+        // - 206 的 `Content-Range: bytes a-b/total`（total 为 `*` 时代码按未知处理）；
+        // - 首次整包 200（服务端忽略 Range）的 `Content-Length`。
+        // 206 缺 Content-Range 时响应里的 Content-Length 只是**这一块**的长度，
+        // 拿它当总长会让 4KB 被判成「已下完」，并让 200MB 上限拿 4KB 去比（#24）。
+        const declared =
+          contentRangeTotal(response.headers) ??
+          (status === 200 ? contentLength(response.headers) : undefined)
+        if (declared !== undefined) {
+          state.total = declared
+          if (declared > MAX_ARCHIVE_BYTES) {
+            tooLarge()
+          }
         }
       }
       if (bytes.byteLength > 0) {
@@ -715,8 +728,9 @@ const downloadArchive = async (
           }
         }
       }
-      // 200 = 服务端忽略了 Range，整包已经到手；不足请求的那一块 = 已经是最后一块。
-      if (status === 200 || bytes.byteLength < requested) {
+      // 200 = 服务端忽略了 Range，整包已经到手；不足请求的那一块（含空块）= 服务端已收敛。
+      // total 未知时这是唯一的完成信号，所以不能只看「已下到的字节数够不够 total」。
+      if (status === 200 || bytes.byteLength === 0 || bytes.byteLength < requested) {
         break
       }
       // 自适应块大小：慢网小块、快网大块，进度大致每秒一次。
