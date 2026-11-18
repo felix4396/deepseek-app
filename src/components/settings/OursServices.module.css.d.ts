@@ -15,6 +15,7 @@ declare const styles: {
   readonly "valueSuccess": string;
   readonly "valueError": string;
   readonly "hint": string;
+  readonly "deviceCode": string;
   readonly "plans": string;
   readonly "plan": string;
   readonly "planActive": string;
