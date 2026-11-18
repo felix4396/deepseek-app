@@ -555,4 +555,6 @@ export const en = {
   autoTitlePromptLength: 'Target length: about 8–14 characters for Chinese, or 3–5 words for English.',
   autoTitlePromptFallback:
     'If the message carries too little information, still give a short best-guess title (for example "Greetings"), without explanation.',
+  // Issue #45: unified request timeout notice (kept apart from network failure and 4xx/5xx)
+  requestTimeout: 'Request timed out ({seconds}s with no response). Check your network and try again.',
 } satisfies Record<keyof typeof zh, string>

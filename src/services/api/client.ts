@@ -31,8 +31,9 @@ const FILES_BETA = 'files-api-2025-04-14'
 /**
  * 上游把网页当接口数据返回（路径不匹配、网关报错页等）
  * 流在 message_start 之后、message_stop 之前结束（连接被掐断、代理超时、读到一半报错）
+ * 请求在超时预算内没拿到响应头
  */
-export type ApiErrorCode = 'upstream_returned_html' | 'stream_interrupted'
+export type ApiErrorCode = 'upstream_returned_html' | 'stream_interrupted' | 'request_timed_out'
 
 export type ApiErrorKind =
   /** 非 2xx 响应 */
@@ -45,6 +46,8 @@ export type ApiErrorKind =
   | 'interrupted'
   /** 响应不符合协议（如非 SSE 响应） */
   | 'protocol'
+  /** 预算内没拿到响应头：上游把连接晾着（与没到达服务端、4xx/5xx 都不同） */
+  | 'timeout'
 
 export class ApiError extends Error {
   readonly kind: ApiErrorKind
@@ -119,15 +122,80 @@ const readErrorResponse = async (
 const isHtmlResponse = (response: Response): boolean =>
   (response.headers.get('Content-Type') ?? '').toLowerCase().includes('text/html')
 
-export const request = async (url: string, init: RequestInit): Promise<Response> => {
+/**
+ * 请求默认超时：与 probeProvider 的连通性探测同一口径（15 秒）。
+ * 只约束「拿到响应头」这一段——流式回答可能合法地持续很久，不在这里掐；
+ * 正文读到一半断掉仍由 stream_interrupted 那条路负责（#41）。
+ */
+export const DEFAULT_REQUEST_TIMEOUT_MS = 15000
+
+let requestTimeoutMs = DEFAULT_REQUEST_TIMEOUT_MS
+
+/** 全局超时（毫秒）：合法正数生效，0 / NaN / 非数字一律回到默认，不做成「永不超时」 */
+export const setRequestTimeout = (ms: number): void => {
+  requestTimeoutMs = Number.isFinite(ms) && ms > 0 ? Math.round(ms) : DEFAULT_REQUEST_TIMEOUT_MS
+}
+
+export const getRequestTimeout = (): number => requestTimeoutMs
+
+/** 超时与「没到达服务端」「4xx/5xx」分开：它有自己的 kind / code / 文案 */
+const requestTimedOut = (timeoutMs: number, detail?: string): ApiError =>
+  new ApiError(
+    'timeout',
+    { key: 'requestTimeout', params: { seconds: Math.max(1, Math.round(timeoutMs / 1000)) } },
+    undefined,
+    'request_timed_out',
+    detail
+  )
+
+export type RequestOptions = {
+  /** 覆盖本次请求的预算（毫秒）；不传用 getRequestTimeout()。0 / 负数按默认值处理 */
+  timeoutMs?: number
+}
+
+/**
+ * 所有接口请求的唯一出口：统一带超时。
+ * 超时用内部 controller 中断 fetch，与调用方自己的取消分开——
+ * 调用方取消仍抛原始 abort（不是接口错误），超时抛 kind='timeout' 的 ApiError。
+ */
+export const request = async (
+  url: string,
+  init: RequestInit,
+  options: RequestOptions = {}
+): Promise<Response> => {
+  const timeoutMs =
+    options.timeoutMs !== undefined && options.timeoutMs > 0 ? options.timeoutMs : requestTimeoutMs
+  const callerSignal = init.signal ?? null
+  const controller = new AbortController()
+  let timedOut = false
+  const abortFromCaller = () => controller.abort()
+  if (callerSignal) {
+    if (callerSignal.aborted) {
+      controller.abort()
+    } else {
+      callerSignal.addEventListener('abort', abortFromCaller, { once: true })
+    }
+  }
+  const timer = setTimeout(() => {
+    timedOut = true
+    controller.abort()
+  }, timeoutMs)
   let response: Response
   try {
-    response = await fetch(url, init)
+    response = await fetch(url, { ...init, signal: controller.signal })
   } catch (error) {
-    if (init.signal?.aborted) {
+    if (timedOut) {
+      throw requestTimedOut(timeoutMs, error instanceof Error ? error.message : String(error))
+    }
+    if (callerSignal?.aborted) {
       throw error
     }
     throw new ApiError('network', error instanceof Error ? error.message : String(error))
+  } finally {
+    // 响应头已到：立刻撤掉预算，长回答的正文读取不受影响。
+    // 调用方自己的 abort 监听要留着——它得继续管正文读取（用户点停止要能真的断开），
+    // 所以这里只清计时器。
+    clearTimeout(timer)
   }
   if (isHtmlResponse(response)) {
     throw new ApiError(
@@ -366,7 +434,11 @@ export async function* streamMessage(
     // 原文只进 detail 给日志，界面用固定文案。
     throw streamInterrupted(error instanceof Error ? error.message : String(error))
   }
-  // 流在 message_stop 之前结束了。不推测原因，只明确告诉用户是断流。
+  // 流在 message_stop 之前结束了。用户主动停止不算断流，先看 signal。
+  if (signal.aborted) {
+    throw signal.reason ?? new DOMException('The operation was aborted.', 'AbortError')
+  }
+  // 不推测原因，只明确告诉用户是断流。
   throw streamInterrupted()
 }
 
@@ -388,7 +460,7 @@ export type ProviderProbeResult = {
  */
 export const probeProvider = async (
   config: { baseUrl: string; apiKey: string },
-  timeoutMs = 15000
+  timeoutMs = DEFAULT_REQUEST_TIMEOUT_MS
 ): Promise<ProviderProbeResult> => {
   const baseUrl = normalizeBaseUrl(config.baseUrl)
   if (!baseUrl) {
