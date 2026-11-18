@@ -542,4 +542,7 @@ export const zh = {
   autoTitlePromptFallback: '如果消息信息量太少，也要给一个简短的最佳猜测标题（如「打招呼」），不要解释。',
   // Issue #45：请求统一超时的提示（与网络失败、4xx/5xx 分开说）
   requestTimeout: '请求超时（{seconds} 秒没有响应），请检查网络后重试',
+  // Issue #106：移动端标题栏双击回到首条消息
+  scrollToFirstMessage: '回到首条消息（双击标题）',
+  scrollToFirstMessageHint: '双击回顶',
 } as const

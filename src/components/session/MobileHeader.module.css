@@ -7,13 +7,53 @@
   padding: 12px 10px 4px;
 }
 
+/* Issue #106：标题区是「双击回到首条消息」的点击目标。
+   内容盒高 = 60 - 12 - 4 = 44px，正好满足 44px 最小点击目标（390 / 360 两档一样高）。 */
+.titleButton {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1;
+  min-width: 0;
+  min-height: 44px;
+  margin: 0 12px;
+  padding: 0 6px;
+  border: none;
+  border-radius: 10px;
+  background-color: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  outline: none;
+  /* 关掉双击缩放，否则 Chromium / WebView 把第二下 tap 当成放大，dblclick 收不到 */
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+
+  &:focus-visible {
+    box-shadow: 0 0 0 2px var(--dsw-alias-button-primary-fill);
+  }
+
+  @media (hover: hover) {
+    &:hover {
+      background-color: var(--dsw-alias-interactive-bg-hover);
+    }
+  }
+}
+
 .title {
   flex: 1;
   min-width: 0;
-  margin: 0 12px;
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
   font: var(--dsw-font-s-strong-14);
   color: var(--dsw-alias-label-primary);
+}
+
+/* 可发现性提示：只占一行末尾的一点点宽度，标题仍然优先 */
+.titleHint {
+  flex-shrink: 0;
+  font: var(--dsw-font-xs-13);
+  color: var(--dsw-alias-label-caption);
+  white-space: nowrap;
 }
