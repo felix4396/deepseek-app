@@ -2,6 +2,13 @@
 
 本文件记录 deepseek-app 的重要变更，版本倒序排列。
 
+## 1.4.0-beta.4 (2026-11-18) — 设置页四渠道下拉（DeepSeek 官方 [未过门禁]
+
+- 新增：设置页四渠道下拉（DeepSeek 官方 / Anthropic 兼容 / OpenAI 兼容 / 我们的渠道），内置渠道只暴露 API Key
+- 修复：反馈与日志真实提交到后端，超限自动裁剪、失败降级重试，成功回显工单号
+- 改进：APK 发布改走 dl HTTP 发布接口，tag 触发 GitHub Release
+- 发布门禁说明：本次按维护者决定先发布——type/lint/unit 已通过、反馈上传 e2e 已通过；integration 因包含未冻结的导入用例被排除而未完成，真实模型上游 e2e 未跑，二者发布后补测
+
 ## 1.4.0-beta.3 (2026-11-17) — 会话自动标题
 
 > 只补齐 Anthropic / OpenAI 兼容模式下缺失的会话标题；**DeepSeek 官方模式零变化**（服务端原生 title 字段链路逐字未动），
