@@ -14,6 +14,15 @@ import type {
   ReplyStatus,
   UserMessage,
 } from './types.js'
+import {
+  estimateChars,
+  estimateTokens,
+  reportContextTrim,
+  resolveContextBudget,
+  selectRoundWindow,
+  type ContextBudget,
+  type ContextTrimReport,
+} from './contextBudget.js'
 
 /**
  * 文件按 Files API 的 file_id（附件的 serverId）引用：图片用 image 块，其余用 document 块。
@@ -299,6 +308,10 @@ export const getContextRounds = (history: Message[]): [UserMessage, AssistantMes
 /**
  * 把会话转成请求的 messages：只保留「提问 + 有回答的回复」成对的轮次，最后接上本轮提问。
  * 失败或没有回答的轮次不进上下文。续写时末尾再带上本轮 assistant。
+ *
+ * 请求前过一遍上下文预算（#122）：token 估算 + 轮次双闸，超了就成对丢弃最旧的轮次。
+ * 裁掉的永远是老历史 —— 系统前缀由请求侧单独拼、本轮提问与续写前缀始终保留。
+ * 裁剪统计通过 `reportContextTrim` / `options.onTrim` 暴露，诊断里能看到本轮裁了多少条。
  */
 /**
  * 把 `role:'latest_reminder'` 快照从 messages 里摘出来（相邻重复只留一条）。
@@ -321,13 +334,63 @@ export const foldReminders = (
   return { messages: rest, reminders }
 }
 
+export type RequestBudgetOptions = {
+  /** 单次覆盖预算（缺省用全局默认 getContextBudget()） */
+  budget?: Partial<ContextBudget>
+  /** 发生裁剪时回调一次，供诊断层记录「本轮裁掉多少条」 */
+  onTrim?: (report: ContextTrimReport) => void
+}
+
 export const toRequestMessages = (
   history: Message[],
   question: UserMessage,
   prefix?: AssistantMessage,
   thinking = prefix?.thinking ?? false,
-  latestReminder?: string
+  latestReminder?: string,
+  options?: RequestBudgetOptions
 ): MessageParam[] => {
+  const budget = resolveContextBudget(options?.budget)
+  const questionParam = toUserParam(question)
+  // 历史提问没有文字、附件也都没有 serverId 时，提问为空，连同回答一起省略（原有行为）。
+  const rounds = getContextRounds(history).filter(
+    ([user]) => user.content !== '' || toFileBlocks(user.files).length > 0
+  )
+  // 每轮先转成请求里的那几条消息：裁剪以「轮」为单位，成对进出，不会只留一半。
+  const units = rounds.map(([user, reply]) => {
+    const params: MessageParam[] = []
+    if (reply.latestReminder) {
+      params.push({ role: 'latest_reminder', content: reply.latestReminder })
+    }
+    params.push(toUserParam(user), toAssistantParam(reply))
+    return params
+  })
+  const sizes = units.map((params) => estimateChars(params))
+  // 本轮提问与系统快照永远保留，但占预算
+  const fixedChars = estimateChars(questionParam) + (latestReminder?.length ?? 0)
+  const window = selectRoundWindow(sizes, budget, fixedChars)
+  const kept = units.slice(units.length - window.kept)
+  if (kept.length < units.length) {
+    const report: ContextTrimReport = {
+      roundsTotal: units.length,
+      roundsKept: kept.length,
+      roundsDropped: units.length - kept.length,
+      charsBefore: sizes.reduce<number>((sum, size) => sum + size, 0) + fixedChars,
+      charsAfter: window.chars,
+      tokensBefore: estimateTokens(
+        sizes.reduce<number>((sum, size) => sum + size, 0) + fixedChars
+      ),
+      tokensAfter: estimateTokens(window.chars),
+      maxTokens: budget.maxTokens,
+      maxRounds: budget.maxRounds,
+      reason: window.reason,
+    }
+    reportContextTrim(report)
+    try {
+      options?.onTrim?.(report)
+    } catch {
+      // 观测失败不影响请求
+    }
+  }
   const messages: MessageParam[] = []
   let previousReminder: string | undefined
   const appendReminder = (reminder: string | undefined) => {
@@ -337,16 +400,17 @@ export const toRequestMessages = (
       previousReminder = reminder
     }
   }
-  for (const [user, reply] of getContextRounds(history)) {
-    // 历史提问没有文字、附件也都没有 serverId 时，提问为空，连同回答一起省略。
-    if (!user.content && toFileBlocks(user.files).length === 0) {
-      continue
+  for (const params of kept) {
+    for (const param of params) {
+      if (param.role === 'latest_reminder') {
+        appendReminder(param.content)
+      } else {
+        messages.push(param)
+      }
     }
-    appendReminder(reply.latestReminder)
-    messages.push(toUserParam(user), toAssistantParam(reply))
   }
   appendReminder(latestReminder)
-  messages.push(toUserParam(question))
+  messages.push(questionParam)
   if (prefix?.prefix) {
     const assistant = toAssistantParam(prefix, true, thinking)
     // 没有非空白正文或有效思考时直接重发原问题，避免服务端拒绝空 Prefill。
