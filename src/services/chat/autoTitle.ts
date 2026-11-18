@@ -6,7 +6,9 @@
  * 所以在首轮回答正常结束后，本地补一次标题请求：
  *
  * 1. 只喂第一条人类消息，并包成 JSON 数组（模型看到的是数据而不是新指令，防注入）
- * 2. 非流式、max_tokens 很小、不开 thinking（省 token）
+ * 2. **流式**、max_tokens 很小、不开 thinking（省 token）。标题只取第一个非空行，
+ *    所以读到「第一行已完整」或长度到上限就立刻断开连接（#93），不等整段生成完：
+ *    上游少生成一截 token，也少占一会儿并发槽位
  * 3. 硬限制：maxInputBytes / maxOutputTokens / timeoutMs
  * 4. 输出清洗：只取第一个非空行、剥掉整行的强调外壳、去掉引号与控制字符
  * 5. 任何失败（超时 / 网络 / 非 2xx / 空 / finish 原因异常 / 清洗后为空）都回退到本地截取，
@@ -27,8 +29,10 @@ import {
   getModel,
 } from '../api/apiConfig.js'
 import { authHeaders, request } from '../api/client.js'
+import { readServerSentEvents } from '../api/sse.js'
 import { translate } from '../../i18n/index.js'
 import { autoTitleLimiter, isAutoTitleThrottled } from './autoTitleQueue.js'
+import { createTitleStreamReader, type TitleStreamProtocol } from './autoTitleStream.js'
 
 /**
  * 生成标题的 system prompt（标题语言跟随消息语言）。
@@ -224,7 +228,7 @@ const readOpenAIReply = (payload: unknown): TitleReply => {
   return { text: null }
 }
 
-/** 标题请求体：非流式、max_tokens 很小、不开 thinking */
+/** 标题请求体：流式（拿到标题行即断开）、max_tokens 很小、不开 thinking */
 const toTitleRequest = (text: string): unknown => {
   const spec = getCurrentSpec()
   const user = encodeUserText(text)
@@ -232,7 +236,7 @@ const toTitleRequest = (text: string): unknown => {
     return {
       model: getModel(),
       max_tokens: AUTO_TITLE_MAX_OUTPUT_TOKENS,
-      stream: false,
+      stream: true,
       messages: [
         { role: 'system', content: autoTitleSystemPrompt() },
         { role: 'user', content: user },
@@ -242,7 +246,7 @@ const toTitleRequest = (text: string): unknown => {
   return {
     model: getModel(),
     max_tokens: AUTO_TITLE_MAX_OUTPUT_TOKENS,
-    stream: false,
+    stream: true,
     system: autoTitleSystemPrompt(),
     messages: [{ role: 'user', content: user }],
   }
@@ -254,6 +258,40 @@ type TitleAttempt =
   | { kind: 'empty' }
   | { kind: 'throttled' }
   | { kind: 'failed' }
+
+/**
+ * 读一次标题响应：流式增量拼标题，够用就断开（`reader.cancel()` 会真的掐掉上游生成，
+ * 而不是把它读完再丢掉）。网关忽略 `stream: true` 直接回 JSON 时退回整段解析，
+ * 行为与改流式之前完全一致。
+ */
+const readTitleReply = async (
+  response: Response,
+  protocol: TitleStreamProtocol,
+  signal: AbortSignal
+): Promise<TitleReply> => {
+  const contentType = (response.headers.get('Content-Type') ?? '').toLowerCase()
+  if (!response.body || !contentType.includes('text/event-stream')) {
+    const payload: unknown = await response.json()
+    return protocol === 'openai' ? readOpenAIReply(payload) : readAnthropicReply(payload)
+  }
+  const reader = createTitleStreamReader(protocol, { maxChars: AUTO_TITLE_MAX_CHARS })
+  for await (const event of readServerSentEvents(response.body, signal)) {
+    reader.push(event)
+    const failure = reader.failure()
+    if (failure) {
+      throw failure
+    }
+    if (reader.enough()) {
+      // 标题够用了：立刻退出循环，生成器在 finally 里取消正文读取（提前中止上游生成）
+      break
+    }
+  }
+  // 超时 / 调用方取消：宁可回退本地截取，也不把读了一半的内容当标题
+  if (signal.aborted) {
+    throw new Error('auto title stream aborted')
+  }
+  return reader.accepted() ? { text: reader.text() } : { text: null }
+}
 
 /**
  * 真正发一次标题请求（不含背压）。任何异常（超时、网络、非 2xx、非 JSON、finish 原因异常）
@@ -272,9 +310,7 @@ const attemptTitle = async (text: string, signal?: AbortSignal): Promise<TitleAt
       body: JSON.stringify(toTitleRequest(text)),
       signal: controller.signal,
     })
-    const payload: unknown = await response.json()
-    const reply =
-      spec.protocol === 'openai' ? readOpenAIReply(payload) : readAnthropicReply(payload)
+    const reply = await readTitleReply(response, spec.protocol, controller.signal)
     return reply.text ? { kind: 'ok', text: reply.text } : { kind: 'empty' }
   } catch (error) {
     // 被限流（429 / 上游限流语义）要与普通失败分开记账：限流是可自愈的，不该混进失败率
