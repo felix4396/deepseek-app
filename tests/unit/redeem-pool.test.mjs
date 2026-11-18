@@ -384,8 +384,8 @@ console.log('\n[9] 价格取 /api/plans；客户端不暴露图片 / 文件输�
   const state = await ours.fetchPlans(transport)
   eq(calls[0].url, `${ours.OURS_API_BASE}/api/plans`, '取套餐打 /api/plans')
   eq(state.status, 'success', '套餐解析成功')
-  eq(ours.formatPlanMeta(state.plans[0]), '¥0.10 · 300 积分', 'p1 价格来自服务端')
-  eq(ours.formatPlanMeta(state.plans[1]), '¥39.00 · 3,900 积分', 'p2 价格来自服务端')
+  eq(ours.formatPlanMeta(state.plans[0], zh.oursPointsUnit), '¥0.10 · 300 积分', 'p1 价格来自服务端')
+  eq(ours.formatPlanMeta(state.plans[1], zh.oursPointsUnit), '¥39.00 · 3,900 积分', 'p2 价格来自服务端')
 }
 
 // ---------------------------------------------------------------- [10] 协议层 stub 服务器

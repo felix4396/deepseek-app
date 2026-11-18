@@ -124,9 +124,9 @@ console.log('\n[1] 套餐：价格与积分取服务端，渲染模板可拼')
   eq(state.plans[0].price, 3, '价格来自服务端（p1 = 3）')
   eq(state.plans[0].points, 300, '积分来自服务端（p1 = 300）')
   eq(formatPlanPrice(state.plans[0]), '¥3.00', '价格文案')
-  eq(formatPoints(state.plans[0].points), '300 积分', '积分文案')
+  eq(formatPoints(state.plans[0].points, zh.oursPointsUnit), '300 积分', '积分文案')
   // 套餐行渲染就是这一个纯函数（界面直接用它，不再拼 i18n 模板）
-  eq(formatPlanMeta(state.plans[0]), '¥3.00 · 300 积分', '套餐行渲染文案')
+  eq(formatPlanMeta(state.plans[0], zh.oursPointsUnit), '¥3.00 · 300 积分', '套餐行渲染文案')
   const broken = await fetchPlans(fakeTransport([{ kind: 'response', status: 200, text: 'nope' }]).transport)
   eq(broken.status, 'error', '非法 JSON → error')
   eq(broken.messageKey, 'oursPlansFailed', '非法 JSON 文案 key')
@@ -139,12 +139,12 @@ console.log('\n[1] 套餐：价格与积分取服务端，渲染模板可拼')
 console.log('\n[2] 额度只显示积分：不做 points → 人民币折算（#75）')
 {
   eq(
-    translate('oursQuotaValue', { points: formatPoints(300) }),
+    translate('oursQuotaValue', { points: formatPoints(300, zh.oursPointsUnit) }),
     '300 积分',
     '额度整行文案：只有积分'
   )
   eq(
-    translate('oursQuotaValue', { points: formatPoints(100) }),
+    translate('oursQuotaValue', { points: formatPoints(100, zh.oursPointsUnit) }),
     '100 积分',
     '额度整行文案：100 积分不折算'
   )
@@ -396,7 +396,7 @@ console.log('\n[8] 兑换：request_id 固定用卡密；202 是「处理中」�
   eq(Object.keys(body).sort(), ['api_key', 'card_no', 'request_id'], '请求体字段')
   eq(body.request_id, CARD, 'request_id 就是卡密')
   eq(
-    translate('oursRedeemSuccess', { points: formatPoints(result.points) }),
+    translate('oursRedeemSuccess', { points: formatPoints(result.points, zh.oursPointsUnit) }),
     '兑换成功，+300 积分',
     '成功文案（不再带 ¥ 折算）'
   )
