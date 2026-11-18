@@ -606,4 +606,9 @@ export const zh = {
   settingDialogReadingLineCompact: '紧凑',
   settingDialogReadingLineStandard: '标准',
   settingDialogReadingLineRelaxed: '宽松',
+  settingDialogEnterKeyMode: '回车键行为',
+  settingDialogEnterKeyModeDescription: '回车发送换行、或只换行靠发送按钮，按你的习惯选；手机软键盘的回车键会跟着变。',
+  settingDialogEnterKeySend: '回车发送（Shift + 回车换行）',
+  settingDialogEnterKeyModifierSend: 'Ctrl / ⌘ + 回车发送（回车换行）',
+  settingDialogEnterKeyButtonOnly: '只换行（点发送按钮才发送）',
 } as const

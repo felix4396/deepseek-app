@@ -27,6 +27,7 @@ import { useIsMobile } from '../../app/viewport.js'
 import { useChatStore } from '../../services/chat/store.js'
 import {
   setLocale,
+  setEnterKeyMode,
   setReadingFontSize,
   setReadingFontWeight,
   setReadingLineHeight,
@@ -34,6 +35,7 @@ import {
   setThinkingDisplay,
   setTtsVoice,
   useSettings,
+  type EnterKeyMode,
   type ReadingFontSize,
   type ReadingFontWeight,
   type ReadingLineHeight,
@@ -138,6 +140,7 @@ const SettingsContent = ({ visible }: { visible: boolean }) => {
               <ThinkingDisplaySetting />
               <AppUpdateField />
               <ReadingSettings />
+              <EnterKeySettings />
               {/* 「位置信息」已从设置页移除（1.4.0-beta.1）：location 仍在 store 里读取，
                   只用于 latest_reminder 快照，界面上不再暴露入口。 */}
             </>
@@ -1191,5 +1194,39 @@ const ReadingSettings = () => {
         }
       />
     </>
+  )
+}
+
+/**
+ * 回车键行为（issue #108）：发送 / Ctrl-Cmd 发送 / 只换行。默认「发送」= 改造前的现状，
+ * 没动过设置的用户手感完全不变（两条用户反馈分别来自 iOS 与 Android 习惯，所以做成可配置而不是翻转默认）。
+ * 判定逻辑在 components/chatInput/enterKey.ts，这里只提供选择入口。
+ */
+const enterKeyModeOptions: { value: EnterKeyMode; label: TranslationKey }[] = [
+  { value: 'enter-send', label: 'settingDialogEnterKeySend' },
+  { value: 'modifier-send', label: 'settingDialogEnterKeyModifierSend' },
+  { value: 'button-only', label: 'settingDialogEnterKeyButtonOnly' },
+]
+
+const EnterKeySettings = () => {
+  const t = useTranslate()
+  const enterKeyMode = useSettings((state) => state.enterKeyMode)
+  return (
+    <SettingCell
+      label={t('settingDialogEnterKeyMode')}
+      description={t('settingDialogEnterKeyModeDescription')}
+      status={null}
+      action={
+        <Select
+          ariaLabel={t('settingDialogEnterKeyMode')}
+          value={enterKeyMode}
+          options={enterKeyModeOptions.map((option) => ({
+            value: option.value,
+            label: t(option.label),
+          }))}
+          onChange={setEnterKeyMode}
+        />
+      }
+    />
   )
 }

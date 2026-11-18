@@ -33,6 +33,15 @@ export type ReadingFontWeight = 'regular' | 'medium' | 'bold'
 export type ReadingLineHeight = 'compact' | 'standard' | 'relaxed'
 
 /**
+ * 回车键行为（issue #108）。默认 enter-send = 改造前写死的行为，老用户升级后手感不变：
+ * - enter-send：回车发送，Shift+回车换行
+ * - modifier-send：回车换行，Ctrl/Cmd+回车发送
+ * - button-only：回车只换行，必须点发送按钮
+ * 判定逻辑在 components/chatInput/enterKey.ts（纯函数），这里只负责「选了哪一档」。
+ */
+export type EnterKeyMode = 'enter-send' | 'modifier-send' | 'button-only'
+
+/**
  * 本机设置，存 localStorage：语言、主题、位置、朗读音色、快速/专家模式（= 深度思考档位）、
  * 思考过程显示方式、智能搜索开关、侧边栏收起状态。
  * API Key 不再单独存放，改由 providers.ts 的模型服务配置管理（旧 chat-demo:api-key 仅用于迁移）。
@@ -49,6 +58,7 @@ type Settings = {
   readingFontSize: ReadingFontSize
   readingFontWeight: ReadingFontWeight
   readingLineHeight: ReadingLineHeight
+  enterKeyMode: EnterKeyMode
   search: boolean
   siderCollapsed: boolean
 }
@@ -64,6 +74,7 @@ const KEYS = {
   readingFontSize: 'chat-demo:reading-font-size',
   readingFontWeight: 'chat-demo:reading-font-weight',
   readingLineHeight: 'chat-demo:reading-line-height',
+  enterKeyMode: 'chat-demo:enter-key-mode',
   search: 'chat-demo:search',
   siderCollapsed: 'chat-demo:sider-collapsed',
 } as const
@@ -146,6 +157,14 @@ const initialReadingLineHeight = (): ReadingLineHeight => {
   return saved === 'compact' || saved === 'relaxed' || saved === 'standard' ? saved : 'standard'
 }
 
+/** 回车键行为默认「回车发送」= 改造前的写死行为；脏值回落默认档，不让非法值影响手感 */
+const initialEnterKeyMode = (): EnterKeyMode => {
+  const saved = read(KEYS.enterKeyMode)
+  return saved === 'enter-send' || saved === 'modifier-send' || saved === 'button-only'
+    ? saved
+    : 'enter-send'
+}
+
 /** 未保存过时使用服务端默认音色 stella（海星） */
 const initialTtsVoice = (): TtsVoice => (read(KEYS.ttsVoice) === 'tide' ? 'tide' : 'stella')
 
@@ -171,6 +190,7 @@ export const useSettings = create<Settings>(() => {
     readingFontSize: initialReadingFontSize(),
     readingFontWeight: initialReadingFontWeight(),
     readingLineHeight: initialReadingLineHeight(),
+    enterKeyMode: initialEnterKeyMode(),
     search: read(KEYS.search) === 'true',
     siderCollapsed: read(KEYS.siderCollapsed) === 'true',
   }
@@ -229,6 +249,12 @@ export const setReadingFontWeight = (readingFontWeight: ReadingFontWeight) => {
 export const setReadingLineHeight = (readingLineHeight: ReadingLineHeight) => {
   write(KEYS.readingLineHeight, readingLineHeight)
   useSettings.setState({ readingLineHeight })
+}
+
+/** 回车键行为的唯一写入口：切换后立即生效（输入框订阅同一个 store），并落 localStorage */
+export const setEnterKeyMode = (enterKeyMode: EnterKeyMode) => {
+  write(KEYS.enterKeyMode, enterKeyMode)
+  useSettings.setState({ enterKeyMode })
 }
 
 export const setSearch = (search: boolean) => {
