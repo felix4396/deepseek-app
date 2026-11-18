@@ -12,6 +12,7 @@ import {
   type LogSnapshot,
   type SystemInfo,
 } from './types.js'
+import { redact, redactUrl, safeString, truncate } from './redact.js'
 
 /**
  * 采集层：只负责「记什么」。
@@ -56,37 +57,9 @@ interface DiagnosticsDB extends DBSchema {
 
 // ---------------------------------------------------------------- 脱敏
 
-const REDACTION_RULES: { pattern: RegExp; replacement: string }[] = [
-  // API Key（DeepSeek / OpenAI 风格）
-  { pattern: /sk-[A-Za-z0-9_-]{20,}/g, replacement: 'sk-***' },
-  // Authorization: Bearer xxx
-  { pattern: /Bearer\s+\S+/g, replacement: 'Bearer ***' },
-  // 对象存储 / 网盘的签名参数
-  { pattern: /Signature=[^&]*/g, replacement: 'Signature=***' },
-  { pattern: /AccessKeyId=[^&]*/g, replacement: 'AccessKeyId=***' },
-  { pattern: /[?&]token=[^&]*/g, replacement: 'token=***' },
-]
-
-/** 把一段文本里可能出现的密钥 / 签名统一替换成 *** */
-export const redact = (text: string): string =>
-  REDACTION_RULES.reduce((out, rule) => out.replace(rule.pattern, rule.replacement), text)
-
-/**
- * URL 脱敏：只保留 path，query / hash / host 全部丢掉（签名参数、token 都在 query 里）。
- * 解析失败时退化成「去 query 后再过一遍脱敏规则」。
- */
-export const redactUrl = (value: string): string => {
-  try {
-    const url = new URL(value, 'http://redacted.local')
-    return redact(url.pathname) || '/'
-  } catch {
-    return redact(value.split(/[?#]/)[0] ?? value) || '/'
-  }
-}
-
-
-const truncate = (text: string, limit: number): string =>
-  text.length > limit ? text.slice(0, limit) : text
+// 规则本体搬到零依赖的 redact.ts：错误页（src/app/errorReport.ts）要用同一套规则，
+// 而错误页不该被 IndexedDB / Capacitor 的依赖拖进来。这里保持原有导出名不变。
+export { redact, redactUrl } from './redact.js'
 
 export const UNKNOWN_HOST = 'unknown'
 
@@ -121,20 +94,6 @@ export const redactHost = (value: string): string => {
     return truncate(redact(hostOnly), 120) || UNKNOWN_HOST
   } catch {
     return UNKNOWN_HOST
-  }
-}
-
-const safeString = (value: unknown): string => {
-  if (typeof value === 'string') {
-    return value
-  }
-  if (value instanceof Error) {
-    return value.message || value.name
-  }
-  try {
-    return JSON.stringify(value) ?? String(value)
-  } catch {
-    return String(value)
   }
 }
 

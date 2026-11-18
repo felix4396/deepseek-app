@@ -1,0 +1,95 @@
+/*
+ * 全局错误页（issue #28）：铺满整屏，居中一张卡片。
+ * 只用现有设计变量（--dsw-alias-* / --ds-font-size-*），亮暗主题自动跟随。
+ * 390 / 360 窄屏要点：卡片宽度自适应、报错文本 any-where 折行 + 限高滚动，
+ * 按钮 flex-wrap，任何长度都不横向溢出。
+ */
+.screen {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px 20px;
+  overflow-y: auto;
+  background-color: var(--dsw-alias-bg-base);
+  color: var(--dsw-alias-label-primary);
+}
+
+.card {
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 480px;
+  padding: 24px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 16px;
+  background-color: var(--dsw-alias-bg-layer-2);
+  /* 长单词 / 长路径也不能把卡片撑破 */
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.title {
+  font-size: var(--ds-font-size-l, 16px);
+  font-weight: 600;
+  line-height: 24px;
+}
+
+.description {
+  margin-top: 8px;
+  font-size: var(--ds-font-size-m, 14px);
+  line-height: 22px;
+  color: var(--dsw-alias-label-secondary);
+}
+
+.detail {
+  display: block;
+  box-sizing: border-box;
+  max-height: 96px;
+  margin-top: 16px;
+  padding: 10px 12px;
+  overflow: auto;
+  border-radius: 8px;
+  background-color: var(--dsw-alias-markdown-inline-code);
+  color: var(--dsw-alias-label-tertiary);
+  font-family: var(--ds-font-family-code);
+  font-size: 12px;
+  line-height: 18px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.hint {
+  margin-top: 12px;
+  color: var(--dsw-alias-label-caption);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+@media (max-width: 400px) {
+  .screen {
+    padding: 16px 12px;
+  }
+
+  .card {
+    padding: 20px 16px;
+  }
+
+  /* 窄屏上两个动作上下排，避免挤成两半截 */
+  .actions {
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .actions > button {
+    width: 100%;
+  }
+}

@@ -16,6 +16,7 @@ export const Modal = ({
   children,
   footer,
   closable = false,
+  dismissDisabled = false,
   className,
   mainClassName,
   visible = true,
@@ -26,6 +27,12 @@ export const Modal = ({
   footer?: ReactNode
   /** 标题栏右侧显示关闭按钮 */
   closable?: boolean
+  /**
+   * 暂时禁用「点 X / 点遮罩」关闭：上层还叠着一个确认弹窗时，
+   * 下层遮罩是全屏的，点击只会落到上层的取消动作上，看起来就像 X 坏了（issue #28）。
+   * Esc 不受影响：它始终只关闭最上层弹窗。
+   */
+  dismissDisabled?: boolean
   className?: string
   /** 内容区的 class */
   mainClassName?: string
@@ -103,7 +110,7 @@ export const Modal = ({
       ref={overlayRef}
       className={styles.overlay}
       data-motion-state={shown ? 'open' : 'closed'}
-      onMouseDown={(event) => event.target === event.currentTarget && onClose()}
+      onMouseDown={(event) => event.target === event.currentTarget && !dismissDisabled && onClose()}
     >
       <div
         ref={contentRef}
@@ -123,6 +130,7 @@ export const Modal = ({
               tone="primary"
               icon={<IconCloseOutline16 />}
               aria-label={t('close')}
+              disabled={dismissDisabled}
               onClick={onClose}
             />
           ) : null}

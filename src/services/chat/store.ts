@@ -4,12 +4,25 @@ import { ApiError, streamMessage } from '../api/client.js'
 import type { CreateMessageRequest } from '../api/types.js'
 import { classifyApiError, extractFileIds, getFileErrorCode, isRetryableApiError } from '../api/errors.js'
 import { cancelUpload, describeUploadError, uploadAttachment, useUploads } from '../attachments.js'
-import { captureStateSnapshot, errorMeta, record, recordAction, recordEvent } from '../diagnostics/collector.js'
+import {
+  captureStateSnapshot,
+  errorMeta,
+  record,
+  recordAction,
+  recordError,
+  recordEvent,
+} from '../diagnostics/collector.js'
 import { getApiKey, getCurrentSpec, getModel } from '../api/apiConfig.js'
 import { requestGates } from '../api/providers.js'
 import { useSettings } from '../settings.js'
 import { generateSessionTitle } from './autoTitle.js'
-import { appendBranch, getVisibleMessages, normalizeSession, selectVersion } from './branches.js'
+import {
+  appendBranch,
+  getVisibleMessages,
+  normalizeSession,
+  selectVersion,
+  type SessionDamageReporter,
+} from './branches.js'
 import * as db from './db.js'
 import {
   clearAllDrafts,
@@ -346,6 +359,26 @@ export const initChat = (): Promise<void> => {
   return initTask
 }
 
+/**
+ * 读到损坏数据时记一条诊断（issue #28）：只记字段 / 动作 / 条数，**不记正文**。
+ * stage 固定 session.normalize，便于在日志里和会话加载失败区分开。
+ */
+const reportSessionDamage: SessionDamageReporter = (damage) => {
+  const first = damage[0]
+  recordError('session data repaired', {
+    stage: 'session.normalize',
+    reason: 'corrupt-storage',
+    'damage.count': damage.length,
+    'damage.fields': Array.from(new Set(damage.map((item) => `${item.field}:${item.action}`)))
+      .sort()
+      .join(','),
+    ...(first === undefined ? {} : { 'damage.firstField': `${first.field}:${first.action}` }),
+    ...(first?.received === undefined ? {} : { 'damage.received': first.received }),
+    ...(first?.dropped === undefined ? {} : { 'damage.dropped': first.dropped }),
+    ...(first?.messageId === undefined ? {} : { 'damage.messageId': first.messageId }),
+  })
+}
+
 /** 同一会话合并并发读取；切换只改变 activeId，旧请求不会把界面切回去。 */
 const ensureSessionLoaded = (id: string): Promise<void> => {
   if (getSession(id)) {
@@ -372,7 +405,7 @@ const ensureSessionLoaded = (id: string): Promise<void> => {
       if (!stored) {
         throw new Error(`Session ${id} is missing from local storage`)
       }
-      const settled = settleInterrupted(normalizeSession(stored))
+      const settled = settleInterrupted(normalizeSession(stored, reportSessionDamage))
       // 读取期间可能已在列表重命名，保留最新元数据，不能让旧读取覆盖它。
       const session = sameSummary(settled, summary) ? settled : { ...settled, ...summary }
       touchSession(id)

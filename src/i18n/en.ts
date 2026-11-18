@@ -427,4 +427,13 @@ export const en = {
   oursErrTimeout: 'Request timed out, retry later',
   oursErrInvalidResponse: 'Unexpected server response, retry later',
   oursErrUnknown: 'Operation failed, retry later',
+  errorScreenTitle: 'This page could not be displayed',
+  errorScreenDescription:
+    'The app hit an error while rendering this screen, so it stopped here instead of failing silently. Your saved chats are not deleted and will be there after a reload.',
+  errorScreenReload: 'Reload app',
+  errorScreenCopyDiagnostics: 'Copy diagnostics',
+  errorScreenCopied: 'Diagnostics copied',
+  errorScreenCopyFailed: 'Copy failed, please retry',
+  errorScreenHint:
+    'If a reload does not help, copy the diagnostics into your feedback (error location and version only; no chat content or API keys).',
 } satisfies Record<keyof typeof zh, string>

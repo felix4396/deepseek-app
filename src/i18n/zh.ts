@@ -404,4 +404,13 @@ export const zh = {
   oursErrTimeout: '请求超时，请稍后重试',
   oursErrInvalidResponse: '服务端返回异常，请稍后重试',
   oursErrUnknown: '操作失败，请稍后重试',
+  errorScreenTitle: '页面没能显示出来',
+  errorScreenDescription:
+    '应用在渲染界面时遇到了一个错误，为了不让它继续崩下去，先停在这里。本地已保存的对话不会被删除，重载后可以继续使用。',
+  errorScreenReload: '重载应用',
+  errorScreenCopyDiagnostics: '复制诊断信息',
+  errorScreenCopied: '诊断信息已复制',
+  errorScreenCopyFailed: '复制失败，请重试',
+  errorScreenHint:
+    '若重载后仍然这样，请复制诊断信息附在反馈里（只有错误位置与版本，不含聊天正文与 API Key）。',
 } as const

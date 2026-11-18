@@ -16,6 +16,7 @@ import {
 } from './BranchSwitcher.js'
 import { MessageFile } from './MessageFile.js'
 import { CopyButton } from './CopyButton.js'
+import { asArray } from '../../utils/safeArray.js'
 import styles from './UserMessage.module.css'
 
 export const UserMessage = memo(function UserMessage({
@@ -43,7 +44,10 @@ export const UserMessage = memo(function UserMessage({
   const [draft, setDraft] = useState(message.content)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const isMobile = useIsMobile()
-  const canSend = !busy && (draft.trim() !== '' || message.files.length > 0)
+  // 存储里的 files 可能被写成 null（半写入 / 导入中断 / 外部改库）：兜底成空数组，
+  // 否则 message.files.length 直接抛 TypeError → 整屏白屏（issue #28）
+  const files = asArray(message.files)
+  const canSend = !busy && (draft.trim() !== '' || files.length > 0)
 
   useLayoutEffect(() => {
     const textarea = textareaRef.current
@@ -62,14 +66,14 @@ export const UserMessage = memo(function UserMessage({
 
   return (
     <div className={clsx(styles.container, isFirst && styles.isFirst)}>
-      {message.files.length > 0 ? (
+      {files.length > 0 ? (
         <div
           className={clsx(
             styles.files,
-            message.files.some((file) => !file.isImage) && styles.filesWithDocuments
+            files.some((file) => !file.isImage) && styles.filesWithDocuments
           )}
         >
-          {message.files.map((file) => (
+          {files.map((file) => (
             <MessageFile
               key={file.id}
               file={file}
