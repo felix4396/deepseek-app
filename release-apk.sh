@@ -190,17 +190,18 @@ file_md5(){ if command -v md5sum >/dev/null 2>&1; then md5sum "$1" | cut -d' ' -
 file_sha256(){ sha256sum "$1" | cut -d' ' -f1; }
 # APK 内的构建变体标记：aapt2 dump badging 不输出 meta-data，必须解析 xmltree
 apk_variant(){
-  "${AAPT2}" dump xmltree "$1" --file AndroidManifest.xml 2>/dev/null | python3 - <<'PYV' 2>/dev/null || true
+  # 注意：不能用 `python3 - <<HEREDOC`，那会把 heredoc 抢成 stdin、管道内容丢失（曾误报“无标记”）
+  "${AAPT2}" dump xmltree "$1" --file AndroidManifest.xml 2>/dev/null | python3 -c "
 import re, sys
 txt = sys.stdin.read()
 best = ''
 for block in txt.split('E: meta-data'):
     if 'ARTIFACT_VARIANT' in block:
-        m = re.search(r'android:value\(0x[0-9a-f]+\)="([^"]*)"', block)
+        m = re.search(r'android:value\(0x[0-9a-f]+\)=\"([^\"]*)\"', block)
         if m:
             best = m.group(1)
 print(best)
-PYV
+" 2>/dev/null || true
 }
 
 # 状态文件（JSON）
