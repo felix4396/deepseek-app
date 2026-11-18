@@ -7,7 +7,7 @@
 //
 // 覆盖（对应任务书验收）：
 //   [1] 套餐：价格与积分全部取服务端（p1 = ¥3.00 / 300 积分），不硬编码；渲染模板可拼
-//   [2] 积分 → 金额：1 元 = 100 积分；额度文案同时给积分与「约可消费 ¥X」，不写 token/美元
+//   [2] 积分只显示积分（#75）：额度文案不再做 points→人民币折算，zh/en 均无「约可消费 / about ¥」
 //   [3] Key 校验：只回答有效/无效，不含任何额度；URL 不带 Key，走 Authorization 头
 //   [4] /buy：GET、只发一次、followRedirects=false；从 302 的 Location（return_url）里取 order_token
 //   [5] /buy 的失败面：http 收银台不认、缺令牌直接说清楚、网页版兜底（跟随后的最终 URL）
@@ -33,12 +33,13 @@ registerHooks({
 })
 
 const { zh } = await import('../../src/i18n/zh.ts')
+const { en } = await import('../../src/i18n/en.ts')
+const oursApi = await import('../../src/services/ours/api.ts')
 const {
   fetchPlans,
   formatPlanMeta,
   formatPlanPrice,
   formatPoints,
-  formatYuan,
   isOpenableCheckout,
   maskCard,
   maskKey,
@@ -46,7 +47,6 @@ const {
   OURS_API_BASE,
   OURS_PAYMENT_OPEN,
   parseCheckoutTarget,
-  pointsToYuan,
   pollOrder,
   probeApiKey,
   queryOrder,
@@ -135,23 +135,36 @@ console.log('\n[1] 套餐：价格与积分取服务端，渲染模板可拼')
   eq(OURS_PAYMENT_OPEN, true, '购买入口已放开（服务端价格与套餐一致）')
 }
 
-// ---------------------------------------------------------------- [2] 积分 ↔ 金额
-console.log('\n[2] 积分 → 金额：1 元 = 100 积分')
+// ---------------------------------------------------------------- [2] 额度只显示积分
+console.log('\n[2] 额度只显示积分：不做 points → 人民币折算（#75）')
 {
-  eq(pointsToYuan(300), 3, '300 积分 = ¥3')
-  eq(formatYuan(300), '¥3.00', '300 积分文案')
-  eq(formatYuan(100), '¥1.00', '100 积分 = ¥1')
-  eq(formatYuan(0), '¥0.00', '0 积分 = ¥0')
-  eq(formatYuan(1250), '¥12.50', '1250 积分 = ¥12.50')
   eq(
-    translate('oursQuotaValue', { points: formatPoints(300), yuan: formatYuan(300) }),
-    '300 积分（约可消费 ¥3.00）',
-    '额度整行文案：积分 + 约可消费金额'
+    translate('oursQuotaValue', { points: formatPoints(300) }),
+    '300 积分',
+    '额度整行文案：只有积分'
   )
-  const all = JSON.stringify(zh)
+  eq(
+    translate('oursQuotaValue', { points: formatPoints(100) }),
+    '100 积分',
+    '额度整行文案：100 积分不折算'
+  )
+  // 折算函数必须彻底消失：留着就会有人再按 1 元 = 100 积分拼回去（/api/plans 实际是 3000 积分/元）
+  eq(typeof oursApi.pointsToYuan, 'undefined', '不再导出 pointsToYuan')
+  eq(typeof oursApi.formatYuan, 'undefined', '不再导出 formatYuan')
+  eq(typeof oursApi.POINTS_PER_YUAN, 'undefined', '不再导出 POINTS_PER_YUAN')
+  // zh/en 都不许留死键与残留换算模板
+  const residue = []
+  for (const [locale, table] of [['zh', zh], ['en', en]]) {
+    for (const [key, text] of Object.entries(table)) {
+      if (!key.startsWith('ours')) continue
+      if (typeof text !== 'string') continue
+      if (/\{yuan\}|约可消费|approx|about \{|¥/.test(text)) residue.push(`${locale}.${key}=${text}`)
+    }
+  }
+  eq(residue, [], 'zh/en 额度相关文案里没有 ¥ 折算残留')
   truthy(!/token/.test(zh.oursQuotaValue), '额度文案里没有 token')
   truthy(!/\$/.test(zh.oursQuotaValue), '额度文案里没有美元符号')
-  truthy(!/USD/i.test(all), '文案里没有 USD')
+  truthy(!/USD/i.test(JSON.stringify(zh)), '文案里没有 USD')
 }
 
 // ---------------------------------------------------------------- [3] Key 校验
@@ -383,9 +396,9 @@ console.log('\n[8] 兑换：request_id 固定用卡密；202 是「处理中」�
   eq(Object.keys(body).sort(), ['api_key', 'card_no', 'request_id'], '请求体字段')
   eq(body.request_id, CARD, 'request_id 就是卡密')
   eq(
-    translate('oursRedeemSuccess', { points: formatPoints(result.points), yuan: formatYuan(result.points) }),
-    '兑换成功，+300 积分（约可消费 ¥3.00）',
-    '成功文案'
+    translate('oursRedeemSuccess', { points: formatPoints(result.points) }),
+    '兑换成功，+300 积分',
+    '成功文案（不再带 ¥ 折算）'
   )
   truthy(!JSON.stringify({ ...result, card: '' }).includes(KEY), '结果不含完整 Key')
 
