@@ -1,33 +1,18 @@
 /**
- * 「我们的渠道」的传输层：原生走 CapacitorHttp，Web 走 fetch。
+ * 「我们的渠道」卡密服务的传输层：原生走 CapacitorHttp，Web 走 fetch。
  *
- * 为什么放在单独文件：api.ts / invite/api.ts 是纯逻辑（Node 单测直接 import），
+ * 为什么放在单独文件：api.ts 是纯逻辑（Node 单测直接 import），
  * 而 @capacitor/core 只在这里出现，Web 端 fetch 也可以被 Playwright 的 page.route 打桩，
  * CORS 失败只当作「网络不可用」，不影响业务逻辑本身。
  *
- * 两个导出：
- *  - `httpTransport`   业务默认传输：**不跟随重定向**（原生 disableRedirects、
- *                      Web redirect:'manual'）。/buy 要读 302 的 Location。
- *  - `openCheckout`    用系统浏览器打开收银台（ACTION_VIEW，只放行 https）
- *
- * 网页版（浏览器）**刻意不提供购买能力**：浏览器里 fetch(redirect:'manual') 只能拿到
- * opaqueredirect（status 0、读不到 Location），跟随又会因为收银台域的 CORS 被拦
- * （实测 2026-11-18：pay.xiaodouap.cn 不带 Access-Control-Allow-Origin）。
- * 因此网页版只显示「请在 App 内购买」，不猜单号、不重复下单 —— 购买链路是原生专属能力。
- *
- * 原生的兜底：CapacitorHttp 的 disableRedirects 理论上会带回 302 + location 头，
- * 但这一条在真机上还没验证过；读不到 location 时再走 CheckoutBrowser.resolveLocation
- * （原生 HttpURLConnection，instanceFollowRedirects=false）取一次 Location。
+ * 共同约束：**不跟随重定向**（原生 disableRedirects、Web redirect:'manual'），
+ * /buy 需要读 302 的 Location；超时与连不上分开上报，文案也不同。
  */
 import { Capacitor, CapacitorHttp, registerPlugin } from '@capacitor/core'
 import { isOpenableCheckout, type OursHttpRequest, type OursHttpResult } from './api.js'
 
 /** 原生「用系统浏览器打开收银台」插件（ACTION_VIEW，只放行 https） */
-type CheckoutBrowserPlugin = {
-  open: (options: { url: string }) => Promise<{ opened?: boolean }>
-  /** 只取 302 的 Location（不跟随、不下载正文） */
-  resolveLocation: (options: { url: string }) => Promise<{ status?: number; location?: string }>
-}
+type CheckoutBrowserPlugin = { open: (options: { url: string }) => Promise<{ opened?: boolean }> }
 const CheckoutBrowser = registerPlugin<CheckoutBrowserPlugin>('CheckoutBrowser')
 
 export const isNativePlatform = (): boolean => Capacitor.isNativePlatform()
@@ -42,28 +27,13 @@ const reasonOf = (error: unknown): 'timeout' | 'network' => {
     : 'network'
 }
 
-/** 3xx 但响应头里没有 location（部分实现会把它丢掉）：问一次原生插件 */
-const nativeLocationFallback = async (
-  request: OursHttpRequest,
-  status: number
-): Promise<string> => {
-  if (status < 300 || status >= 400 || request.method !== 'GET') {
-    return ''
-  }
-  try {
-    const resolved = await CheckoutBrowser.resolveLocation({ url: request.url })
-    return (resolved.location ?? '').trim()
-  } catch {
-    return ''
-  }
-}
-
 const nativeRequest = async (request: OursHttpRequest): Promise<OursHttpResult> => {
+  const headers = request.headers
   try {
     const response = await CapacitorHttp.request({
       url: request.url,
       method: request.method,
-      headers: request.headers,
+      headers,
       // CapacitorHttp 会把对象序列化成 JSON；字符串原样发出，content-type 由 headers 决定
       data: request.body,
       responseType: 'text',
@@ -73,9 +43,7 @@ const nativeRequest = async (request: OursHttpRequest): Promise<OursHttpResult> 
       disableRedirects: true,
     })
     const rawHeaders = (response.headers ?? {}) as Record<string, string>
-    const headerLocation = (rawHeaders.location ?? rawHeaders.Location ?? '').trim()
-    const location =
-      headerLocation !== '' ? headerLocation : await nativeLocationFallback(request, response.status)
+    const location = rawHeaders.location ?? rawHeaders.Location ?? ''
     const text =
       typeof response.data === 'string' ? response.data : JSON.stringify(response.data ?? null)
     return { kind: 'response', status: response.status, text, location }
@@ -92,8 +60,8 @@ const webRequest = async (request: OursHttpRequest): Promise<OursHttpResult> => 
       method: request.method,
       headers: request.headers,
       body: request.body,
-      // 关键：不跟随重定向。跨域 302 在浏览器里是 opaqueredirect（status 0、没有 header），
-      // 这正是「不跟随」的代价 —— 网页版取收银台地址走 httpTransportFollowing
+      // 关键：不跟随重定向（跨域 302 在浏览器里是 opaqueredirect，读不到 body，
+      // 但 Location 也拿不到 —— 这正是「不许跟随」的代价，Web 端不靠它取收银台地址）
       redirect: 'manual',
       signal: controller.signal,
     })
@@ -107,7 +75,7 @@ const webRequest = async (request: OursHttpRequest): Promise<OursHttpResult> => 
   }
 }
 
-/** 默认传输：原生 CapacitorHttp / Web fetch，两者都不跟随重定向 */
+/** 默认传输：原生 CapacitorHttp / Web fetch */
 export const httpTransport = (request: OursHttpRequest): Promise<OursHttpResult> =>
   isNativePlatform() ? nativeRequest(request) : webRequest(request)
 
@@ -127,16 +95,6 @@ export const openCheckout = async (url: string): Promise<boolean> => {
       return false
     }
   }
-  // 不用 'noopener' 特性串：带它时 window.open 一律返回 null，就分不清「打开了」和「被拦截」了。
-  // 改成打开后把 opener 置空（同样断掉 opener 引用，但能判断是否真的打开了）。
-  const opened = window.open(url, '_blank')
-  if (opened === null) {
-    return false
-  }
-  try {
-    opened.opener = null
-  } catch {
-    // 跨域窗口设不了 opener 也没关系
-  }
-  return true
+  const opened = window.open(url, '_blank', 'noopener,noreferrer')
+  return opened !== null
 }

@@ -1,26 +1,24 @@
-// [layer: integration | 依赖: playwright + chromium + 本地静态服务（两套后端全部 page.route 打桩） | 耗时: ~2 分钟]
-// Issue #21：「我们的渠道」设备码 / 额度 / 邀请 / 套餐购买 / 订单 / 卡密兑换 UI 验收。
+// [layer: integration | 依赖: playwright + chromium + 本地静态服务（卡密服务用 page.route 打桩） | 耗时: ~2 分钟]
+// Issue #7：「我们的渠道」额度与卡密 UI 验收（标准构建 + 全 mock 的 60012 卡密服务）。
 //
-//   cd /root/worktrees/deepseek-pay-integration
-//   DIST_OUT=dist-standard NODE_ENV=production npx rspack build -c rspack.config.ts
-//   PORT=5296 node tests/integration/ours-services.test.mjs
+//   cd /root/deepseek-app && DIST_OUT=dist-standard NODE_ENV=production npx rspack build -c rspack.config.ts
+//   PORT=5295 node tests/integration/ours-services.test.mjs
 //
-// 被测页面：标准构建，手动切到「我们的渠道」。两套后端全部打桩：
-//   - 邀请 / 额度服务 http://62.106.70.167:60013（明文 HTTP）
-//   - 卡密 / 支付服务 https://apia.ecsafe.cn（HTTPS），含 /buy 的 302 与收银台页
-// CORS 也用假响应头兜住（Web 端 CORS 失败一律按网络错误处理，不会被当成业务失败）。
+// 被测页面：标准构建，手动切到「我们的渠道」。卡密服务 http://123.207.199.196:60012/**
+// 全部由 page.route 打桩（CORS 也用假响应头兜住：Web 端 CORS 失败一律按网络错误处理，
+// 不会被当成业务失败）。
 //
-// 断言（对应任务书验收 1~8）：
-//   [A] 入口只在 ours 渠道出现：切到 DeepSeek 官方后一条 DOM 都没有
-//   [B] 设备码：首次生成、可见、符合 8–128 / [A-Za-z0-9._:-]、重开不变（持久化）
-//   [C] 首次使用自动 /apply；已有 Key 时**不再自动 /apply**（不覆盖用户已填的 Key）
-//   [D] 额度只认邀请服务 /me 的 remaining_points（1 元 = 100 积分），并显示「约可消费 ¥X」
-//   [E] 邀请码：展示自己的 + 已邀请人数；填别人的走 /redeem，六类错误码各有文案
-//   [F] 套餐价格/积分来自 /api/plans；/buy 只点一次；order_token 必须落盘
-//   [G] 订单轮询：待支付 → 已发卡；发卡后显示卡密尾 4 位并提供「一键兑换」
-//   [H] 兑换：成功 → 刷新额度；202 CREDIT_PENDING 显示「处理中」而不是失败；409 提示不要重复提交
-//   [I] 隐私：DOM / console 里没有完整 Key、完整卡密；request_id = 卡密
-//   [J] 390 / 360 两个手机视口 × 9 个状态截图
+// 断言（对应任务书验收 1~6）：
+//   [A] 入口只在 ours 渠道出现：DeepSeek 官方下一条 DOM 都没有
+//   [B] 打开弹层不自动查额度（0 次 /api/balance）；套餐来自 /api/plans 真实字段
+//   [C] 查询额度：Authorization: Bearer，URL 无 query、无 Key；展示余量与 Key 尾 6 位
+//   [D] balance=0(200, 无 auth 生效值) → 「暂未查询到该 Key 的兑换额度（或额度为 0）」，不报错、不提额度不足
+//   [E] 网络失败 → 网络不可用文案（CORS/断网都走这条）
+//   [F] 兑换 pending → 「到账成功，稍后自动同步」且自动刷新额度；409 → 已被使用；IDEMPOTENT → 按成功
+//   [G] 支付未开放：购买按钮禁用 + 只留一行说明；界面上没有建单/查单入口，一次 /buy 请求都不发
+//   [H] 无 interval 轮询：静置 4.5s 后请求数不变
+//   [I] Key / 卡密不出现在 console 与 DOM（只出现脱敏尾号）
+//   [J] 390 / 360 两个手机视口 × 6 个状态截图
 import { spawn } from 'node:child_process'
 import { mkdirSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
@@ -31,26 +29,19 @@ import { selectProviderKind } from '../helpers/helpers.mjs'
 const HERE = path.dirname(fileURLToPath(import.meta.url))
 const ROOT = path.resolve(HERE, '../..')
 const DIST = process.env.DIST_DIR_STANDARD || path.join(ROOT, 'dist-standard')
-const PORT = process.env.PORT || '5296'
+const PORT = process.env.PORT || '5295'
 const APP_URL = process.env.APP_URL || `http://127.0.0.1:${PORT}`
-const INVITE_API = 'http://62.106.70.167:60013'
-const CARD_API = 'https://apia.ecsafe.cn'
-const PAY_HOST = 'https://pay.xiaodouap.cn'
+const CARD_API = 'http://123.207.199.196:60012'
 const SHOT_DIR = path.join(ROOT, 'docs', 'ui')
 
-const KEY = 'sk-live-e2e-ours-8844220011aabbccddeeff'
+const KEY = 'sk-ours-e2e-test-884422'
 const KEY_TAIL = KEY.slice(-6)
-const OUT_TRADE_NO = 'CP2026111816102637F0F8AA'
-const ORDER_TOKEN = 'Lsx2M8cBadOaJrXElnZBLISmtImUtfp9'
-const ORDER_CARD = 'CARD-FULFILLED-9f8e7d'
-const ORDER_CARD_TAIL = ORDER_CARD.slice(-4)
-const CARD_PENDING = 'CARD-CREDIT-PENDING-4471'
+const CARD_PENDING = 'CARD-PENDING-4471'
 const CARD_USED = 'CARD-USED-2222'
-const DEVICE_KEY = 'chat-demo:ours-device-id'
-const ORDER_KEY = 'chat-demo:ours-order'
-
-/** 真实的 /buy 302 Location 结构（out_trade_no 在外层，order_token 在 return_url 里） */
-const CHECKOUT_URL = `${PAY_HOST}/submit.php?pid=10268375&type=alipay&out_trade_no=${OUT_TRADE_NO}&notify_url=${encodeURIComponent('https://apia.ecsafe.cn/notify')}&return_url=${encodeURIComponent(`https://apia.ecsafe.cn/return?no=${OUT_TRADE_NO}&order_token=${ORDER_TOKEN}`)}&money=3.00&sitename=muse2api&sign=deadbeef&sign_type=MD5`
+const CARD_IDEM = 'CARD-IDEM-3333'
+const CARD_TAIL = '9876'
+const OUT_TRADE_NO = 'O20261118001'
+const ORDER_TOKEN = 'tok-ours-e2e-abc123'
 
 const failures = []
 const ok = (message) => console.log(`  ok  ${message}`)
@@ -91,17 +82,9 @@ await new Promise((resolve) => setTimeout(resolve, 800))
 
 const browser = await chromium.launch()
 
-/** 打桩状态：每个用例只改这几个开关 */
-const mock = {
-  /** 'ok' = /apply 正常；'fail' = 连不上（模拟首次领取失败） */
-  apply: 'ok',
-  /** 剩余积分（/apply 与 /me 都用它） */
-  remaining: 100,
-  /** 订单走法：先 pending 再 fulfilled，好把「待支付」也截下来 */
-  order: 'pending-then-fulfilled',
-  orderCalls: 0,
-}
-const calls = { apply: 0, me: 0, balance: 0, plans: 0, buy: 0, order: 0, redeem: 0 }
+/** mock 状态：success / zero / network —— 每个用例只改这一个开关 */
+const mock = { balance: 'success' }
+const calls = []
 const requestLog = []
 const CORS = {
   'access-control-allow-origin': '*',
@@ -109,23 +92,10 @@ const CORS = {
   'access-control-allow-methods': 'GET,POST,OPTIONS',
   'content-type': 'application/json',
 }
-
-const profile = () => ({
-  invite_code: 'G7TA7UR3',
-  invited_count: 1,
-  max_invites: 20,
-  bonus_points: 10,
-  redeemed: true,
-  quota_points: mock.remaining,
-  used_points: 0,
-  remaining_points: mock.remaining,
-  key_status: 'active',
-})
-
 const PLANS = {
   plans: [
-    { id: 'p1', name: '入门包 100万 token', price: 3.0, points: 300, currency: 'CNY', enabled: true },
-    { id: 'p2', name: '标准包 500万 token', price: 39.0, points: 3900, currency: 'CNY', enabled: true },
+    { id: 'p1', name: '入门包 100万 token', price: 9.9, quota: 1000000, currency: 'CNY', enabled: true },
+    { id: 'p2', name: '标准包 500万 token', price: 39.0, quota: 5000000, currency: 'CNY', enabled: true },
   ],
 }
 
@@ -135,135 +105,96 @@ const json = (status, body, extraHeaders = {}) => ({
   body: JSON.stringify(body),
 })
 
-const inviteErrors = {
-  G7TA7UR3: [400, 'own_code'],
-  BADCODE1: [404, 'invalid_code'],
-  USEDCODE: [409, 'already_redeemed'],
-  EXHAUST1: [409, 'code_exhausted'],
-  RATE1234: [429, 'rate_limited'],
-}
-
 const wireMock = async (page) => {
-  // ---------- 邀请 / 额度服务（明文 HTTP） ----------
-  await page.route(`${INVITE_API}/**`, async (route) => {
-    const request = route.request()
-    const url = new URL(request.url())
-    requestLog.push({ host: 'invite', method: request.method(), path: url.pathname, search: url.search, postData: request.postData() ?? '' })
-    if (request.method() === 'OPTIONS') {
-      await route.fulfill({ status: 204, headers: CORS, body: '' })
-      return
-    }
-    if (url.pathname === '/apply') {
-      calls.apply += 1
-      if (mock.apply === 'fail') {
-        await route.abort('failed')
-        return
-      }
-      const body = JSON.parse(request.postData() ?? '{}')
-      const status = calls.apply === 1 ? 201 : 200
-      await route.fulfill(json(status, { ...profile(), key: KEY }))
-      note(`  /apply device_id=${String(body.device_id).slice(0, 4)}…（幂等重试安全）`)
-      return
-    }
-    if (url.pathname === '/me') {
-      calls.me += 1
-      await route.fulfill(json(200, profile()))
-      return
-    }
-    if (url.pathname === '/redeem') {
-      const body = JSON.parse(request.postData() ?? '{}')
-      const code = String(body.invite_code ?? '')
-      const mapped = inviteErrors[code]
-      if (mapped !== undefined) {
-        await route.fulfill(json(mapped[0], { error: { code: mapped[1], message: 'server says no' } }))
-        return
-      }
-      await route.fulfill(json(200, { ...profile(), reward_points: 20, synced: true }))
-      return
-    }
-    await route.fulfill(json(404, { error: { code: 'not_found', message: 'no such path' } }))
-  })
-
-  // ---------- 卡密 / 支付服务（HTTPS） ----------
   await page.route(`${CARD_API}/**`, async (route) => {
     const request = route.request()
     const url = new URL(request.url())
-    requestLog.push({ host: 'card', method: request.method(), path: url.pathname, search: url.search, postData: request.postData() ?? '' })
+    const authorization = request.headers()['authorization'] ?? ''
+    requestLog.push({
+      method: request.method(),
+      path: url.pathname,
+      search: url.search,
+      url: request.url(),
+      authorization,
+      postData: request.postData() ?? '',
+    })
     if (request.method() === 'OPTIONS') {
       await route.fulfill({ status: 204, headers: CORS, body: '' })
       return
     }
     if (url.pathname === '/api/plans') {
-      calls.plans += 1
       await route.fulfill(json(200, PLANS))
       return
     }
     if (url.pathname === '/api/balance') {
-      // 只反映 Key 是否有效，不返回积分
       calls.balance += 1
-      await route.fulfill(json(200, { api_key: `…${KEY_TAIL}`, valid: true }))
+      if (mock.balance === 'network') {
+        await route.abort('failed')
+        return
+      }
+      if (mock.balance === 'zero') {
+        // 服务端在没有携带 Authorization 时就是 200 + balance:0（不是 401）
+        await route.fulfill(json(200, authorization ? { api_key: KEY, balance: 0 } : { user_id: 0, balance: 0 }))
+        return
+      }
+      await route.fulfill(json(200, { api_key: KEY, balance: 2000000 }))
       return
     }
-    if (url.pathname === '/buy') {
+    if (url.pathname === '/api/redeem' && request.method() === 'POST') {
+      calls.redeem += 1
+      const body = JSON.parse(request.postData() ?? '{}')
+      if (body.card_no === CARD_USED) {
+        await route.fulfill(json(409, { code: 'CARD_ALREADY_USED', message: '卡密已被使用', request_id: 'rid-409' }))
+        return
+      }
+      if (body.card_no === CARD_IDEM) {
+        await route.fulfill(json(200, { code: 'IDEMPOTENT', message: 'already redeemed', request_id: 'rid-idem' }))
+        return
+      }
+      await route.fulfill(
+        json(200, {
+          ok: true,
+          card_no: body.card_no,
+          quota: 1000000,
+          api_key: KEY,
+          balance_after: 3000000,
+          sync: 'pending',
+        })
+      )
+      return
+    }
+    if (url.pathname === '/buy' && request.method() === 'POST') {
       calls.buy += 1
-      await route.fulfill({
-        status: 302,
-        headers: { ...CORS, location: CHECKOUT_URL },
-        body: '',
-      })
+      // 当前网关未配置：pay_url 明确为 null
+      await route.fulfill(json(200, { out_trade_no: OUT_TRADE_NO, order_token: ORDER_TOKEN, pay_url: null }))
       return
     }
     if (url.pathname === '/api/order') {
       calls.order += 1
       if (url.searchParams.get('order_token') !== ORDER_TOKEN) {
-        await route.fulfill(json(403, { code: 'UNAUTHORIZED', message: '订单凭证不匹配', request_id: 'rid' }))
+        await route.fulfill(json(401, { code: 'UNAUTHORIZED', message: 'bad token', request_id: 'rid-401' }))
         return
       }
-      const fulfilled = mock.order === 'fulfilled' || (mock.order === 'pending-then-fulfilled' && calls.order > 1)
       await route.fulfill(
         json(200, {
           out_trade_no: OUT_TRADE_NO,
-          status: fulfilled ? 'fulfilled' : 'pending',
-          amount_fen: 300,
-          card_no: fulfilled ? ORDER_CARD : null,
-          expire_at: 1794990326,
-          message: fulfilled ? '已发卡' : '等待支付',
+          status: 'fulfilled',
+          amount_fen: 990,
+          card_no: `CARD-FULFILLED-${CARD_TAIL}`,
+          expire_at: '2026-11-18T15:00:00+08:00',
+          message: 'ok',
         })
       )
       return
     }
-    if (url.pathname === '/api/redeem') {
-      calls.redeem += 1
-      const body = JSON.parse(request.postData() ?? '{}')
-      if (body.card_no === CARD_PENDING) {
-        await route.fulfill(json(202, { code: 'CREDIT_PENDING', message: '处理中', request_id: 'rid-202' }))
-        return
-      }
-      if (body.card_no === CARD_USED) {
-        await route.fulfill(json(409, { code: 'CARD_ALREADY_USED', message: '卡密已被使用', request_id: 'rid-409' }))
-        return
-      }
-      await route.fulfill(
-        json(200, { ok: true, card_no: body.card_no, points: 300, api_key: KEY, sync: 'synced' })
-      )
-      return
-    }
-    await route.fulfill(json(404, { code: 'ORDER_NOT_FOUND', message: '路径不存在', request_id: 'rid-404' }))
-  })
-
-  // ---------- 收银台页（网页版兜底会跟随到这个地址） ----------
-  await page.route(`${PAY_HOST}/**`, async (route) => {
-    await route.fulfill({
-      status: 200,
-      headers: { ...CORS, 'content-type': 'text/html; charset=utf-8' },
-      body: '<html><body>支付宝收银台（测试桩，不产生真实支付）</body></html>',
-    })
+    await route.fulfill(json(404, { code: 'ORDER_NOT_FOUND', message: '订单不存在', request_id: 'rid-404' }))
   })
 }
 
 const openSettingsData = async (page) => {
   if ((await page.getByRole('dialog').count()) === 0) {
     const settingsButton = page.getByRole('button', { name: /设置|Settings/ }).last()
+    // 移动端设置按钮在抽屉里：先点顶栏「打开边栏」
     if (!(await settingsButton.isVisible().catch(() => false))) {
       await page.getByRole('button', { name: /打开边栏|Expand sidebar/ }).first().click()
       await page.waitForTimeout(500)
@@ -281,12 +212,7 @@ const openPanel = async (page) => {
   return panel
 }
 
-/** 让某个区块滚进视口再截图（弹层内容自己滚动） */
-const scrollTo = async (page, testId) => {
-  await page.getByTestId(testId).scrollIntoViewIfNeeded()
-  await page.waitForTimeout(250)
-}
-
+/** 每个视口跑一遍完整状态机并把截图存到 docs/ui（返回相对路径列表） */
 const runViewport = async ({ width, height, label }) => {
   const context = await browser.newContext({
     locale: 'zh-CN',
@@ -298,6 +224,7 @@ const runViewport = async ({ width, height, label }) => {
   const consoleErrors = []
   page.on('console', (message) => {
     consoleMessages.push(message.text())
+    // 用例会故意制造断网 / 409：浏览器把这些记成 resource error，不算应用报错
     const text = message.text()
     const resourceFailure = /^Failed to load resource:/.test(text)
     if (message.type() === 'error' && !resourceFailure) {
@@ -305,31 +232,26 @@ const runViewport = async ({ width, height, label }) => {
     }
   })
   page.on('pageerror', (error) => consoleErrors.push(`pageerror: ${error.message}`))
-  // 收银台弹窗（window.open）收好尾，不影响后续断言
-  const popups = []
-  context.on('page', (opened) => popups.push(opened))
   await wireMock(page)
 
-  // 重置打桩状态
-  mock.apply = 'fail'
-  mock.remaining = 100
-  mock.order = 'pending-then-fulfilled'
-  mock.orderCalls = 0
-  for (const key of Object.keys(calls)) calls[key] = 0
-  requestLog.length = 0
-
   await page.goto(APP_URL, { waitUntil: 'domcontentloaded' })
-  await page.evaluate(() => {
-    window.localStorage.clear()
-    window.localStorage.setItem('chat-demo:provider-kind', 'ours')
-  })
+  // 直接落盘 Key 与渠道，避开「填 Key」这一步的移动端确认按钮差异（Key 输入本身另有验收用例）
+  await page.evaluate(
+    ([key]) => {
+      window.localStorage.clear()
+      window.localStorage.setItem('chat-demo:api-key', key)
+      window.localStorage.setItem('chat-demo:provider-kind', 'ours')
+    },
+    [KEY]
+  )
   await page.reload({ waitUntil: 'domcontentloaded' })
   await page.waitForTimeout(900)
 
   const shots = []
   const shot = async (name) => {
     mkdirSync(SHOT_DIR, { recursive: true })
-    const file = path.join(SHOT_DIR, `1.4.0-beta.8-ours-pay-${name}-${width}.png`)
+    const file = path.join(SHOT_DIR, `1.4.0-beta.8-ours-${name}-${width}.png`)
+    // 弹层是 fixed 遮罩，直接截视口（不是 fullPage），手机视口下看起来就是整屏
     await page.screenshot({ path: file })
     shots.push(file)
     note(`截图 ${path.relative(ROOT, file)}`)
@@ -340,213 +262,133 @@ const runViewport = async ({ width, height, label }) => {
 
   // ---------- [A] 入口只在 ours 渠道出现 ----------
   await openSettingsData(page)
-  eq(await page.getByTestId('ours-services-row').count(), 1, `${width}px：ours 渠道下入口行存在`)
+  const rowCount = await page.getByTestId('ours-services-row').count()
+  eq(rowCount, 1, `${width}px：ours 渠道下入口行存在`)
+
+  // 先切到 DeepSeek 官方：入口必须消失，且没有卡片密相关的 DOM
   await selectProviderKind(page, /DeepSeek 官方|DeepSeek Official/)
   await page.waitForTimeout(300)
   eq(await page.getByTestId('ours-services-row').count(), 0, `${width}px：DeepSeek 官方下没有入口行`)
   eq(await page.getByTestId('ours-services-dialog').count(), 0, `${width}px：DeepSeek 官方下没有弹层`)
   const deepseekText = await page.getByRole('dialog').first().innerText()
-  truthy(!/设备码|邀请码|卡密/.test(deepseekText), `${width}px：DeepSeek 官方设置页没有我们的渠道文案`)
+  truthy(!/额度与卡密|卡密兑换/.test(deepseekText), `${width}px：DeepSeek 官方设置页没有卡密文案`)
   await selectProviderKind(page, /我们的渠道|Our Channel/)
   await page.waitForTimeout(300)
   eq(await page.getByTestId('ours-services-row').count(), 1, `${width}px：切回我们的渠道后入口恢复`)
 
-  // ---------- [B][C] 首次使用：自动领取失败 → 设备码可见 ----------
+  // ---------- [B] 打开弹层：不自动查额度 ----------
+  calls.balance = 0
+  calls.redeem = 0
+  calls.buy = 0
+  calls.order = 0
   const panel = await openPanel(page)
-  await page.waitForTimeout(900)
-  const deviceCode = await page.getByTestId('ours-device-code').innerText()
-  truthy(/^[A-Za-z0-9._:-]{8,128}$/.test(deviceCode.trim()), `${width}px：设备码符合服务端字符集（${deviceCode.slice(0, 6)}…）`)
-  eq(calls.apply, 1, `${width}px：首次使用自动 POST /apply 一次`)
-  const claimFailed = await page.getByTestId('ours-claim-status').innerText()
-  truthy(/网络不可用/.test(claimFailed), `${width}px：领取失败给出可读错误（${claimFailed}）`)
-  const keyBefore = await page.evaluate(() => window.localStorage.getItem('chat-demo:api-key'))
-  eq(keyBefore, null, `${width}px：领取失败不写 Key`)
-  await scrollTo(page, 'ours-device')
-  await shot('01-claim-needed')
-
-  // 重试领取（幂等，安全）→ 已领取：积分 + 邀请码
-  mock.apply = 'ok'
-  calls.apply = 0
-  await page.getByTestId('ours-claim').click()
-  await page.waitForTimeout(900)
-  eq(calls.apply, 1, `${width}px：点「领取」再发一次 /apply（幂等）`)
-  const claimOk = await page.getByTestId('ours-claim-status').innerText()
-  truthy(/已领取/.test(claimOk), `${width}px：领取成功文案（${claimOk}）`)
-  const keyAfter = await page.evaluate(() => window.localStorage.getItem('chat-demo:api-key'))
-  eq(keyAfter, KEY, `${width}px：自动写入该渠道 API Key`)
-  const deviceCode2 = await page.getByTestId('ours-device-code').innerText()
-  eq(deviceCode2, deviceCode, `${width}px：设备码不变（持久化，不因切渠道/改 Key 变化）`)
-  eq(await page.evaluate((keyName) => window.localStorage.getItem(keyName), DEVICE_KEY), deviceCode, `${width}px：设备码落在固定存储键`)
-  const quotaText = await page.getByTestId('ours-quota-value').innerText()
-  eq(quotaText, '100 积分（约可消费 ¥1.00）', `${width}px：额度来自 /me remaining_points（1 元 = 100 积分）`)
-  const inviteText = await page.getByTestId('ours-invite-code').innerText()
-  truthy(inviteText.includes('G7TA7UR3'), `${width}px：展示自己的邀请码`)
-  const inviteCount = await page.getByTestId('ours-invite-count').innerText()
-  truthy(/已邀请 1 \/ 20 人/.test(inviteCount), `${width}px：展示已邀请人数/上限（${inviteCount}）`)
-  await scrollTo(page, 'ours-device')
-  await shot('02-claim-ok')
-
-  // 额度查询走 /me，不走 /api/balance；重开弹层也不再自动 /apply
-  const meBefore = calls.me
-  const applyBefore = calls.apply
-  truthy(calls.balance >= 1, `${width}px：Key 校验用了一次 /api/balance（只判有效性）`)
-  calls.me = meBefore
-  await page.getByTestId('ours-quota-refresh').click()
-  await page.waitForTimeout(600)
-  truthy(calls.me > meBefore, `${width}px：刷新额度走邀请服务 /me`)
-  // Esc 只关最上层（我们的渠道弹层），设置页仍开着
-  await page.keyboard.press('Escape')
-  await page.waitForTimeout(400)
-  await openPanel(page)
-  await page.waitForTimeout(800)
-  eq(calls.apply, applyBefore, `${width}px：已有 Key 时重开弹层不再自动 /apply（不覆盖用户 Key）`)
-
-  // ---------- [D] 额度为零 ----------
-  mock.remaining = 0
-  await page.getByTestId('ours-quota-refresh').click()
-  await page.waitForTimeout(700)
-  eq(await page.getByTestId('ours-quota-value').innerText(), '0 积分（约可消费 ¥0.00）', `${width}px：额度为零文案`)
-  const zeroHint = await page.getByTestId('ours-quota-hint').innerText()
-  truthy(/额度已用完/.test(zeroHint), `${width}px：额度为零给下一步建议（${zeroHint}）`)
-  await scrollTo(page, 'ours-quota')
-  await shot('03-quota-zero')
-  mock.remaining = 100
-  await page.getByTestId('ours-quota-refresh').click()
-  await page.waitForTimeout(600)
-
-  // ---------- [E] 邀请码：六类错误码 ----------
-  const inviteCases = [
-    ['G7TA7UR3', '不能填自己的邀请码'],
-    ['BADCODE1', '邀请码无效'],
-    ['USEDCODE', '已经绑定过邀请码'],
-    ['EXHAUST1', '奖励名额已用完'],
-    ['RATE1234', '操作太频繁'],
-  ]
-  for (const [code, expected] of inviteCases) {
-    await page.getByTestId('ours-invite-input').fill(code)
-    await page.getByTestId('ours-invite-submit').click()
-    await page.waitForTimeout(450)
-    const text = await page.getByTestId('ours-invite-result').innerText()
-    truthy(text.includes(expected), `${width}px：邀请码 ${code} → ${expected}（${text}）`)
-  }
-  await scrollTo(page, 'ours-invite')
-  await shot('04-invite-error')
-  // 成功路径
-  await page.getByTestId('ours-invite-input').fill('OK123456')
-  await page.getByTestId('ours-invite-submit').click()
-  await page.waitForTimeout(600)
-  const inviteOk = await page.getByTestId('ours-invite-result').innerText()
-  truthy(/绑定成功/.test(inviteOk), `${width}px：邀请码绑定成功（${inviteOk}）`)
-  eq(await page.getByTestId('ours-invite-input').inputValue(), '', `${width}px：成功后清空输入`)
-
-  // ---------- [F] 套餐来自 /api/plans ----------
+  await page.waitForTimeout(1500)
+  eq(calls.balance, 0, `${width}px：打开弹层不自动查额度（0 次）`)
   const plansText = await page.getByTestId('ours-plans').innerText()
   truthy(/入门包 100万 token/.test(plansText), `${width}px：套餐名来自 /api/plans`)
-  truthy(/¥3\.00 · 300 积分/.test(plansText), `${width}px：价格与积分来自 /api/plans（¥3.00 · 300 积分）`)
-  truthy(/¥39\.00 · 3,900 积分/.test(plansText), `${width}px：第二个套餐同样来自服务端`)
-  await scrollTo(page, 'ours-plans')
-  await shot('05-plans')
+  truthy(/¥9\.90/.test(plansText), `${width}px：套餐价格来自 /api/plans（¥9.90）`)
+  truthy(/100万/.test(plansText), `${width}px：套餐额度来自 /api/plans（100万）`)
 
-  // ---------- [F] 去支付：网页版如实说明拿不到收银台地址，且只发一次 /buy ----------
-  calls.order = 0
-  calls.buy = 0
-  await page.getByTestId('ours-buy').click()
-  await page.waitForTimeout(1200)
-  eq(calls.buy, 1, `${width}px：/buy 只点一次（每次都会新建订单）`)
-  const buyRequest = requestLog.filter((item) => item.path === '/buy').at(-1)
-  eq(buyRequest.search, '?plan=p1', `${width}px：/buy 带 plan=p1`)
-  const buyNotice = await page.getByTestId('ours-pay-notice').innerText()
-  truthy(/请在 App 内购买/.test(buyNotice), `${width}px：网页版如实提示（${buyNotice}）`)
-  eq(calls.order, 0, `${width}px：拿不到单号就不轮询（不猜单）`)
-  truthy(
-    (await page.evaluate((keyName) => window.localStorage.getItem(keyName), ORDER_KEY)) === null,
-    `${width}px：没有单号时不写订单存档`
-  )
-
-  // ---------- [G] 回跳续查：订单令牌存档 → 轮询 待支付 → 已发卡 ----------
-  // 原生上「点支付 → 系统浏览器付款 → 回到 App」后就是这条路径：读存档、按 no+order_token 每 2s 查单。
-  // 网页版拿不到 302 的 Location，所以这里直接落一份存档来跑同一条真实轮询链路。
-  await page.keyboard.press('Escape')
-  await page.waitForTimeout(400)
-  await page.evaluate(
-    ([keyName, payload]) => window.localStorage.setItem(keyName, payload),
-    [ORDER_KEY, JSON.stringify({ outTradeNo: OUT_TRADE_NO, orderToken: ORDER_TOKEN, planId: 'p1', startedAt: Date.now() })]
-  )
-  calls.order = 0
-  mock.order = 'pending-then-fulfilled'
-  await openPanel(page)
-  await page.getByTestId('ours-order-status').waitFor({ state: 'visible', timeout: 15000 })
-  await page.waitForTimeout(300)
-  const pendingStatus = await page.getByTestId('ours-order-status').innerText()
-  eq(pendingStatus, '待支付', `${width}px：订单待支付`)
-  const orderRequest = requestLog.filter((item) => item.path === '/api/order').at(-1)
-  truthy(orderRequest.search.includes(`out_trade_no=${OUT_TRADE_NO}`), `${width}px：查单带 out_trade_no`)
-  truthy(orderRequest.search.includes(`order_token=${ORDER_TOKEN}`), `${width}px：查单带 order_token（否则 403）`)
-  await scrollTo(page, 'ours-order')
-  await shot('06-order-pending')
-
-  await page.getByTestId('ours-order-card').waitFor({ state: 'visible', timeout: 15000 })
-  const fulfilledStatus = await page.getByTestId('ours-order-status').innerText()
-  eq(fulfilledStatus, '已发卡', `${width}px：轮询到已发卡`)
-  const cardText = await page.getByTestId('ours-order-card').innerText()
-  truthy(cardText.includes(ORDER_CARD_TAIL), `${width}px：显示卡密尾号（${cardText}）`)
-  truthy(!cardText.includes(ORDER_CARD), `${width}px：界面不展示完整卡密`)
-  await scrollTo(page, 'ours-order')
-  await shot('07-order-fulfilled')
-
-  // 轮询间隔 ≈2s：两次查单之间至少 2s
-  truthy(calls.order >= 2, `${width}px：轮询至少两次（${calls.order}）`)
-  eq(
-    await page.evaluate((keyName) => window.localStorage.getItem(keyName), ORDER_KEY),
-    null,
-    `${width}px：终态后清掉订单存档`
-  )
-
-  // ---------- [H] 一键兑换成功 ----------
-  const meBeforeRedeem = calls.me
-  await page.getByTestId('ours-order-redeem').click()
-  await page.waitForTimeout(900)
-  const redeemOk = await page.getByTestId('ours-redeem-result').innerText()
-  truthy(/兑换成功/.test(redeemOk), `${width}px：一键兑换成功（${redeemOk}）`)
-  truthy(/300 积分/.test(redeemOk) && /¥3\.00/.test(redeemOk), `${width}px：兑换结果显示积分与金额`)
-  truthy(calls.me > meBeforeRedeem, `${width}px：兑换成功后刷新额度`)
-  const redeemBody = JSON.parse(requestLog.filter((item) => item.path === '/api/redeem').at(-1).postData)
-  eq(redeemBody.request_id, redeemBody.card_no, `${width}px：request_id 复用卡密`)
-  eq(redeemBody.card_no, ORDER_CARD, `${width}px：一键兑换提交的是完整卡密`)
-  await scrollTo(page, 'ours-redeem')
-  await shot('08-redeem-ok')
-
-  // ---------- [H] 202 CREDIT_PENDING = 处理中 ----------
-  await page.getByTestId('ours-redeem-input').fill(CARD_PENDING)
-  await page.getByTestId('ours-redeem-submit').click()
+  // ---------- [C] 额度成功 ----------
+  mock.balance = 'success'
+  await page.getByTestId('ours-balance-refresh').click()
   await page.waitForTimeout(700)
-  const pendingRedeem = await page.getByTestId('ours-redeem-result').innerText()
-  truthy(/处理中/.test(pendingRedeem), `${width}px：202 显示处理中（${pendingRedeem}）`)
-  truthy(!/失败/.test(pendingRedeem), `${width}px：202 不说失败`)
-  await shot('09-credit-pending')
+  const balanceValue = await page.getByTestId('ours-balance-value').innerText()
+  truthy(balanceValue.includes('2,000,000 token'), `${width}px：展示 token 余额（${balanceValue}）`)
+  truthy(!/失败|暂未查询到/.test(balanceValue), `${width}px：余额值不是错误文案`)
+  const balanceCalls = requestLog.filter((item) => item.path === '/api/balance')
+  const lastBalance = balanceCalls.at(-1)
+  eq(lastBalance.method, 'GET', `${width}px：额度查询用 GET`)
+  eq(lastBalance.search, '', `${width}px：额度查询 URL 没有 query（Key 不进 URL）`)
+  truthy(lastBalance.authorization === `Bearer ${KEY}`, `${width}px：额度查询带 Authorization: Bearer`)
+  truthy(!lastBalance.url.includes(KEY), `${width}px：额度查询 URL 不含 Key`)
+  const tailText = await panel.innerText()
+  truthy(tailText.includes(KEY_TAIL), `${width}px：展示 Key 尾号 ${KEY_TAIL}`)
+  truthy(!tailText.includes(KEY), `${width}px：不展示完整 Key`)
+  await shot('quota-success')
 
-  // 409：提示不要重复提交
+  // ---------- [D] 额度为 0 ----------
+  mock.balance = 'zero'
+  await page.getByTestId('ours-balance-refresh').click()
+  await page.waitForTimeout(700)
+  const zeroValue = await page.getByTestId('ours-balance-value').innerText()
+  eq(zeroValue, '暂未查询到该 Key 的兑换额度（或额度为 0）', `${width}px：balance=0 文案`)
+  const zeroPanel = await panel.innerText()
+  truthy(!/不足/.test(zeroPanel), `${width}px：balance=0 不提示额度不足`)
+  truthy(!/失败/.test(zeroValue), `${width}px：balance=0 不报错`)
+  await shot('quota-zero')
+
+  // ---------- [E] 网络失败 ----------
+  mock.balance = 'network'
+  await page.getByTestId('ours-balance-refresh').click()
+  await page.waitForTimeout(900)
+  const networkValue = await page.getByTestId('ours-balance-value').innerText()
+  truthy(/网络不可用/.test(networkValue), `${width}px：网络失败文案（${networkValue}）`)
+  await shot('quota-network')
+
+  // ---------- [F] 兑换表单 + pending ----------
+  mock.balance = 'success'
+  await page.getByTestId('ours-redeem-input').fill(CARD_PENDING)
+  await shot('redeem-form')
+  const balanceBeforeRedeem = calls.balance
+  await page.getByTestId('ours-redeem-submit').click()
+  await page.waitForTimeout(900)
+  const redeemText = await page.getByTestId('ours-redeem-result').innerText()
+  truthy(
+    redeemText.includes('到账成功，稍后自动同步'),
+    `${width}px：pending 文案（${redeemText}）`
+  )
+  truthy(/••••4471/.test(redeemText), `${width}px：兑换结果只显示卡密尾 4 位`)
+  truthy(!redeemText.includes(CARD_PENDING), `${width}px：兑换结果不含完整卡密`)
+  truthy(calls.balance > balanceBeforeRedeem, `${width}px：兑换成功后自动刷新额度`)
+  const redeemBody = JSON.parse(requestLog.filter((item) => item.path === '/api/redeem').at(-1).postData)
+  truthy(typeof redeemBody.request_id === 'string' && redeemBody.request_id.length > 0, `${width}px：请求带 request_id`)
+  truthy(redeemBody.card_no === CARD_PENDING, `${width}px：请求卡密原样提交`)
+  truthy(!JSON.stringify(redeemBody).includes('user_id'), `${width}px：不提交 user_id`)
+  await shot('redeem-pending')
+
+  // 409 与 IDEMPOTENT
   await page.getByTestId('ours-redeem-input').fill(CARD_USED)
   await page.getByTestId('ours-redeem-submit').click()
-  await page.waitForTimeout(600)
+  await page.waitForTimeout(700)
   const usedText = await page.getByTestId('ours-redeem-result').innerText()
-  truthy(/已被使用/.test(usedText), `${width}px：409 提示已被使用（${usedText}）`)
+  truthy(usedText.includes('该卡密已被使用'), `${width}px：409 文案（${usedText}）`)
   truthy(!usedText.includes(CARD_USED), `${width}px：409 文案不含完整卡密`)
+  await page.getByTestId('ours-redeem-input').fill(CARD_IDEM)
+  await page.getByTestId('ours-redeem-submit').click()
+  await page.waitForTimeout(700)
+  const idemText = await page.getByTestId('ours-redeem-result').innerText()
+  truthy(idemText.includes('该卡密已兑换过'), `${width}px：IDEMPOTENT 按成功处理（${idemText}）`)
+
+  // ---------- [G] 支付未开放：只有一行说明，没有建单/查单入口 ----------
+  const buyButton = page.getByTestId('ours-buy')
+  eq(await buyButton.innerText(), '支付暂未开放', `${width}px：购买按钮文案`)
+  eq(await buyButton.isDisabled(), true, `${width}px：购买按钮禁用`)
+  const payNotice = await page.getByTestId('ours-pay-notice').innerText()
+  truthy(payNotice.includes('支付暂未开放'), `${width}px：支付区说明（${payNotice}）`)
+  eq(await page.getByTestId('ours-order-create').count(), 0, `${width}px：没有「生成订单号」入口`)
+  eq(await page.getByTestId('ours-order-query').count(), 0, `${width}px：没有「查询状态」入口`)
+  eq(calls.buy, 0, `${width}px：一次建单请求都没发（不产生付不了的订单）`)
+  eq(calls.order, 0, `${width}px：一次查单请求都没发`)
+  await shot('pay-closed')
+
+  // ---------- [H] 无轮询 ----------
+  const idleCounts = { ...calls }
+  await page.waitForTimeout(4500)
+  eq(calls.balance, idleCounts.balance, `${width}px：静置 4.5s 额度查询次数不变（无轮询）`)
+  eq(calls.order, idleCounts.order, `${width}px：静置 4.5s 查单次数不变（无轮询）`)
 
   // ---------- [I] 秘密不外泄 ----------
   const panelText = await panel.innerText()
   truthy(!panelText.includes(KEY), `${width}px：DOM 不含完整 Key`)
-  truthy(!panelText.includes(ORDER_CARD), `${width}px：DOM 不含完整卡密`)
-  truthy(!panelText.includes(CARD_PENDING), `${width}px：DOM 不含输入框里的完整卡密`)
+  truthy(!panelText.includes(CARD_PENDING), `${width}px：DOM 不含完整卡密`)
+  const inputValue = await page.getByTestId('ours-redeem-input').inputValue()
+  truthy(!inputValue.includes(KEY), `${width}px：输入框不含 Key`)
   const consoleText = consoleMessages.join('\n')
   truthy(!consoleText.includes(KEY), `${width}px：console 不含完整 Key`)
-  truthy(!consoleText.includes(ORDER_CARD), `${width}px：console 不含完整卡密`)
-  truthy(!consoleText.includes(deviceCode), `${width}px：console 不含完整设备码`)
+  truthy(!consoleText.includes(CARD_PENDING), `${width}px：console 不含完整卡密`)
   eq(consoleErrors.length, 0, `${width}px：console error = 0${consoleErrors.length > 0 ? `（${consoleErrors.join(' | ')}）` : ''}`)
 
-  for (const popup of popups) {
-    await popup.close().catch(() => {})
-  }
   await context.close()
   return shots
 }
