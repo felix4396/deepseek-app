@@ -176,9 +176,9 @@ export const closeSettings = async (page) => {
 /** 打开设置 → 通用设置（服务类型在最上面的「数据管理」分组里） */
 export const openSettingsDataTab = openSettingsDataSection
 
-/** 选「服务类型」下拉里的某一项 */
+/** 选「渠道」下拉里的某一项（1.4.0-beta.3 起叫「渠道」，旧文案「服务类型」保留兼容） */
 export const selectProviderKind = async (page, nameRe) => {
-  await page.getByRole('button', { name: /服务类型|Service type/ }).first().click()
+  await page.getByRole('button', { name: /渠道|Channel|服务类型|Service type/ }).first().click()
   await page.getByRole('option', { name: nameRe }).first().click()
   await page.waitForTimeout(300)
 }

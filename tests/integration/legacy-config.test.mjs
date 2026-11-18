@@ -49,7 +49,7 @@ try {
 
   await openSettingsDataSection(page)
   const kindLabel = await page
-    .getByRole('button', { name: /服务类型|Service type/ })
+    .getByRole('button', { name: /渠道|Channel|服务类型|Service type/ })
     .first()
     .innerText()
   if (!/DeepSeek/.test(kindLabel)) {

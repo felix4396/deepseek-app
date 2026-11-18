@@ -1,4 +1,3 @@
-import clsx from 'clsx'
 import { useEffect, useState } from 'react'
 import { IconEditOutline16 } from '../base/icons.js'
 import {
@@ -13,8 +12,8 @@ import {
 import {
   PROVIDER_SPECS,
   getSpec,
-  hasProviderChoice,
   type ProviderField,
+  type ProviderKind,
   type ProviderSpec,
 } from '../../services/api/providers.js'
 import { probeProvider, type ProviderProbeResult } from '../../services/api/client.js'
@@ -42,18 +41,19 @@ export const useApiKeyEditor = () => {
 type ApiKeyEditor = ReturnType<typeof useApiKeyEditor>
 
 /**
- * 服务配置区：最上面是「服务类型」，下面按 spec.fields 循环渲染输入行，最后是连通性测试。
- * 新增服务类型只需要在 providers.ts 里加一个 spec，这里的 JSX 结构不用改。
+ * 服务配置区：最上面是「渠道」下拉，下面按 spec.fields 循环渲染输入行，最后是连通性测试。
+ * 新增渠道只需要在 providers.ts 里加一个 spec，这里的 JSX 结构不用改。
  *
- * 内测版（只有一个可选 spec / spec.fixed）：服务类型下拉不渲染，地址与模型不进 fields，
- * 于是这一区只剩 API Key 输入框 + 连通性测试。
+ * 渠道决定这一区长什么样：内置地址/模型的渠道（DeepSeek 官方 / 我们的渠道）fields 里没有
+ * baseUrl / model，于是只渲染 API Key 一行；要自己填地址的渠道（Anthropic 协议 / OpenAI 兼容）
+ * 渲染三行。切换渠道时界面静默变化，不给能力说明。
  */
 export const ApiConfigFields = ({ editor }: { editor: ApiKeyEditor }) => {
   const kind = useApiConfig((state) => state.kind)
   const spec = getSpec(kind)
   return (
     <>
-      {hasProviderChoice() ? <ProviderKindField /> : null}
+      <ProviderKindField />
       {spec.fields.map((field) => (
         <ApiConfigField key={field} field={field} spec={spec} editor={editor} />
       ))}
@@ -82,25 +82,40 @@ const ApiConfigField = ({
   }
 }
 
-/** 服务类型：切换后路径、鉴权头、输入行与能力开关立即跟着 spec 走 */
+/**
+ * 渠道：切换后路径、鉴权头、输入行与能力入口立即跟着 spec 走。
+ * 选项里只有渠道名（能力差异不写文案，能不能用直接体现在入口显隐上）。
+ * API Key 四个渠道共用一把，切换后可能不适用，所以只给一句操作提示（重新填 Key）。
+ */
 const ProviderKindField = () => {
   const t = useTranslate()
   const kind = useApiConfig((state) => state.kind)
+  const apiKey = useApiConfig((state) => state.apiKey)
   const locale = useSettings((state) => state.locale)
+  const [switched, setSwitched] = useState(false)
   // 选项名双语写在 spec.label 里，跟着界面语言切换
   const lang = locale.startsWith('zh') ? 'zh' : 'en'
   return (
-    <div className={clsx(styles.cell, styles.row)}>
-      <div className={styles.text}>
-        <div className={styles.label}>{t('settingsProviderKindLabel')}</div>
+    <div className={styles.cell}>
+      <div className={styles.row}>
+        <div className={styles.text}>
+          <div className={styles.label}>{t('settingsProviderKindLabel')}</div>
+        </div>
+        <Select
+          ariaLabel={t('settingsProviderKindLabel')}
+          className={styles.providerSelect}
+          value={kind}
+          options={PROVIDER_SPECS.map((item) => ({ value: item.kind, label: item.label[lang] }))}
+          onChange={(next: ProviderKind) => {
+            setProviderKind(next)
+            setSwitched(true)
+          }}
+        />
       </div>
-      <Select
-        ariaLabel={t('settingsProviderKindLabel')}
-        className={styles.providerSelect}
-        value={kind}
-        options={PROVIDER_SPECS.map((item) => ({ value: item.kind, label: item.label[lang] }))}
-        onChange={setProviderKind}
-      />
+      {/* 只在「切过渠道且已经有 Key」时提示一次：Key 是共用的，换了渠道可能不适用 */}
+      {switched && apiKey ? (
+        <div className={styles.description}>{t('settingsProviderKindKeyHint')}</div>
+      ) : null}
     </div>
   )
 }

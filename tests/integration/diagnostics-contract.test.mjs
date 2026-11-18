@@ -284,7 +284,7 @@ try {
     const { context, page } = await openApp({ appUrl: STANDARD_URL, apiKey: false })
     await openDataSection(page)
     // 标准构建默认是 DeepSeek 官方（只需 Key）：切到「Anthropic 协议」才有可编辑的服务地址
-    await page.getByRole('button', { name: /服务类型|Service type/ }).first().click()
+    await page.getByRole('button', { name: /渠道|Channel|服务类型|Service type/ }).first().click()
     await page.getByRole('option', { name: /Anthropic/ }).first().click()
     await page.waitForTimeout(300)
     const baseUrl = page.getByLabel(/服务地址|Service URL/).first()

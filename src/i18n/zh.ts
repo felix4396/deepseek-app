@@ -191,8 +191,9 @@ export const zh = {
   settingsLocaleZhCN: '简体中文',
   settingsLocaleEnUS: 'English',
 
-  // ---------- 服务配置（服务类型 / API Key / 服务地址 / 模型） ----------
-  settingsProviderKindLabel: '服务类型',
+  // ---------- 服务配置（渠道 / API Key / 服务地址 / 模型） ----------
+  settingsProviderKindLabel: '渠道',
+  settingsProviderKindKeyHint: '切换渠道后，请确认 API Key 是否适用',
   settingsApiKeyLabel: 'API Key',
   settingsBaseUrlLabel: '服务地址',
   settingsBaseUrlPlaceholder: '例如 https://your-gateway.example.com',

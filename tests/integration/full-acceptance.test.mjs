@@ -270,7 +270,7 @@ const closeSettings = async () => {
   }
 }
 const selectKind = async (nameRe) => {
-  await page.getByRole('button', { name: /服务类型|Service type/ }).first().click()
+  await page.getByRole('button', { name: /渠道|Channel|服务类型|Service type/ }).first().click()
   await page.getByRole('option', { name: nameRe }).first().click()
   await page.waitForTimeout(250)
 }
@@ -362,7 +362,7 @@ try {
 
   await openSettings()
   const kindText = (
-    await page.getByRole('button', { name: /服务类型|Service type/ }).first().innerText()
+    await page.getByRole('button', { name: /渠道|Channel|服务类型|Service type/ }).first().innerText()
   ).trim()
   if (!/DeepSeek/.test(kindText)) {
     bad(`7a) 默认服务类型不是 DeepSeek 官方：${kindText}`)

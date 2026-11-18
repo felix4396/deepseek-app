@@ -1,27 +1,33 @@
-// [layer: integration | 依赖: playwright + chromium + 本地静态服务/mock 上游 | 耗时: 1~3 分钟] 说明见 tests/README.md
-// 1.4.0-beta.1 内测版验收（自建、可自动化，不依赖真实上游）：
+// [layer: integration | 依赖: playwright + chromium + 本地静态服务（上游用 page.route 打桩） | 耗时: ~1 分钟] 说明见 tests/README.md
+// 1.4.0-beta.3 内测版验收（自建、可自动化，不依赖真实上游）：
 //
-//   cd /root/deepseek-app && node tests/integration/internal-build.test.mjs
+//   cd /root/deepseek-app && DIST_DIR=$PWD/dist PORT=5291 node tests/integration/internal-build.test.mjs
 //
-// 被测页面是**内测构建**（INTERNAL_BUILD=1）：服务地址 / 模型 / 服务类型由
-// src/services/api/internalBuild.ts 的常量钉死，设置页不渲染这三项的编辑入口。
+// 被测页面是**内测构建**（INTERNAL_BUILD=1）：默认渠道是「我们的渠道」（ours），
+// 地址 http://123.207.199.196:60010 与模型 deepseek-v4.1-flash 内置在 providers.ts 的
+// ours spec 里，设置页只渲染 API Key 一行；用户仍可在「渠道」下拉里切到另外三个渠道。
 //
-// 前置：把固定上游 IP 绑到本机回环，让请求真的打到 mock（见 tests/README.md）：
-//   ip addr add 123.207.199.196/32 dev lo
+// 前置：无。内置上游的请求由 Playwright 的 page.route 拦截（不需要 ip addr add，
+// 也不会和本机其它占着 60010 的 mock 抢端口）；断言直接看浏览器实际发出的 URL / 头 / 请求体。
 //
-// 断言（对应任务书 7 条验收）：
-//   [A] 设置页 DOM：没有 Service URL 输入框、没有 Model 输入框、没有服务类型下拉、没有位置信息项
-//   [B] 设置页 DOM：有 API Key 输入框（且是设置页里唯一的输入框）
+// 断言：
+//   [A] 设置页有「渠道」下拉，默认值是「我们的渠道」，共 4 个选项
+//   [B] ours 渠道只渲染 API Key（type=password）一个输入框；没有 baseUrl / model 输入元素，
+//       页面文本里也没有后端地址与内置模型名（用户不该看到后端地址）
 //   [C] 发消息请求 URL === http://123.207.199.196:60010/v1/messages，body.model === deepseek-v4.1-flash
 //   [D] 请求体不含 safety_check / title / tools，messages 里没有 role:'latest_reminder'
-//   [E] 固定项不落 localStorage（只写 chat-demo:api-key）
-//   [F] console error = 0
-//   [G] 截图：设置页（只剩 API Key）+ 发消息后的 mock 回复
+//   [E] 内置项不落 localStorage（只写 chat-demo:api-key）
+//   [F] 切换渠道：Key 不丢、DeepSeek 官方渠道同样只有 API Key 一行、渠道选择落盘
+//   [G] 刷新后渠道选择仍是「我们的渠道」
+//   [H] 设置页文案不含能力描述（基础对话 / 不支持 / 已关闭 / 仅支持 / capability / 能力）
+//   [I] console error = 0
+//   [J] 截图：ours 设置页 + 发消息后的 mock 回复
 import { spawn } from 'node:child_process'
-import { mkdirSync, readFileSync } from 'node:fs'
+import { mkdirSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
 import { chromium } from 'playwright'
+import { capturePaths, selectProviderKind } from '../helpers/helpers.mjs'
 
 const HERE = path.dirname(fileURLToPath(import.meta.url))
 const ROOT = path.resolve(HERE, '../..')
@@ -32,9 +38,10 @@ const API_URL = 'http://123.207.199.196:60010'
 const MESSAGES_URL = `${API_URL}/v1/messages`
 const MODEL = 'deepseek-v4.1-flash'
 const KEY = 'sk-internal-acceptance-key'
-const REPLY = '内测版验收回复：固定服务地址与模型已生效。'
-const LOG = '/tmp/mock-anthropic-requests.jsonl'
+const REPLY = '内测版验收回复：内置渠道已生效。'
 const SHOT_DIR = path.join(ROOT, 'docs', 'ui')
+/** 界面上禁止出现的能力描述（能不能用只体现在入口显隐上，不写文案） */
+const FORBIDDEN_WORDS = ['基础对话', '不支持', '已关闭', '仅支持', 'capability', '能力']
 
 const failures = []
 const evidence = []
@@ -49,32 +56,11 @@ const note = (message) => {
 }
 
 const children = []
-const start = (command, args, env = {}) => {
-  const child = spawn(command, args, {
-    cwd: ROOT,
-    env: { ...process.env, ...env },
-    stdio: ['ignore', 'pipe', 'pipe'],
-  })
+const start = (command, args) => {
+  const child = spawn(command, args, { cwd: ROOT, stdio: ['ignore', 'pipe', 'pipe'] })
   children.push(child)
   return child
 }
-const waitForLine = (child, needle, timeoutMs = 10000) =>
-  new Promise((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error(`等待「${needle}」超时`)), timeoutMs)
-    let buffer = ''
-    child.stdout.on('data', (chunk) => {
-      buffer += chunk.toString()
-      if (buffer.includes(needle)) {
-        clearTimeout(timer)
-        resolve(buffer)
-      }
-    })
-    child.on('exit', (code) => {
-      clearTimeout(timer)
-      reject(new Error(`子进程提前退出 code=${code}`))
-    })
-  })
-
 const cleanup = () => {
   for (const child of children) {
     try {
@@ -85,12 +71,8 @@ const cleanup = () => {
   }
 }
 
-// ---------- 0) 起 mock 上游 + 静态服务 ----------
-const mock = start('node', [path.join(ROOT, 'tests/fixtures/mock-anthropic.mjs')], { MOCK_REPLY_TEXT: REPLY })
-await waitForLine(mock, 'mock anthropic upstream').catch((error) => {
-  bad(`mock 上游没起来：${error.message}（是否忘了 ip addr add 123.207.199.196/32 dev lo？）`)
-})
-const staticServer = start('python3', ['-m', 'http.server', PORT, '--bind', '127.0.0.1', '--directory', DIST])
+// ---------- 0) 起静态服务（内测构建） ----------
+start('python3', ['-m', 'http.server', PORT, '--bind', '127.0.0.1', '--directory', DIST])
 await new Promise((resolve) => setTimeout(resolve, 800))
 
 const browser = await chromium.launch()
@@ -107,11 +89,132 @@ page.on('console', (message) => {
 })
 page.on('pageerror', (error) => consoleErrors.push(`pageerror: ${error.message}`))
 
+/** 内置上游（ours 渠道）：拦截并回标准 Anthropic SSE，断言看浏览器实际发出的请求 */
+await page.route('http://123.207.199.196:60010/**', async (route) => {
+  if (route.request().url().includes('/models')) {
+    await route.fulfill({
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ data: [{ id: MODEL, type: 'model' }] }),
+    })
+    return
+  }
+  await route.fulfill({
+    status: 200,
+    headers: { 'content-type': 'text/event-stream' },
+    body: [
+      'event: message_start',
+      `data: ${JSON.stringify({
+        type: 'message_start',
+        message: {
+          id: 'msg_mock_internal',
+          type: 'message',
+          role: 'assistant',
+          content: [],
+          model: MODEL,
+          stop_reason: null,
+          stop_sequence: null,
+          usage: { input_tokens: 12, output_tokens: 0 },
+        },
+      })}`,
+      '',
+      'event: content_block_start',
+      `data: ${JSON.stringify({
+        type: 'content_block_start',
+        index: 0,
+        content_block: { type: 'text', text: '' },
+      })}`,
+      '',
+      'event: content_block_delta',
+      `data: ${JSON.stringify({
+        type: 'content_block_delta',
+        index: 0,
+        delta: { type: 'text_delta', text: REPLY },
+      })}`,
+      '',
+      'event: content_block_stop',
+      `data: ${JSON.stringify({ type: 'content_block_stop', index: 0 })}`,
+      '',
+      'event: message_delta',
+      `data: ${JSON.stringify({
+        type: 'message_delta',
+        delta: { stop_reason: 'end_turn', stop_sequence: null },
+        usage: { output_tokens: 24 },
+      })}`,
+      '',
+      'event: message_stop',
+      'data: {"type":"message_stop"}',
+      '',
+      '',
+    ].join('\n'),
+  })
+})
+
+const requests = capturePaths(page)
+
 const shot = async (name) => {
   mkdirSync(SHOT_DIR, { recursive: true })
-  const file = path.join(SHOT_DIR, `1.4.0-beta.1-${name}.png`)
+  const file = path.join(SHOT_DIR, `1.4.0-beta.3-${name}.png`)
   await page.screenshot({ path: file, fullPage: true })
   note(`截图 ${path.relative(ROOT, file)}`)
+}
+
+const openSettings = async () => {
+  if ((await page.getByRole('dialog').count()) === 0) {
+    await page.getByRole('button', { name: /设置|Settings/ }).last().click()
+  }
+  await page.getByRole('tab', { name: /数据管理|Data/ }).first().click()
+  await page.waitForTimeout(400)
+  return page.getByRole('dialog').first()
+}
+
+/** 页面文本里出现能力描述就算失败 */
+const expectNoCapabilityCopy = async (dialog, where) => {
+  const text = await dialog.innerText()
+  const hits = FORBIDDEN_WORDS.filter((word) => text.includes(word))
+  if (hits.length > 0) {
+    bad(`${where} 出现了能力描述文案：${hits.join(' / ')}`)
+  } else {
+    ok(`${where} 没有能力描述文案`)
+  }
+}
+
+/** 内置地址/模型（deepseek / ours）只露 API Key：没有 url/model 输入元素 */
+const expectOnlyApiKeyInputs = async (dialog, where, keySaved = false) => {
+  const types = await dialog
+    .locator('input')
+    .evaluateAll((list) => list.map((item) => item.type))
+  note(`${where} 输入框：${JSON.stringify(types)}`)
+  const urlInputs = await dialog.locator('input[inputmode="url"]').count()
+  const modelInputs = await dialog.getByLabel(/^模型$|^Model$/).count()
+  const passwordInputs = await dialog.locator('input[type="password"]').count()
+  if (urlInputs > 0) {
+    bad(`${where} 仍然渲染了服务地址输入框`)
+  } else {
+    ok(`${where} 没有服务地址输入框`)
+  }
+  if (modelInputs > 0) {
+    bad(`${where} 仍然渲染了模型输入框`)
+  } else {
+    ok(`${where} 没有模型输入框`)
+  }
+  // type=file 是「导入历史 / 聊天背景」用的隐藏选择器，不是配置入口
+  const extra = types.filter((type) => type !== 'password' && type !== 'file')
+  if (extra.length > 0) {
+    bad(`${where} 还有其他可编辑输入框：${JSON.stringify(types)}`)
+  } else if (keySaved) {
+    // Key 已保存时那一行是掩码（不是输入框）：这里只允许 0 个输入框 + 星号掩码
+    const masked = /\*{6,}/.test(await dialog.innerText())
+    if (passwordInputs !== 0 || !masked) {
+      bad(`${where} 已保存的 Key 没按掩码显示（输入框=${passwordInputs}，掩码=${masked}）`)
+    } else {
+      ok(`${where} 唯一一行是 API Key（已保存，显示为掩码，没有输入框）`)
+    }
+  } else if (passwordInputs !== 1) {
+    bad(`${where} API Key 输入框数量异常：${passwordInputs}（期望 1）`)
+  } else {
+    ok(`${where} 唯一可编辑输入框是 API Key（type=password）`)
+  }
 }
 
 try {
@@ -120,63 +223,52 @@ try {
   await page.reload({ waitUntil: 'domcontentloaded' })
   await page.waitForTimeout(900)
 
-  // ---------- [A][B] 设置页 DOM ----------
-  console.log('\n[A][B] 设置页 DOM')
-  if ((await page.getByRole('dialog').count()) === 0) {
-    await page.getByRole('button', { name: /设置|Settings/ }).last().click()
-  }
-  await page.getByRole('tab', { name: /数据管理|Data/ }).first().click()
-  await page.waitForTimeout(400)
-  const dialog = page.getByRole('dialog').first()
+  // ---------- [A][B][H] 设置页：渠道下拉 + ours 只露 API Key ----------
+  console.log('\n[A][B][H] 设置页 DOM')
+  let dialog = await openSettings()
 
-  const inputs = dialog.locator('input')
-  const inputTypes = await inputs.evaluateAll((list) => list.map((item) => item.type))
-  note(`设置页输入框：${JSON.stringify(inputTypes)}`)
-
-  // Service URL / Model 输入框：按 aria-label 与 input 类型双重确认
-  const baseUrlInputs =
-    (await dialog.getByLabel(/服务地址|Service URL/).count()) +
-    (await dialog.locator('input[inputmode="url"]').count())
-  if (baseUrlInputs > 0) {
-    bad('设置页仍然存在 Service URL 输入框')
+  const channelButton = dialog.getByRole('button', { name: /渠道|Channel/ }).first()
+  if ((await channelButton.count()) === 0) {
+    bad('设置页没有「渠道」下拉')
   } else {
-    ok('没有 Service URL 输入框')
-  }
-  const modelInputs = await dialog.getByLabel(/^模型$|^Model$/).count()
-  if (modelInputs > 0) {
-    bad('设置页仍然存在 Model 输入框')
-  } else {
-    ok('没有 Model 输入框')
-  }
-
-  // 服务类型下拉
-  const kindButtons = await dialog.getByRole('button', { name: /服务类型|Service type/ }).count()
-  const kindComboboxes = await dialog.getByRole('combobox', { name: /服务类型|Service type/ }).count()
-  if (kindButtons + kindComboboxes > 0) {
-    bad('设置页仍然存在服务类型下拉')
-  } else {
-    ok('没有服务类型下拉')
-  }
-
-  // API Key 输入框必须还在（且是唯一的输入框）
-  const passwordInputs = await dialog.locator('input[type="password"]').count()
-  if (passwordInputs !== 1) {
-    bad(`API Key 输入框数量异常：${passwordInputs}（期望 1）`)
-  } else {
-    ok('存在 API Key 输入框（type=password）')
-  }
-  // type=file 是「导入历史 / 聊天背景」用的隐藏文件选择器，不是文本可编辑入口
-  const extraInputs = inputTypes.filter((type) => type !== 'password' && type !== 'file')
-  if (extraInputs.length > 0) {
-    bad(`设置页还有其他可编辑输入框：${JSON.stringify(inputTypes)}`)
-  } else {
-    ok('设置页唯一可编辑的输入框是 API Key（其余仅隐藏 file 选择器）')
+    const label = (await channelButton.innerText()).trim()
+    if (!/我们的渠道|Our Channel/.test(label)) {
+      bad(`内测构建默认渠道不是「我们的渠道」：${JSON.stringify(label)}`)
+    } else {
+      ok(`默认渠道 = ${label}（内测构建 → ours）`)
+    }
+    await channelButton.click()
+    const options = await page.getByRole('option').evaluateAll((list) =>
+      list.map((item) => item.innerText.trim())
+    )
+    await page.keyboard.press('Escape')
+    await page.waitForTimeout(200)
+    const expected = ['DeepSeek 官方', 'Anthropic 协议', 'OpenAI 兼容', '我们的渠道']
+    note(`渠道选项：${options.join(' / ')}`)
+    if (options.length !== 4) {
+      bad(`渠道下拉选项数不是 4：${options.length}`)
+    } else if (expected.some((name, index) => !options[index].includes(name))) {
+      bad(`渠道选项名/顺序不对：${JSON.stringify(options)}`)
+    } else {
+      ok('渠道下拉 4 个选项（DeepSeek 官方 / Anthropic 协议 / OpenAI 兼容 / 我们的渠道）')
+    }
   }
 
-  // 主截图：数据管理分组＝服务配置区，现在只剩 API Key
-  await shot('settings-apikey')
+  await expectOnlyApiKeyInputs(dialog, 'ours 渠道')
 
-  // 位置信息：切到「通用」分组再确认一次（整段 UI 已移除）
+  // 后端地址与内置模型名不出现在界面上（用户不该看到后端地址）
+  const dialogText = await dialog.innerText()
+  for (const secret of ['123.207.199.196', '60010', MODEL]) {
+    if (dialogText.includes(secret)) {
+      bad(`ours 渠道把内置值露在界面上了：${secret}`)
+    } else {
+      ok(`ours 渠道界面不展示 ${secret}`)
+    }
+  }
+  await expectNoCapabilityCopy(dialog, 'ours 渠道设置页')
+  await shot('channel-ours')
+
+  // 通用分组仍无位置信息项（历史契约不回退）
   await page.getByRole('tab', { name: /通用|General/ }).first().click()
   await page.waitForTimeout(300)
   const generalText = await dialog.innerText()
@@ -188,9 +280,8 @@ try {
   } else {
     ok('通用设置里没有位置信息项')
   }
-  await shot('settings-general')
 
-  // ---------- 保存 API Key（唯一可编辑项） ----------
+  // ---------- [E] 保存 API Key ----------
   console.log('\n[E] 保存 API Key + localStorage')
   await page.getByRole('tab', { name: /数据管理|Data/ }).first().click()
   await page.waitForTimeout(300)
@@ -198,34 +289,56 @@ try {
   await page.getByRole('button', { name: /^确定$|^Confirm$/ }).first().click()
   await page.waitForTimeout(1200)
 
-  const stored = await page.evaluate(() => {
-    const out = {}
-    for (let i = 0; i < window.localStorage.length; i += 1) {
-      const key = window.localStorage.key(i)
-      out[key] = window.localStorage.getItem(key)
-    }
-    return out
-  })
+  const readStorage = () =>
+    page.evaluate(() => {
+      const out = {}
+      for (let i = 0; i < window.localStorage.length; i += 1) {
+        const key = window.localStorage.key(i)
+        out[key] = window.localStorage.getItem(key)
+      }
+      return out
+    })
+
+  const stored = await readStorage()
   note(`localStorage: ${JSON.stringify(stored)}`)
   if (stored['chat-demo:api-key'] !== KEY) {
     bad('API Key 没有写入 localStorage')
   } else {
     ok('API Key 已保存')
   }
-  for (const forbidden of ['chat-demo:base-url', 'chat-demo:model', 'chat-demo:provider-kind']) {
-    if (Object.hasOwn(stored, forbidden)) {
-      bad(`固定项被写进了 localStorage：${forbidden}=${stored[forbidden]}`)
-    }
+  const forbiddenKeys = ['chat-demo:base-url', 'chat-demo:model', 'chat-demo:provider-kind']
+  const leaked = forbiddenKeys.filter((key) => Object.hasOwn(stored, key))
+  if (leaked.length > 0) {
+    bad(`内置项被写进了 localStorage：${leaked.map((key) => `${key}=${stored[key]}`).join(', ')}`)
+  } else {
+    ok('地址 / 模型 / 渠道（未切换时）没有落 localStorage')
   }
-  if (!['chat-demo:base-url', 'chat-demo:model', 'chat-demo:provider-kind'].some((key) => Object.hasOwn(stored, key))) {
-    ok('地址 / 模型 / 服务类型没有落 localStorage')
+
+  // ---------- [F] 切换渠道：Key 不丢，DeepSeek 官方同样只有 API Key ----------
+  console.log('\n[F] 切换渠道')
+  await selectProviderKind(page, /DeepSeek 官方|DeepSeek Official/)
+  dialog = page.getByRole('dialog').first()
+  await expectOnlyApiKeyInputs(dialog, 'DeepSeek 官方渠道', true)
+  const keyAfterSwitch = (await readStorage())['chat-demo:api-key']
+  if (keyAfterSwitch !== KEY) {
+    bad('切换渠道后 API Key 丢了（应当共用一把）')
+  } else {
+    ok('切换渠道后 API Key 仍在（共用一把，不丢）')
   }
+  const kindAfterSwitch = (await readStorage())['chat-demo:provider-kind']
+  if (kindAfterSwitch !== 'deepseek') {
+    bad(`渠道选择没有落盘：${JSON.stringify(kindAfterSwitch)}`)
+  } else {
+    ok('渠道选择已持久化（chat-demo:provider-kind=deepseek）')
+  }
+  // 回到我们的渠道再发消息
+  await selectProviderKind(page, /我们的渠道|Our Channel/)
 
   // 关掉设置
   await dialog.getByRole('button', { name: /^关闭$|^Close$/ }).first().click()
   await page.waitForTimeout(400)
 
-  // ---------- 发消息 ----------
+  // ---------- [C][D] 发消息 ----------
   console.log('\n[C][D] 发消息：URL / model / 请求体')
   const textarea = page.locator('textarea').last()
   await textarea.click()
@@ -234,43 +347,44 @@ try {
 
   await page.getByText(REPLY.slice(0, 10)).first().waitFor({ timeout: 20000 })
   await page.waitForTimeout(1200)
-  ok('mock 回复已渲染到消息列表')
+  ok('打桩上游的回复已渲染到消息列表')
   await shot('reply')
 
-  const log = readFileSync(LOG, 'utf8')
-    .split('\n')
-    .filter(Boolean)
-    .map((line) => JSON.parse(line))
-  const posts = log.filter((entry) => entry.method === 'POST' && entry.path.startsWith('/v1/messages'))
-  note(`mock 收到请求：${log.map((entry) => `${entry.method} ${entry.url}`).join(' , ') || '（无）'}`)
+  const posts = requests.filter(
+    (request) => request.method === 'POST' && new URL(request.url).pathname === '/v1/messages'
+  )
+  note(
+    `浏览器发出的请求：${requests.map((request) => `${request.method} ${request.url}`).join(' , ') || '（无）'}`
+  )
 
   if (posts.length === 0) {
-    bad(`mock 没有收到发消息请求（期望 ${MESSAGES_URL}）`)
+    bad(`没有发出发消息请求（期望 ${MESSAGES_URL}）`)
   } else {
     const hit = posts[0]
+    const hitHeaders = hit.headers
     if (hit.url !== MESSAGES_URL) {
-      bad(`发消息 URL 不是固定地址：${hit.url}`)
+      bad(`发消息 URL 不是内置地址：${hit.url}`)
     } else {
       ok(`发消息 URL = ${hit.url}`)
     }
     let body = {}
     try {
-      body = JSON.parse(hit.body)
+      body = JSON.parse(hit.postData ?? '{}')
     } catch {
       bad('请求体不是 JSON')
     }
     if (body.model !== MODEL) {
-      bad(`body.model 不是固定模型：${JSON.stringify(body.model)}`)
+      bad(`body.model 不是内置模型：${JSON.stringify(body.model)}`)
     } else {
       ok(`body.model = ${body.model}`)
     }
-    if (hit.headers['x-api-key'] !== KEY) {
-      bad(`x-api-key 头不对：${JSON.stringify(hit.headers['x-api-key'])}`)
+    if (hitHeaders['x-api-key'] !== KEY) {
+      bad(`x-api-key 头不对：${JSON.stringify(hitHeaders['x-api-key'])}`)
     } else {
       ok('x-api-key = 用户填的 key')
     }
-    if (hit.headers['anthropic-version']) {
-      bad(`不该带 anthropic-version（中转 CORS 预检会失败）：${hit.headers['anthropic-version']}`)
+    if (hitHeaders['anthropic-version']) {
+      bad(`不该带 anthropic-version（中转 CORS 预检会失败）：${hitHeaders['anthropic-version']}`)
     } else {
       ok('未带 anthropic-version')
     }
@@ -294,14 +408,28 @@ try {
     if (!system.includes('Web')) {
       bad(`提醒内容没有折进 system：${JSON.stringify(system)}`)
     } else if (/,,\s/.test(system)) {
-      bad(`system 里出现空段（位置信息移除后遗留的空逗号）：${JSON.stringify(system)}`)
+      bad(`system 里出现空段：${JSON.stringify(system)}`)
     } else {
       ok(`提醒内容已折进 system，无空段（${system.length} 字符）`)
     }
   }
 
-  // ---------- [F] console error ----------
-  console.log('\n[F] console error')
+  // ---------- [G] 刷新后渠道选择持久化 ----------
+  console.log('\n[G] 刷新后渠道选择')
+  await page.reload({ waitUntil: 'domcontentloaded' })
+  await page.waitForTimeout(1000)
+  dialog = await openSettings()
+  const reloadedLabel = (
+    await dialog.getByRole('button', { name: /渠道|Channel/ }).first().innerText()
+  ).trim()
+  if (!/我们的渠道|Our Channel/.test(reloadedLabel)) {
+    bad(`刷新后渠道选择没保住：${JSON.stringify(reloadedLabel)}`)
+  } else {
+    ok(`刷新后渠道仍是 ${reloadedLabel}`)
+  }
+
+  // ---------- [I] console error ----------
+  console.log('\n[I] console error')
   if (consoleErrors.length > 0) {
     bad(`console 有 ${consoleErrors.length} 条 error：${consoleErrors.slice(0, 3).join(' | ')}`)
   } else {

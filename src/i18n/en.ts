@@ -204,8 +204,9 @@ export const en = {
   settingsLocaleZhCN: 'Simplified Chinese',
   settingsLocaleEnUS: 'English',
 
-  // ---------- Service config (provider kind / API Key / base URL / model) ----------
-  settingsProviderKindLabel: 'Service type',
+  // ---------- Service config (channel / API Key / service URL / model) ----------
+  settingsProviderKindLabel: 'Channel',
+  settingsProviderKindKeyHint: 'Check that your API Key still applies after switching channels',
   settingsApiKeyLabel: 'API Key',
   settingsBaseUrlLabel: 'Service URL',
   settingsBaseUrlPlaceholder: 'e.g. https://your-gateway.example.com',

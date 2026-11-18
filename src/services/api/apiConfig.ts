@@ -2,8 +2,8 @@ import { create } from 'zustand'
 import { captureStateSnapshot, recordAction } from '../diagnostics/collector.js'
 import {
   DEFAULT_PROVIDER_KIND,
-  getFixedService,
   getSpec,
+  isUserField,
   isProviderKind,
   type ProviderCaps,
   type ProviderKind,
@@ -11,16 +11,19 @@ import {
 } from './providers.js'
 
 /**
- * 服务配置：服务类型 + 三个字段，全部存 localStorage。
- * - chat-demo:provider-kind  服务类型（deepseek / anthropic）；旧用户没有这个 key，按 deepseek 处理
- * - chat-demo:api-key        沿用原 key 名，旧数据天然兼容
- * - chat-demo:base-url       服务地址（origin，不含 /v1 这类协议前缀）
- * - chat-demo:model          请求里的 model
+ * 配置：当前渠道 + 三个字段，全部存 localStorage。
+ * - chat-demo:provider-kind        当前渠道（deepseek / anthropic / openai / ours）；旧用户没有这个 key，
+ *                                  按当前构建的默认渠道处理（内测包 ours / 标准包 deepseek）
+ * - chat-demo:api-key              API Key：**所有渠道共用一把**（切换渠道不丢，界面会提示可重填）
+ * - chat-demo:base-url:<渠道>      用户自填渠道（anthropic / openai）的服务地址，按渠道分开存，
+ *                                  切渠道不会把 A 的地址带给 B
+ * - chat-demo:model:<渠道>         同上，按渠道分开存的模型
+ *
+ * 内置地址/模型的渠道（deepseek / ours）在 spec.fields 里没有 baseUrl / model：
+ * 设置页不渲染这两行，setter 直接拒绝写入，值只从 spec.defaults 取。
+ * 老用户共享的 chat-demo:base-url / chat-demo:model 只有 DeepSeek 官方这一路还当兜底读（升级无感）。
  *
  * 请求路径与鉴权头都来自 ProviderSpec（providers.ts），这里只负责「当前用哪个 spec + 取到值」。
- *
- * 固定配置（内测版，spec.fixed）：服务类型、地址、模型一律取构建期常量（internalBuild.ts），
- * 不读也不写 localStorage；对应 setter 变成空操作（设置页本来就不渲染这些输入行）。
  */
 export type ApiConfig = {
   kind: ProviderKind
@@ -36,9 +39,17 @@ export const DEFAULT_MODEL = 'deepseek-flash'
 export const CONFIG_KEYS = {
   kind: 'chat-demo:provider-kind',
   apiKey: 'chat-demo:api-key',
+  /** 1.2.2 之前只有这一份地址/模型（当时只有 DeepSeek 官方），保留为老用户兜底 */
   baseUrl: 'chat-demo:base-url',
   model: 'chat-demo:model',
 } as const
+
+/** 用户自填字段按渠道分开存：chat-demo:base-url:anthropic 这类 */
+export const scopedKey = (field: 'baseUrl' | 'model', kind: ProviderKind): string =>
+  `chat-demo:${field === 'baseUrl' ? 'base-url' : 'model'}:${kind}`
+
+/** 老用户那份共享地址/模型只属于 DeepSeek 官方（当年只有它一个渠道） */
+const LEGACY_KIND: ProviderKind = 'deepseek'
 
 const read = (key: string) => {
   try {
@@ -83,12 +94,8 @@ export const normalizeBaseUrl = (value: string): string | null => {
   }
 }
 
-/** 当前生效的服务类型；内测版固定为常量里的那一个，否则老数据（没有 kind）回落到 deepseek */
+/** 当前生效的渠道；没选过（老用户没有这个 key）就按构建默认渠道 */
 export const getProviderKind = (): ProviderKind => {
-  const fixed = getFixedService()
-  if (fixed) {
-    return fixed.kind
-  }
   const saved = read(CONFIG_KEYS.kind)
   return isProviderKind(saved) ? saved : DEFAULT_PROVIDER_KIND
 }
@@ -107,12 +114,50 @@ const readHost = (baseUrl: string): string => {
   }
 }
 
+/**
+ * 已保存的地址：
+ * - 锁定渠道（ours）恒为空串：地址只认 spec.defaults
+ * - DeepSeek 官方：读老用户那份共享的 chat-demo:base-url（1.2.2 只有它一个渠道），
+ *   升级后老中转地址仍然生效；界面不渲染这一行，用户改不了
+ * - 自填渠道（anthropic / openai）：读各自的 chat-demo:base-url:<渠道>
+ */
+const storedBaseUrl = (kind: ProviderKind): string => {
+  const spec = getSpec(kind)
+  if (spec.locked) {
+    return ''
+  }
+  if (kind === LEGACY_KIND) {
+    return normalizeBaseUrl(read(CONFIG_KEYS.baseUrl) ?? '') ?? ''
+  }
+  if (!isUserField(spec, 'baseUrl')) {
+    return ''
+  }
+  return normalizeBaseUrl(read(scopedKey('baseUrl', kind)) ?? '') ?? ''
+}
+
+/** 已保存的模型：规则同地址（老用户那份 chat-demo:model 只属于 DeepSeek 官方） */
+const storedModel = (kind: ProviderKind): string => {
+  const spec = getSpec(kind)
+  if (spec.locked) {
+    return ''
+  }
+  if (kind === LEGACY_KIND) {
+    return (read(CONFIG_KEYS.model) ?? '').trim()
+  }
+  if (!isUserField(spec, 'model')) {
+    return ''
+  }
+  return (read(scopedKey('model', kind)) ?? '').trim()
+}
+
+const initialKind = getProviderKind()
+
 /** 已保存的原始值（空串表示没配置过，使用默认值） */
 export const useApiConfig = create<ApiConfig>(() => ({
-  kind: getProviderKind(),
+  kind: initialKind,
   apiKey: read(CONFIG_KEYS.apiKey) ?? '',
-  baseUrl: read(CONFIG_KEYS.baseUrl) ?? '',
-  model: read(CONFIG_KEYS.model) ?? '',
+  baseUrl: storedBaseUrl(initialKind),
+  model: storedModel(initialKind),
 }))
 
 /** 当前生效的 spec：路径、鉴权头、能力开关都从它取 */
@@ -126,30 +171,30 @@ export const getCaps = (): ProviderCaps => getCurrentSpec().caps
  * 其次用当前 spec 的内置默认，最后回落到构建期地址。
  */
 const resolveBaseUrl = (): string => {
-  const fixed = getCurrentSpec().fixed
-  if (fixed) {
-    // 内测版：地址写死在构建期常量里，已存值不再参与
-    return fixed.baseUrl
+  const spec = getCurrentSpec()
+  if (spec.locked) {
+    // 内置锁定渠道（ours）：地址由 spec.defaults 决定，已存值一律不参与
+    return spec.defaults?.baseUrl ?? DEFAULT_BASE_URL
   }
-  const stored = normalizeBaseUrl(read(CONFIG_KEYS.baseUrl) ?? '')
+  const stored = storedBaseUrl(spec.kind)
   if (stored) {
     return stored
   }
-  return getCurrentSpec().defaults?.baseUrl ?? DEFAULT_BASE_URL
+  return spec.defaults?.baseUrl ?? DEFAULT_BASE_URL
 }
 
 /** 模型：同上，已存值优先，其次 spec 默认，最后 deepseek-flash */
 const resolveModel = (): string => {
-  const fixed = getCurrentSpec().fixed
-  if (fixed) {
-    // 内测版：模型写死在构建期常量里，已存值不再参与
-    return fixed.model
+  const spec = getCurrentSpec()
+  if (spec.locked) {
+    // 内置锁定渠道（ours）：模型由 spec.defaults 决定，已存值一律不参与
+    return spec.defaults?.model ?? DEFAULT_MODEL
   }
-  const stored = (read(CONFIG_KEYS.model) ?? '').trim()
+  const stored = storedModel(spec.kind)
   if (stored) {
     return stored
   }
-  return getCurrentSpec().defaults?.model ?? DEFAULT_MODEL
+  return spec.defaults?.model ?? DEFAULT_MODEL
 }
 
 /** 每次请求都重新读取，切换/修改后立即生效 */
@@ -166,14 +211,12 @@ export const getMessagesBaseUrl = (): string => `${getBaseUrl()}${getCurrentSpec
 /** ASR / TTS 等工具接口前缀 */
 export const getToolsBaseUrl = (): string => `${getBaseUrl()}${getCurrentSpec().paths.tools}`
 
-/** 保存服务类型并立即生效（路径、鉴权头、按钮显隐随之切换）；内测版固定，直接忽略 */
+/** 保存渠道并立即生效（路径、鉴权头、输入行、能力入口随之切换）；API Key 保持不动（共用一把） */
 export const setProviderKind = (kind: ProviderKind) => {
-  if (getFixedService()) {
-    return
-  }
   const next = isProviderKind(kind) ? kind : DEFAULT_PROVIDER_KIND
   write(CONFIG_KEYS.kind, next)
-  useApiConfig.setState({ kind: next })
+  // 地址/模型按渠道分开存，切换后要把界面上的已存值换成新渠道的
+  useApiConfig.setState({ kind: next, baseUrl: storedBaseUrl(next), model: storedModel(next) })
   recordAction('config_change', 'provider-kind', { result: 'saved', kind: next })
   void captureStateSnapshot('after-config-change')
 }
@@ -193,12 +236,14 @@ export const setApiKey = (apiKey: string) => {
 
 /** 保存服务地址；非法返回 false 且不写入。空值等于清除（回到内置默认地址） */
 export const setBaseUrl = (baseUrl: string): boolean => {
-  if (getCurrentSpec().fixed) {
-    // 内测版：地址固定，写不进去（设置页也不渲染这一行）
+  const spec = getCurrentSpec()
+  if (!isUserField(spec, 'baseUrl')) {
+    // 内置地址的渠道（deepseek / ours）：写不进去（设置页也不渲染这一行）
     return false
   }
+  const key = scopedKey('baseUrl', spec.kind)
   if (!baseUrl.trim()) {
-    write(CONFIG_KEYS.baseUrl, null)
+    write(key, null)
     useApiConfig.setState({ baseUrl: '' })
     return true
   }
@@ -207,7 +252,7 @@ export const setBaseUrl = (baseUrl: string): boolean => {
     recordAction('config_change', 'provider-base-url', { result: 'invalid', reason: 'normalize' })
     return false
   }
-  write(CONFIG_KEYS.baseUrl, value)
+  write(key, value)
   useApiConfig.setState({ baseUrl: value })
   recordAction('config_change', 'provider-base-url', { result: 'saved', host: readHost(value) })
   void captureStateSnapshot('after-config-change')
@@ -216,12 +261,14 @@ export const setBaseUrl = (baseUrl: string): boolean => {
 
 /** 保存模型；空值非法（返回 false），清除请传 null */
 export const setModel = (model: string, reset = false): boolean => {
-  if (getCurrentSpec().fixed) {
-    // 内测版：模型固定，写不进去（设置页也不渲染这一行）
+  const spec = getCurrentSpec()
+  if (!isUserField(spec, 'model')) {
+    // 内置模型的渠道（deepseek / ours）：写不进去（设置页也不渲染这一行）
     return false
   }
+  const key = scopedKey('model', spec.kind)
   if (reset) {
-    write(CONFIG_KEYS.model, null)
+    write(key, null)
     useApiConfig.setState({ model: '' })
     return true
   }
@@ -230,7 +277,7 @@ export const setModel = (model: string, reset = false): boolean => {
     recordAction('config_change', 'provider-model', { result: 'invalid', reason: 'empty' })
     return false
   }
-  write(CONFIG_KEYS.model, value)
+  write(key, value)
   useApiConfig.setState({ model: value })
   recordAction('config_change', 'provider-model', { result: 'saved', model: value })
   void captureStateSnapshot('after-config-change')

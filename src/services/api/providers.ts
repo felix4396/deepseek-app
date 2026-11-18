@@ -1,20 +1,25 @@
 /**
- * 服务类型（ProviderSpec）注册表：一个服务类型 = 一个 spec 对象。
+ * 渠道（ProviderSpec）注册表：一个渠道 = 一个 spec 对象。
  *
- * 设置页的输入行、请求路径、鉴权头、能力开关（搜索/附件/语音/朗读/标题）
- * 以及请求体里能带哪些 DeepSeek 扩展字段，全部由这里驱动。
+ * 设置页的输入行、请求路径、鉴权头、能力入口（搜索/附件/语音/朗读/标题）
+ * 以及请求体里能带哪些扩展字段，全部由这里驱动。
  *
- * 新增一个服务类型只需要：把它加进 ProviderKind，并在 SPECS 里补一个对象；
+ * 新增一个渠道只需要：把它加进 ProviderKind，并在 SPECS 里补一个对象；
  * 设置页与请求构造不用改任何结构（组件按 spec.fields 循环渲染、按 spec.caps 控制显隐）。
  * 协议不同（OpenAI 兼容）的额外工作是 openaiAdapter.ts 里的双向翻译，同样与组件无关。
  *
- * 「固定配置」（内测版）：spec 上的 fixed 字段表示 baseUrl / model / kind 由构建期常量钉死
- * （常量集中在 internalBuild.ts）。带 fixed 的 spec 只保留 apiKey 一个字段，设置页因此
- * 不渲染地址/模型输入行；可选项只剩一个时不渲染「服务类型」下拉。协议适配逻辑不受影响。
+ * 四个渠道（1.4.0-beta.3）：
+ *   1. deepseek  DeepSeek 官方：地址与模型内置（https://api.deepseek.com / deepseek-flash），只需 Key，能力全开
+ *   2. anthropic Anthropic 协议：地址 / 模型 / Key 都要自己填，只有对话 + 深度思考
+ *   3. openai    OpenAI 兼容：地址 / 模型 / Key 都要自己填，只有基础对话
+ *   4. ours      我们的渠道：地址与模型内置（见下），只需 Key，只有对话 + 深度思考
+ *
+ * 内置地址/模型的渠道（deepseek / ours）在 fields 里没有 baseUrl / model，
+ * 设置页因此不渲染地址与模型输入行，值只从 defaults 取。
  */
-import { FIXED_SERVICE, type FixedService } from './internalBuild.js'
+import { INTERNAL_BUILD } from './internalBuild.js'
 
-export type ProviderKind = 'deepseek' | 'anthropic' | 'openai'
+export type ProviderKind = 'deepseek' | 'anthropic' | 'openai' | 'ours'
 
 /**
  * 线上协议：决定请求体怎么构造、响应流怎么解析。
@@ -83,11 +88,11 @@ export type ProviderSpec = {
   /** 开启 thinking 时需要附带的最小思考预算；不填表示该协议不需要这个字段 */
   thinkingBudget?: number
   /**
-   * 固定配置（内测版）：地址 / 模型 / 服务类型都由构建期常量钉死（见 internalBuild.ts）。
-   * 有它时：这些值不落 localStorage、设置页不渲染对应输入行、服务类型不可切换。
-   * 只影响「配置从哪来」，不影响 paths / auth / caps / extended 这些协议行为。
+   * 地址与模型由 defaults 钉死：已存值不参与（`chat-demo:base-url` 这类老数据一律忽略）。
+   * 用于「用户不该知道后端地址」的渠道（ours）。只影响「配置从哪来」，
+   * 不影响 paths / auth / caps / extended 这些协议行为。
    */
-  fixed?: FixedService
+  locked?: boolean
 }
 
 /** Anthropic 风格接口要求的协议版本头 */
@@ -98,7 +103,7 @@ const RAW_SPECS: Record<ProviderKind, ProviderSpec> = {
     kind: 'deepseek',
     label: { zh: 'DeepSeek 官方', en: 'DeepSeek Official' },
     protocol: 'anthropic',
-    // 官方地址与模型都写死，用户只需要填 Key
+    // 官方地址与模型内置，用户只需要填 Key（老用户存过的地址/模型仍优先，见 apiConfig.ts）
     fields: ['apiKey'],
     defaults: { baseUrl: 'https://api.deepseek.com', model: 'deepseek-flash' },
     paths: { models: '/models', messages: '/anthropic/v1/messages', tools: '/v1/tools' },
@@ -159,41 +164,43 @@ const RAW_SPECS: Record<ProviderKind, ProviderSpec> = {
       asr: false,
     },
   },
+  ours: {
+    kind: 'ours',
+    label: { zh: '我们的渠道', en: 'Our Channel' },
+    protocol: 'anthropic',
+    // 地址与模型内置（locked）：设置页只有 API Key 一行，用户看不到也不该看到后端地址
+    fields: ['apiKey'],
+    defaults: { baseUrl: 'http://123.207.199.196:60010', model: 'deepseek-v4.1-flash' },
+    // 该上游只有 /v1/messages，没有 /anthropic 前缀
+    paths: { models: '/v1/models', messages: '/v1/messages', tools: '/v1/tools' },
+    auth: 'x-api-key',
+    // 不带 anthropic-version：中转 CORS 白名单一般只放行 x-api-key（60010 实测预检失败）
+    locked: true,
+    caps: {
+      text: true,
+      thinking: true,
+      search: false,
+      title: false,
+      vision: false,
+      tts: false,
+      asr: false,
+    },
+  },
 }
 
+const SPECS: Record<ProviderKind, ProviderSpec> = RAW_SPECS
+
 /**
- * 内测版：把这个 spec 变成「固定配置」版本——字段只剩 apiKey（API Key 仍由用户填），
- * 地址与模型换成构建期常量。协议相关字段（paths / auth / caps / extended）原样保留。
+ * 默认渠道：内测构建默认「我们的渠道」，标准构建默认「DeepSeek 官方」。
+ * 用户切换过就按 localStorage 里存的那一个来（见 apiConfig.ts）。
  */
-const withFixedService = (spec: ProviderSpec, fixed: FixedService): ProviderSpec => ({
-  ...spec,
-  fixed,
-  fields: spec.fields.filter((field) => field === 'apiKey'),
-  defaults: { ...spec.defaults, baseUrl: fixed.baseUrl, model: fixed.model },
-})
+export const DEFAULT_PROVIDER_KIND: ProviderKind = INTERNAL_BUILD ? 'ours' : 'deepseek'
 
-const SPECS: Record<ProviderKind, ProviderSpec> = FIXED_SERVICE
-  ? ({
-      ...RAW_SPECS,
-      [FIXED_SERVICE.kind]: withFixedService(RAW_SPECS[FIXED_SERVICE.kind], FIXED_SERVICE),
-    } satisfies Record<ProviderKind, ProviderSpec>)
-  : RAW_SPECS
-
-/** 内测版钉死的服务类型；正式构建为 null（用户可自由切换） */
-export const getFixedService = (): FixedService | null => FIXED_SERVICE
-
-export const DEFAULT_PROVIDER_KIND: ProviderKind = FIXED_SERVICE?.kind ?? 'deepseek'
-
-/** 可切换的服务类型：内测版只剩钉死的那一个 */
-export const PROVIDER_KINDS: ProviderKind[] = FIXED_SERVICE
-  ? [FIXED_SERVICE.kind]
-  : (Object.keys(RAW_SPECS) as ProviderKind[])
+/** 可切换的渠道（顺序即下拉里的展示顺序） */
+export const PROVIDER_KINDS: ProviderKind[] = ['deepseek', 'anthropic', 'openai', 'ours']
 
 /** 下拉里的选项（顺序即展示顺序） */
 export const PROVIDER_SPECS: ProviderSpec[] = PROVIDER_KINDS.map((kind) => SPECS[kind])
-
-/** 至少两个可选项才值得渲染「服务类型」下拉；只有一个说明是内测版的固定配置 */
-export const hasProviderChoice = (): boolean => PROVIDER_KINDS.length > 1
 
 export const isProviderKind = (value: unknown): value is ProviderKind =>
   typeof value === 'string' && (PROVIDER_KINDS as string[]).includes(value)
@@ -201,6 +208,10 @@ export const isProviderKind = (value: unknown): value is ProviderKind =>
 /** 取 spec：未知/缺省（旧用户没有这个 key）一律按 deepseek 处理 */
 export const getSpec = (kind?: string | null): ProviderSpec =>
   isProviderKind(kind) ? SPECS[kind] : SPECS[DEFAULT_PROVIDER_KIND]
+
+/** 该渠道是否要用户自己填这个字段（不在 fields 里就是内置值） */
+export const isUserField = (spec: ProviderSpec, field: ProviderField): boolean =>
+  spec.fields.includes(field)
 
 /**
  * 请求体字段的「发 / 不发」：集中成一张表，构造请求时只查表，不写 if-else 分支。
