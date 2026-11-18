@@ -10,6 +10,7 @@
  *   Array.prototype.toSorted 等  Chrome 110（ES2023）
  *   crypto.randomUUID            Chrome 92
  *   Array.prototype.findLast      Chrome 97
+ *   String.prototype.replaceAll   Chrome 85（issue #79：产物靠第三方依赖带进来 31 处裸调用）
  *
  * 这些是**运行时 API**，构建降级语法（rspack target=chrome83）救不了，只能在这里手写补。
  * 三条硬约束：
@@ -388,6 +389,104 @@ const installRandomUUID = (): void => {
   })
 }
 
+// ── String.prototype.replaceAll（GitHub issue #79）─────────────────────────────
+//
+// Chrome 85 才有。src 里没有直接调用，但第三方依赖（数学 / mermaid 那条链）的 async chunk 里
+// 带进来 31 处裸调用 —— WebView 83 上就是 `TypeError: s.replaceAll is not a function`，
+// 一个未捕获异常把整屏 React 卸掉（与 issue #27 白屏同形态）。
+//
+// 语义按规范 21.1.3.18 实现，两个点不能糊：
+//   1) search 是正则时必须带 g，不带 g 按规范抛 TypeError —— 不能悄悄降级成「只换第一个」；
+//   2) 替换串里的 $$ / $& / $` / $' / $1 不是字面量，要走 GetSubstitution 展开。
+//      用 split/join 拼的实现会把 `$&` 原样输出，与原生不等价（单测里有对照用例）。
+//      所以这里**不自己实现替换串展开**：字符串 search 也落成「转义后的字面量 RegExp +
+//      原生 RegExp[Symbol.replace]」，让引擎自己的 GetSubstitution 跑，和原生逐字节一致。
+
+/** Symbol.replace（ES6，Chrome 83 已有；拿不到时下面的补丁会明确抛错而不是静默走错语义） */
+const SYMBOL_REPLACE: symbol | undefined =
+  typeof Symbol === 'function' && typeof Symbol.replace === 'symbol' ? Symbol.replace : undefined
+
+/** Symbol.match：规范 IsRegExp 就是看它（带 @@match 的对象按正则处理，跨 realm 也认） */
+const SYMBOL_MATCH: symbol | undefined =
+  typeof Symbol === 'function' && typeof Symbol.match === 'symbol' ? Symbol.match : undefined
+
+type ReplaceHook = (this: object, subject: string, replaceValue: unknown) => string
+
+/** 取对象上的 @@replace（原生 RegExp 有：全局替换 + 替换串展开都由它负责） */
+const replaceHookOf = (target: object): ReplaceHook | undefined => {
+  if (SYMBOL_REPLACE === undefined) {
+    return undefined
+  }
+  const hook = (target as unknown as Record<symbol, unknown>)[SYMBOL_REPLACE]
+  return typeof hook === 'function' ? (hook as ReplaceHook) : undefined
+}
+
+/** 原生 RegExp.prototype[Symbol.replace]，作为没有自定义 @@replace 时的实现 */
+const NATIVE_REGEXP_REPLACE = replaceHookOf(RegExp.prototype)
+
+const replaceWithRegExp = (pattern: object, subject: string, replaceValue: unknown): string => {
+  const hook = replaceHookOf(pattern) || NATIVE_REGEXP_REPLACE
+  if (!hook) {
+    throw new TypeError('String.prototype.replaceAll: 运行时缺少 RegExp[Symbol.replace]')
+  }
+  return hook.call(pattern, subject, replaceValue)
+}
+
+/** 规范 IsRegExp：@@match 优先，退回 instanceof（跨 realm 的 RegExp 靠前者） */
+const isRegExpLike = (value: unknown): boolean => {
+  if (value === null || (typeof value !== 'object' && typeof value !== 'function')) {
+    return false
+  }
+  if (SYMBOL_MATCH !== undefined) {
+    const matcher = (value as unknown as Record<symbol, unknown>)[SYMBOL_MATCH]
+    if (matcher !== undefined) {
+      return !!matcher
+    }
+  }
+  return (value as object) instanceof RegExp
+}
+
+/** 正则元字符转义：字符串 search 只按字面量匹配（`.` 绝不是通配） */
+const REGEXP_SPECIALS = /[\\^$.*+?()[\]{}|]/g
+const escapeRegExpSource = (text: string): string => text.replace(REGEXP_SPECIALS, '\\$&')
+
+/** 字符串 search：转成「转义后的全局字面量 RegExp」，全量替换交给原生 @@replace */
+const replaceLiteralAll = (subject: string, search: string, replaceValue: unknown): string =>
+  replaceWithRegExp(new RegExp(escapeRegExpSource(search), 'g'), subject, replaceValue)
+
+/** String.prototype.replaceAll —— Chrome 85 */
+const installStringReplaceAll = (): void => {
+  if (typeof String.prototype.replaceAll === 'function') {
+    return
+  }
+  define(
+    String.prototype,
+    'replaceAll',
+    function replaceAll(this: unknown, searchValue?: unknown, replaceValue?: unknown): string {
+      if (this === null || this === undefined) {
+        throw new TypeError('String.prototype.replaceAll called on null or undefined')
+      }
+      const subject = String(this)
+      if (searchValue !== null && searchValue !== undefined && isRegExpLike(searchValue)) {
+        const pattern = searchValue as { flags?: unknown; global?: unknown }
+        let flags = ''
+        if (pattern.flags !== undefined) {
+          flags = String(pattern.flags)
+        } else if (pattern.global) {
+          flags = 'g'
+        }
+        if (flags.indexOf('g') < 0) {
+          // 规范要求：正则 search 必须带 g，否则 TypeError（原生也抛，不许悄悄只换首个）
+          throw new TypeError('String.prototype.replaceAll called with a non-global RegExp argument')
+        }
+        return replaceWithRegExp(pattern as object, subject, replaceValue)
+      }
+      // searchValue 为 null/undefined 时按规范 String() 成 "null"/"undefined" 去找
+      return replaceLiteralAll(subject, String(searchValue), replaceValue)
+    }
+  )
+}
+
 /**
  * 装上全部低内核补丁。幂等：每个补丁自己判断「原生是否已存在」，重复调用不会重复定义。
  * 本模块 import 时自动执行一次（见文件尾），入口不需要额外调用。
@@ -399,6 +498,7 @@ export const installLegacyPolyfills = (): void => {
   installImmutableArrayMethods()
   installStructuredClone()
   installRandomUUID()
+  installStringReplaceAll()
   if ((globalThis as Record<string, unknown>)[LEGACY_POLYFILL_FLAG] === undefined) {
     define(globalThis, LEGACY_POLYFILL_FLAG, LEGACY_POLYFILL_VERSION)
   }

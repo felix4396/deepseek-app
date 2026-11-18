@@ -468,7 +468,7 @@ export const POLYFILL_FLAG = '__DEEPSEEK_LEGACY_POLYFILL__'
  *
  * `covered` 表示 src/polyfills/legacy.ts 是否**真的**补了它：
  *   - true  → 允许裸调用，但产物里必须能在入口脚本找到 polyfill 标记；
- *   - false → 没有补丁覆盖，产物里出现就是必拦（例如 String.prototype.replaceAll，Chrome 85，
+ *   - false → 没有补丁覆盖，产物里出现就是必拦（例如 Promise.any / AggregateError，Chrome 85，
  *             legacy.ts 至今没补，低内核上必 TypeError）。
  * 改这张表时同步核对 legacy.ts 的 define(...) 清单，别凭印象写。
  */
@@ -544,14 +544,16 @@ const LEGACY_RUNTIME_APIS = [
     covered: true,
     pattern: /crypto\s*\.\s*randomUUID\s*\(/g,
   },
-  // 没有补丁覆盖：出现即拦
   {
+    // issue #79：src 里没人直接调，但第三方依赖（数学/mermaid 那条链）的 async chunk 带进来
+    // 三十来处裸调用，WebView 83 上必白屏 —— legacy.ts 补了，这里跟着改成已覆盖。
     id: 'string-replaceAll',
     api: 'String.prototype.replaceAll',
     chrome: 85,
-    covered: false,
+    covered: true,
     pattern: /\.replaceAll\s*\(/g,
   },
+  // 没有补丁覆盖：出现即拦
   // 注意：Array.prototype.group 故意不列。它最终以 Object.groupBy 发布（Chrome 117），`.group(` 在
   // 真实产物里更可能命中第三方库的自定义方法（例如 d3.group 写成 `d3.group(...)`），误报会随依赖升级
   // 随机把发布门禁打红。这张表只收「名字足够独特、不可能是同名自定义方法」的 API。
