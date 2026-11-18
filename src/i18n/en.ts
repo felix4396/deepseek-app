@@ -405,6 +405,8 @@ export const en = {
   oursClaimUseKey: 'Use the Key issued by the server {tail}',
   oursClaimNeedsDevice: 'Device code unavailable, reopen settings to retry',
   oursQuotaTitle: 'Remaining quota',
+  /** Points unit (#94): appended by formatPoints in services/ours/api.ts — never hardcode a unit there */
+  oursPointsUnit: 'points',
   oursQuotaValue: '{points}',
   oursQuotaAction: 'Refresh quota',
   oursQuotaLoading: 'Checking…',

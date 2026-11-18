@@ -384,6 +384,8 @@ export const zh = {
   oursClaimNeedsDevice: '设备码异常，无法领取，请重新打开设置页',
   // 额度
   oursQuotaTitle: '剩余额度',
+  /** 积分单位（#94）：由 services/ours/api.ts 的 formatPoints 拼接，别在代码里写死中文 */
+  oursPointsUnit: '积分',
   oursQuotaValue: '{points}',
   oursQuotaAction: '刷新额度',
   oursQuotaLoading: '查询中…',

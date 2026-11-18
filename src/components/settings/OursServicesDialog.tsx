@@ -608,7 +608,7 @@ const OursServicesDialog = ({ onClose }: { onClose: () => void }) => {
           {claim.status === 'ok' ? (
             <div className={clsx(styles.value, styles.valueSuccess)} data-testid="ours-claim-status">
               {claim.firstTime
-                ? t('oursClaimOk', { points: formatPoints(claim.points) })
+                ? t('oursClaimOk', { points: formatPoints(claim.points, t('oursPointsUnit')) })
                 : t('oursClaimOkExisting')}
             </div>
           ) : null}
@@ -730,7 +730,7 @@ const OursServicesDialog = ({ onClose }: { onClose: () => void }) => {
             )}
           >
             {balance.status === 'ok'
-              ? t('oursQuotaValue', { points: formatPoints(balance.profile.remainingPoints) })
+              ? t('oursQuotaValue', { points: formatPoints(balance.profile.remainingPoints, t('oursPointsUnit')) })
               : balance.status === 'error'
                 ? t(balance.messageKey)
                 : balance.status === 'loading'
@@ -806,7 +806,7 @@ const OursServicesDialog = ({ onClose }: { onClose: () => void }) => {
             >
               {inviteResult.kind === 'error'
                 ? t(inviteResult.messageKey)
-                : t('oursInviteOk', { points: formatPoints(inviteResult.points) })}
+                : t('oursInviteOk', { points: formatPoints(inviteResult.points, t('oursPointsUnit')) })}
             </div>
           ) : null}
         </section>
@@ -843,7 +843,7 @@ const OursServicesDialog = ({ onClose }: { onClose: () => void }) => {
                     onClick={() => setPlanId(plan.id)}
                   >
                     <span className={styles.planName}>{plan.name}</span>
-                    <span className={styles.planMeta}>{formatPlanMeta(plan)}</span>
+                    <span className={styles.planMeta}>{formatPlanMeta(plan, t('oursPointsUnit'))}</span>
                   </button>
                 </li>
               ))}
@@ -981,8 +981,8 @@ const OursServicesDialog = ({ onClose }: { onClose: () => void }) => {
                   ? // 202（CREDIT_PENDING / VERIFY_PENDING）只有一种说法：处理中，稍后自动到账
                     t('oursRedeemProcessing')
                   : redeem.messageKey === 'oursRedeemDuplicate'
-                    ? t('oursRedeemDuplicate', { points: formatPoints(redeem.points) })
-                    : t('oursRedeemSuccess', { points: formatPoints(redeem.points) })}
+                    ? t('oursRedeemDuplicate', { points: formatPoints(redeem.points, t('oursPointsUnit')) })
+                    : t('oursRedeemSuccess', { points: formatPoints(redeem.points, t('oursPointsUnit')) })}
               {redeem.cardTail === '' ? '' : `（${redeem.cardTail}）`}
             </div>
           ) : null}
