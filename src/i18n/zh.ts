@@ -348,6 +348,13 @@ export const zh = {
   feedbackActionsLabel: '最近动作：{actions}',
   feedbackContactLabel: '联系方式（可选）',
   feedbackContactPlaceholder: '邮箱或微信，方便我们联系你',
+  // ---------- 反馈草稿：取消不丢，重开回填（Issue #31） ----------
+  feedbackDraftRestored: '已恢复上次未提交的内容',
+  feedbackDraftScreenshotHint: '上次选的图片不会保留，需要重新选择',
+  feedbackDraftClear: '清空已填内容',
+  feedbackDraftClearHint: '清空问题描述、联系方式与截图；下次打开不再回填',
+  feedbackDraftClearConfirm: '确定清空已填内容？清空后无法恢复',
+  feedbackDraftCleared: '已清空填写内容',
 
   // ---------- 我们的渠道：额度与卡密（Issue #7） ----------
   oursServicesLabel: '额度与卡密',
