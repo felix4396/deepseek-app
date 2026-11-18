@@ -498,4 +498,15 @@ export const en = {
   errorScreenCopyFailed: 'Copy failed, please retry',
   errorScreenHint:
     'If a reload does not help, copy the diagnostics into your feedback (error location and version only; no chat content or API keys).',
+  // Issue #72
+  oursErrCardLeased: 'This card code has moved to the in-app redemption channel. Redeem it in the app.',
+  oursErrCardNotFoundOrExpired: 'Card code does not exist or has expired',
+  oursErrApiKeyNotIssued: 'Claim a key in the app first, then redeem',
+  oursRedeemProcessing: 'Redemption is processing; points will arrive automatically',
+  oursRedeemDuplicate: 'This card code was already redeemed; {points} arrived (about {yuan} to spend)',
+  oursRedeemRefreshBalance: 'Refresh quota',
+  oursDeviceBackupHint: 'Your device code is your account credential. Copy and back it up: clearing site data or switching devices loses it for good.',
+  oursDeviceBackupHintOk: 'Got it',
+  oursInviteErrApplyRateLimited: 'Too many claims today, try again tomorrow',
+  oursInviteErrAlreadyClaimed: 'This device already claimed a key and cannot claim again',
 } satisfies Record<keyof typeof zh, string>

@@ -99,6 +99,9 @@ export type OursMessageKey =
   | 'oursErrForbidden'
   | 'oursErrNotFound'
   | 'oursErrCardNotFound'
+  | 'oursErrCardNotFoundOrExpired'
+  | 'oursErrCardLeased'
+  | 'oursErrApiKeyNotIssued'
   | 'oursErrCardUsed'
   | 'oursErrCardMissing'
   | 'oursErrKeyMissing'
@@ -131,6 +134,8 @@ export const OURS_ERROR_KEYS: Record<string, OursMessageKey> = {
   NOT_FOUND: 'oursErrNotFound',
   CARD_NOT_FOUND: 'oursErrCardNotFound',
   CARD_ALREADY_USED: 'oursErrCardUsed',
+  /** 卡密已迁到本机池兑换通道（与「已被使用」是两件事，文案必须分开） */
+  CARD_LEASED: 'oursErrCardLeased',
   CARD_MISSING: 'oursErrCardMissing',
   API_KEY_MISSING: 'oursErrKeyMissing',
   API_KEY_INVALID: 'oursErrKeyInvalid',
@@ -399,7 +404,8 @@ export const redeemCard = async (
   }
   const parsed = parseJson(result.text)
   const body = parsed.ok ? asRecord(parsed.value) : null
-  const code = readString(body, 'code')
+  // 业务码兼容两种信封：顶层 {code}（本服务）与 {error:{code}}（本机池那条链路）
+  const code = readString(body, 'code') || readString(asRecord(body?.error), 'code')
   if (result.status === 202 || code === 'CREDIT_PENDING') {
     return { kind: 'pending', cardTail }
   }
