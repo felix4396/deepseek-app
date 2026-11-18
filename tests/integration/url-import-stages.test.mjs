@@ -4,10 +4,42 @@
 // 只替换 Capacitor 的原生桥（window.androidBridge + capacitive nativePromise），
 // mock 按请求里的 Range 头分块返回字节，因此走的是真实代码：
 // 分块下载 → base64 解码 → ZIP 校验 → importHistory → staging → IndexedDB。
+import { readFile } from 'node:fs/promises'
 import { chromium } from 'playwright'
 import { buildArchive, textPayload } from '../fixtures/archive-fixture.mjs'
 
-const APP_URL = process.env.APP_URL || 'http://127.0.0.1:5181'
+const APP_URL = (process.env.APP_URL || 'http://127.0.0.1:5181').replace(/\/+$/, '')
+const LOCAL_DIST = new URL('../../dist/index.html', import.meta.url)
+
+/** 从任意 index.html 文本里取入口 bundle 名（main.<hash>.js） */
+const bundleName = (html) => (html.match(/main\.[a-z0-9]+\.js/) || [])[0] || ''
+
+/**
+ * 陈旧构建守卫：本用例断言的是「当前候选源码」的行为，
+ * 如果被测页面还是旧 dist（例如默认 5181 上跑的旧构建），逐条失败会看起来像产品回归。
+ * 因此先比对被测页面与本仓库 dist 的入口 bundle：不一致就直接判失败并说明原因。
+ */
+const assertFreshBuild = async () => {
+  console.log(`  被测地址 APP_URL=${APP_URL}`)
+  let local = ''
+  try {
+    local = bundleName(await readFile(LOCAL_DIST, 'utf8'))
+  } catch {
+    console.log('  （本机没有 dist/index.html，跳过陈旧构建比对；请确认 APP_URL 指向刚构建的产物）')
+    return
+  }
+  const html = await fetch(`${APP_URL}/`).then((response) => response.text())
+  const served = bundleName(html)
+  if (local && served && local !== served) {
+    failures.push(
+      `被测页面构建过期：${APP_URL} 提供 ${served}，本仓库 dist 是 ${local} —— ` +
+        '请先 `pnpm build` 并用 `APP_URL` 指向新产物；这不是产品回归'
+    )
+    console.error(`  ✗ 被测页面构建过期（${served} ≠ ${local}）`)
+  } else {
+    console.log(`  构建一致：${local || served}`)
+  }
+}
 const SHOT_DIR = process.env.SHOT_DIR || '/tmp/url-import-shots'
 const ZIP_URL = 'https://obs.example.test/deepseek_data-2026-11-01.zip'
 
@@ -41,7 +73,8 @@ const obsError = (code, message) =>
  *   rejectMessage —— reject 的错误原文
  */
 const openApp = async (plan, { viewport = { width: 1280, height: 800 } } = {}) => {
-  const browser = await chromium.launch()
+  await assertFreshBuild()
+const browser = await chromium.launch()
   const context = await browser.newContext({
     locale: 'zh-CN',
     viewport,
@@ -668,7 +701,12 @@ const run = async () => {
     await startUrlImport(page)
     await page.getByText(/已导入 5 个会话/).waitFor({ timeout: 60_000 })
     const toggle = page.getByRole('button', { name: '展开', exact: true })
-    check('有「导入详情」折叠入口', (await toggle.count()) >= 1)
+    const toggleCount = await toggle.count()
+    check(
+      '有「导入详情」折叠入口',
+      toggleCount >= 1,
+      toggleCount === 0 ? `找不到「展开」按钮（APP_URL=${APP_URL}；若是旧构建请先 pnpm build）` : ''
+    )
     check('折叠时默认不展开列表', (await page.getByText('开始导入').count()) === 0)
     await toggle.first().click()
     const rows = page.locator('ol li')
