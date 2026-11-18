@@ -19,7 +19,6 @@ import {
 } from '../../services/ours/api.js'
 import {
   applyForKey,
-  fetchInviteProfile,
   isInviteCodeShape,
   normalizeInviteCode,
   redeemCardMigrated,
@@ -30,6 +29,7 @@ import {
   type InviteProfile,
 } from '../../services/invite/api.js'
 import { bindExistingKey, bindSuccessKey, resolveBindDeviceId, type BindMessageKey } from '../../services/invite/bind.js'
+import { prepareDialogOpen, refreshProfile } from '../../services/invite/openFlow.js'
 import {
   createDeviceId,
   ensureDeviceId,
@@ -69,7 +69,7 @@ type BalanceView =
 
 type ClaimView =
   | { status: 'idle' }
-  | { status: 'busy'; auto: boolean }
+  | { status: 'busy' }
   | { status: 'ok'; firstTime: boolean; points: number }
   | { status: 'error'; messageKey: InviteMessageKey }
 
@@ -151,6 +151,8 @@ const OursServicesDialog = ({ onClose }: { onClose: () => void }) => {
   const [bindResult, setBindResult] = useState<
     { kind: 'ok'; alreadyBound: boolean } | { kind: 'error'; messageKey: BindMessageKey } | null
   >(null)
+  /** 打开弹层后还没确定凭据来源（本机无 Key 或未绑定）：让用户先选「领取新 Key」/「我已有 Key」 */
+  const [openChoice, setOpenChoice] = useState(false)
   /**
    * 当前档案是从哪儿来的：
    *  - 'apply' = 刚才自动领了一把**新的**设备 Key（#72 首次使用），用户自己的 Key 还没绑
@@ -195,31 +197,36 @@ const OursServicesDialog = ({ onClose }: { onClose: () => void }) => {
 
   const refreshBalance = async () => {
     setBalance({ status: 'loading' })
-    const outcome = await runWithDeviceSelfHeal(
-      { deviceId, transport: httpTransport, saveKey: saveHealedKey, regenerate: regenerateDevice },
-      (id) => fetchInviteProfile(id, httpTransport)
-    )
+    // 只读 /me：device_not_found 不再自愈补 /apply（#100，一台设备一把 Key）
+    const outcome = await refreshProfile({
+      deviceId,
+      transport: httpTransport,
+      hasLocalKey: true,
+      regenerate: regenerateDevice,
+    })
     if (!alive.current) {
       return
     }
     if (outcome.deviceId !== deviceId) {
       setDeviceId(outcome.deviceId)
     }
-    setProfileFrom(outcome.kind === 'ok' ? 'me' : null)
+    setProfileFrom(outcome.kind === 'profile' ? 'me' : null)
     setBalance(
-      outcome.kind === 'ok'
-        ? { status: 'ok', profile: outcome.value.profile }
-        : { status: 'error', messageKey: outcome.messageKey }
+      outcome.kind === 'profile'
+        ? { status: 'ok', profile: outcome.profile }
+        : {
+            status: 'error',
+            messageKey: outcome.kind === 'choose' ? 'oursQuotaNeedsBind' : outcome.messageKey,
+          }
     )
   }
 
   /**
-   * 领 Key（POST /apply）。
-   * 自动路径只在「当前没有任何 Key」时走；手动点按钮也走这里 ——
+   * 领 Key（POST /apply）—— **只由用户点「领取新 Key」触发**（#100：打开弹层绝不自动领）。
    * 已有 Key 且与服务端下发的不一致时**不覆盖**，只提示「使用此 Key」让用户自己决定。
    */
-  const claimKey = async (auto: boolean) => {
-    setClaim({ status: 'busy', auto })
+  const claimKey = async () => {
+    setClaim({ status: 'busy' })
     const result = await applyForKey(deviceId, httpTransport)
     if (!alive.current) {
       return
@@ -229,6 +236,7 @@ const OursServicesDialog = ({ onClose }: { onClose: () => void }) => {
       return
     }
     setProfileFrom('apply')
+    setOpenChoice(false)
     setBalance({ status: 'ok', profile: result.profile })
     setClaim({ status: 'ok', firstTime: result.firstTime, points: result.profile.remainingPoints })
     const current = useApiConfig.getState().apiKey.trim()
@@ -381,14 +389,33 @@ const OursServicesDialog = ({ onClose }: { onClose: () => void }) => {
       if (stored !== null && Date.now() - stored.startedAt < ORDER_RESUME_MAX_AGE_MS) {
         void runPoll(stored.outTradeNo, stored.orderToken)
       }
-      if (useApiConfig.getState().apiKey.trim() === '') {
-        // 首次使用：自动领取（无 Key 才会走到这里，不会覆盖用户已填的 Key）
-        await claimKey(true)
-      } else {
-        await refreshBalance()
-      }
+      const opened = await prepareDialogOpen({
+        deviceId,
+        hasLocalKey: useApiConfig.getState().apiKey.trim() !== '',
+        transport: httpTransport,
+        regenerate: regenerateDevice,
+      })
       if (!alive.current) {
         return
+      }
+      if (opened.deviceId !== deviceId) {
+        setDeviceId(opened.deviceId)
+      }
+      if (opened.kind === 'profile') {
+        setProfileFrom('me')
+        setBalance({ status: 'ok', profile: opened.profile })
+      } else if (opened.kind === 'choose') {
+        // 打开弹层什么都没发：等用户选「领取新 Key」/「我已有 Key」（#100）
+        setProfileFrom(null)
+        setOpenChoice(true)
+        setBalance({
+          status: 'error',
+          messageKey: opened.reason === 'unbound' ? 'oursQuotaNeedsBind' : 'oursQuotaNeedsClaim',
+        })
+      } else {
+        setProfileFrom(null)
+        setOpenChoice(true)
+        setBalance({ status: 'error', messageKey: opened.messageKey })
       }
       const nextPlans = await fetchPlans(httpTransport)
       if (!alive.current) {
@@ -552,6 +579,34 @@ const OursServicesDialog = ({ onClose }: { onClose: () => void }) => {
       mainClassName={styles.main}
     >
       <div className={styles.sections} data-testid="ours-services-dialog">
+        {/* 0. 先选一种方式（#100）：打开弹层一条请求都没发，等用户显式决定来源 */}
+        {openChoice ? (
+          <section className={styles.section} data-testid="ours-open-choice">
+            <div className={styles.sectionHead}>
+              <h3 className={styles.sectionTitle}>{t('oursOpenChoiceTitle')}</h3>
+            </div>
+            <div className={styles.hint}>{t('oursOpenChoiceHint')}</div>
+            <div className={styles.actions}>
+              <Button
+                size="m"
+                data-testid="ours-open-choice-claim"
+                disabled={claim.status === 'busy'}
+                onClick={() => void claimKey()}
+              >
+                {claim.status === 'busy' ? t('oursClaimBusy') : t('oursOpenChoiceClaim')}
+              </Button>
+              <Button
+                variant="outlined"
+                size="m"
+                data-testid="ours-open-choice-bind"
+                onClick={() => setBindOpen(true)}
+              >
+                {t('oursOpenChoiceBind')}
+              </Button>
+            </div>
+          </section>
+        ) : null}
+
         {/* 1. 设备码：账号凭据，可见、可复制、可备份；不写日志 */}
         <section className={styles.section} data-testid="ours-device">
           <div className={styles.sectionHead}>
@@ -589,9 +644,9 @@ const OursServicesDialog = ({ onClose }: { onClose: () => void }) => {
               size="m"
               data-testid="ours-claim"
               disabled={claim.status === 'busy'}
-              onClick={() => void claimKey(false)}
+              onClick={() => void claimKey()}
             >
-              {claim.status === 'busy' && !claim.auto ? t('oursClaimBusy') : t('oursClaimAction')}
+              {claim.status === 'busy' ? t('oursClaimBusy') : t('oursClaimAction')}
             </Button>
             {hasKey ? (
               <span className={styles.hint} data-testid="ours-claim-key">
@@ -600,11 +655,6 @@ const OursServicesDialog = ({ onClose }: { onClose: () => void }) => {
             ) : null}
           </div>
 
-          {claim.status === 'busy' && claim.auto ? (
-            <div className={styles.hint} data-testid="ours-claim-status">
-              {t('oursClaimAuto')}
-            </div>
-          ) : null}
           {claim.status === 'ok' ? (
             <div className={clsx(styles.value, styles.valueSuccess)} data-testid="ours-claim-status">
               {claim.firstTime

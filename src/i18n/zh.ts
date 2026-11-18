@@ -381,6 +381,11 @@ export const zh = {
   oursClaimAction: '领取 / 重新领取',
   oursClaimBusy: '领取中…',
   oursClaimAuto: '首次使用，正在自动领取…',
+  oursOpenChoiceTitle: '先选一种方式',
+  oursOpenChoiceHint:
+    '本机还没有可用的 Key：点「领取新 Key」由服务端发一把，或者把你在别处已有的 Key 绑到本机。',
+  oursOpenChoiceClaim: '领取新 Key',
+  oursOpenChoiceBind: '我已有 Key',
   oursClaimOk: '已领取，剩余 {points}',
   oursClaimOkExisting: '此前已领取，继续使用同一把 Key',
   oursClaimKeyTail: '当前 Key {tail}',
@@ -395,6 +400,7 @@ export const zh = {
   oursQuotaLoading: '查询中…',
   oursQuotaZeroHint: '额度已用完，可购买套餐或兑换卡密',
   oursQuotaNeedsClaim: '还没领取凭据：点上方「领取 / 重新领取」后显示额度',
+  oursQuotaNeedsBind: '本机还没有绑定 Key：请点「领取新 Key」或「我已有 Key」',
   // 邀请
   oursInviteTitle: '邀请',
   oursInviteOwnLabel: '我的邀请码',

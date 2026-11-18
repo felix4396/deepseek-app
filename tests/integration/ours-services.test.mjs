@@ -13,7 +13,8 @@
 // 断言（对应任务书验收 1~8）：
 //   [A] 入口只在 ours 渠道出现：切到 DeepSeek 官方后一条 DOM 都没有
 //   [B] 设备码：首次生成、可见、符合 8–128 / [A-Za-z0-9._:-]、重开不变（持久化）
-//   [C] 首次使用自动 /apply；已有 Key 时**不再自动 /apply**（不覆盖用户已填的 Key）
+//   [C] 打开弹层只读、**不自动 /apply**（#100）；用户显式点「领取新 Key」才 /apply；
+//       已有 Key 时重开也不再自动 /apply（不覆盖用户已填的 Key）
 //   [D] 额度只认邀请服务 /me 的 remaining_points，且只显示「N 积分」（#75：不做 ¥ 折算）
 //   [E] 邀请码：展示自己的 + 已邀请人数；填别人的走 /redeem，六类错误码各有文案
 //   [F] 套餐价格/积分来自 /api/plans；/buy 只点一次；order_token 必须落盘
@@ -354,12 +355,16 @@ const runViewport = async ({ width, height, label }) => {
   await page.waitForTimeout(300)
   eq(await page.getByTestId('ours-services-row').count(), 1, `${width}px：切回我们的渠道后入口恢复`)
 
-  // ---------- [B][C] 首次使用：自动领取失败 → 设备码可见 ----------
+  // ---------- [B][C] 首次使用：打开弹层**不发** /apply（#100），点「领取新 Key」才发 ----------
   const panel = await openPanel(page)
   await page.waitForTimeout(900)
   const deviceCode = await page.getByTestId('ours-device-code').innerText()
   truthy(/^[A-Za-z0-9._:-]{8,128}$/.test(deviceCode.trim()), `${width}px：设备码符合服务端字符集（${deviceCode.slice(0, 6)}…）`)
-  eq(calls.apply, 1, `${width}px：首次使用自动 POST /apply 一次`)
+  eq(calls.apply, 0, `${width}px：打开弹层不发 POST /apply（#100：只读，绝不建绑定）`)
+  eq(await page.getByTestId('ours-open-choice').count(), 1, `${width}px：给「领取新 Key」/「我已有 Key」两个入口`)
+  await page.getByTestId('ours-open-choice-claim').click()
+  await page.waitForTimeout(900)
+  eq(calls.apply, 1, `${width}px：显式点「领取新 Key」才 POST /apply 一次`)
   const claimFailed = await page.getByTestId('ours-claim-status').innerText()
   truthy(/网络不可用/.test(claimFailed), `${width}px：领取失败给出可读错误（${claimFailed}）`)
   const keyBefore = await page.evaluate(() => window.localStorage.getItem('chat-demo:api-key'))

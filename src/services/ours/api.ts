@@ -86,6 +86,8 @@ export type OursTransport = (request: OursHttpRequest) => Promise<OursHttpResult
 
 /** 界面文案的 key（与 i18n/zh.ts 的键一致；服务层只回 key，不拼文案） */
 export type OursMessageKey =
+  | 'oursQuotaNeedsClaim'
+  | 'oursQuotaNeedsBind'
   | 'oursKeyProbeValid'
   | 'oursKeyProbeInvalid'
   | 'oursKeyProbeNetwork'
