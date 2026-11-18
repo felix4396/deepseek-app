@@ -2,6 +2,17 @@
 
 本文件记录 deepseek-app 的重要变更，版本倒序排列。
 
+## 1.4.0-beta.5 (2026-11-18) — 新增检查更新：设置里可检查是否有新版本 [未过门禁]
+
+- 新增检查更新：设置里可检查是否有新版本，有新版时可下载安装
+- 内测版本，建议保留重要聊天记录；遇到问题请通过反馈入口提交
+
+> 内部验收记录（不进 dl 用户说明）：
+  - 源码范围：origin/main 1d08b24 + manifest 5a0abc1/4b194d6 + App 3ed3d3a；未含导入/剪贴板/UI 分支
+  - focused 验收：tsc 0 错误、oxlint 0 警 0 错、unit 2/2（含 app-update 单测）；全量 integration 未跑；真实模型上游 e2e 未跑（用户决定延后）
+  - Android 证据 docs/in-app-update-acceptance.md：HTTPS 真实下载 code12→13、权限拒绝/允许返回、取消重试、确认安装成功、360/390/412 不溢出；本发布机不复测设备行为、未逐条核实会话内容
+  - 本次 --skip-tests：只跑了本次 focused 验收，全量测试套件未跑
+
 ## 1.4.0-beta.4 (2026-11-18) — 设置页四渠道下拉（DeepSeek 官方 [未过门禁]
 
 - 新增：设置页四渠道下拉（DeepSeek 官方 / Anthropic 兼容 / OpenAI 兼容 / 我们的渠道），内置渠道只暴露 API Key
