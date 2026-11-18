@@ -110,7 +110,7 @@ E2E_API_KEY=sk-xxx node tests/e2e/real-upstream.test.mjs
 
 | 文件 | 需要什么 |
 | --- | --- |
-| `integration/paths` `provider-anthropic` `caps` `request-body` `upstream-html` `probe-auth` `probe-nokey` `legacy-config` `url-import-web` `url-import-native` `mode-switch` `full-acceptance` | 一份**标准构建**挂在 `APP_URL`（默认 5181）；语音相关用例要求 `127.0.0.1` 这类安全上下文 |
+| `integration/paths` `provider-anthropic` `caps` `request-body` `upstream-html` `probe-auth` `probe-nokey` `probe-auth-protocols` `legacy-config` `url-import-web` `url-import-native` `mode-switch` `full-acceptance` | 一份**标准构建**挂在 `APP_URL`（默认 5181）；语音相关用例要求 `127.0.0.1` 这类安全上下文 |
 | `integration/internal-build` `motion` `diagnostics` | 一份**内测构建**（`pnpm build:internal`）在 `dist/`；`internal-build` 还要 `ip addr add 123.207.199.196/32 dev lo` |
 | `integration/auto-title` `diagnostics-contract` | 预构建标准包 `STANDARD_DIST_DIR`（默认 dist-standard）；contract 另需内测包 `DIST_DIR`。只读复用、不隐式构建；自建服务默认随机 loopback 端口 |
 | `integration/feedback-scroll` | 一份**独立构建**在 `dist-scroll/`（`DIST_OUT=dist-scroll NODE_ENV=production npx rspack build -c rspack.config.ts`）；脚本自己 `--directory dist-scroll` 起 5418 静态服务。先构建再跑，产物要和 `dist/` 的 `main.<hash>.js` 一致；**运行必须 `--timeout-ms 600000`**（实跑约 200s） |

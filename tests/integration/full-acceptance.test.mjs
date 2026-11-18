@@ -615,12 +615,16 @@ try {
 
   // ============ 1/2. openai 模式：路径、鉴权头、请求体 ============
   console.log('\n[1] openai 模式：路径与鉴权头')
-  const openaiLogStart = mockOk.log.length
   await openSettings()
   await setField(/服务地址|Service URL/, mockOk.base)
   await selectKind(/OpenAI 兼容|OpenAI-compatible/)
   await setField(/服务地址|Service URL/, mockOk.base)
   await setField(/^模型$|^Model$/, OPENAI_MODEL)
+  // 窗口必须在**切到 openai 之后**才开：上面那句服务地址是先给 anthropic 渠道填的，
+  // 它自己会触发一次 anthropic 探测（GET /v1/models + x-api-key），把这句请求算进来
+  // 就会把「上一个渠道的正常探测」误判成「openai 探测缺 Authorization」（Issue #56）。
+  await page.waitForTimeout(600)
+  const openaiLogStart = mockOk.log.length
   await page.getByRole('button', { name: /^测试$|^Test$/ }).first().click()
   await waitFor(async () => mockOk.log.slice(openaiLogStart).some((e) => e.path === '/v1/models'))
   await closeSettings()
