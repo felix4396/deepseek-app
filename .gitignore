@@ -37,3 +37,9 @@ docs/ui/debug-*.png
 *.bak-wx-*
 *.bak
 *.bak.*
+
+# 测试：依赖统一由根 package.json 提供，tests/ 下不再有独立 node_modules
+# （历史上曾软链到某台机器的绝对路径，clone 下来跑不了，已删除；别再手动建）
+tests/node_modules/
+# 测试自己构建的中间产物（DIST_OUT=dist-standard 等）
+dist-*/

@@ -1,6 +1,7 @@
+// [layer: unit | 依赖: 无（纯 Node，零浏览器） | 耗时: <1s] 说明见 tests/README.md
 // 翻译器单测（不启浏览器）：直接 import 源码里的适配器与 SSE 解析器，喂构造好的 OpenAI SSE 文本。
 //
-//   cd /root/deepseek-app && node tests/test.openai-adapter.spec.mjs
+//   cd /root/deepseek-app && node tests/unit/openai-adapter.test.mjs
 //
 // [3] 干净流：事件序列必须严格是
 //     message_start → content_block_start → content_block_delta ×3 → content_block_stop
@@ -12,8 +13,8 @@ import {
   mapFinishReason,
   toOpenAIRequest,
   translateOpenAIStream,
-} from '../src/services/api/openaiAdapter.ts'
-import { ServerSentEventDecoder } from '../src/services/api/sse.ts'
+} from '../../src/services/api/openaiAdapter.ts'
+import { ServerSentEventDecoder } from '../../src/services/api/sse.ts'
 
 const failures = []
 let checks = 0
@@ -283,7 +284,7 @@ eq(
 
 console.log(`\n共 ${checks} 项断言`)
 if (failures.length > 0) {
-  console.error(`FAIL tests/test.openai-adapter.spec.mjs（${failures.length} 条）`)
+  console.error(`FAIL tests/unit/openai-adapter.test.mjs（${failures.length} 条）`)
   process.exit(1)
 }
-console.log('PASS tests/test.openai-adapter.spec.mjs')
+console.log('PASS tests/unit/openai-adapter.test.mjs')

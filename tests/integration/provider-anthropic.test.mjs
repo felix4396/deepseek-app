@@ -1,9 +1,10 @@
+// [layer: integration | 依赖: playwright + chromium + 本地静态服务/mock 上游 | 耗时: 1~3 分钟] 说明见 tests/README.md
 // 新用例（1.2.3）：设置页把「服务类型」切到 Anthropic 协议后，请求路径必须换成
 //   GET  /v1/models
 //   POST /v1/messages
 // 这两条路径由 ProviderSpec.paths 驱动，不允许在组件里写死。
 //
-// 跑法：APP_URL=http://127.0.0.1:5181 node tests/test.provider-anthropic.spec.mjs
+// 跑法：APP_URL=http://127.0.0.1:5181 node tests/integration/provider-anthropic.test.mjs
 import {
   capturePaths,
   clickApiKeyConfirm,
@@ -18,9 +19,9 @@ import {
   sendChat,
   stubMessagesStream,
   stubModels,
-} from './helpers.mjs'
+} from '../helpers/helpers.mjs'
 
-const name = 'test.provider-anthropic.spec.mjs'
+const name = 'tests/integration/provider-anthropic.test.mjs'
 const KEY = 'sk-testkey-anthropic'
 const BASE = 'https://anthropic.example.com'
 const MODEL = 'deepseek-v4.1-flash'

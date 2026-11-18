@@ -1,6 +1,7 @@
+// [layer: integration | 依赖: playwright + chromium + 本地静态服务/mock 上游 | 耗时: 1~3 分钟] 说明见 tests/README.md
 // 会话自动标题验收（Anthropic / OpenAI 兼容模式；DeepSeek 官方模式零影响）
 //
-//   cd /root/deepseek-app && node tests/test.auto-title.spec.mjs
+//   cd /root/deepseek-app && node tests/integration/auto-title.test.mjs
 //
 // 被测页面是**标准构建**（用户可切换服务类型、自填地址），脚本自己构建到 dist-standard/
 // （DIST_OUT 环境变量，不动部署用的 dist/）并拉起静态服务；上游全部用 page.route 打桩，
@@ -25,7 +26,7 @@ import path from 'node:path'
 import { chromium } from 'playwright'
 
 const HERE = path.dirname(fileURLToPath(import.meta.url))
-const ROOT = path.resolve(HERE, '..')
+const ROOT = path.resolve(HERE, '../..')
 const STANDARD_DIST = process.env.STANDARD_DIST_DIR || path.join(ROOT, 'dist-standard')
 const PORT = process.env.PORT || '5294'
 const APP_URL = process.env.APP_URL || `http://127.0.0.1:${PORT}`
@@ -83,7 +84,7 @@ await new Promise((resolve) => setTimeout(resolve, 900))
 
 const browser = await chromium.launch()
 const allConsoleErrors = []
-/** 浏览器对非 2xx 响应的资源日志（HTTP 500 用例必然产生），口径同 tests/run-acceptance.mjs */
+/** 浏览器对非 2xx 响应的资源日志（HTTP 500 用例必然产生），口径同 tests/integration/full-acceptance.test.mjs */
 const allResourceNoise = []
 
 // ---------- 通用步骤 ----------
@@ -137,7 +138,7 @@ const openPage = async ({ kind, baseUrl, model, url = APP_URL }) => {
     }
     const text = message.text()
     if (/Failed to load resource/i.test(text)) {
-      // 浏览器自己给非 2xx 响应打的资源日志，不是应用报错；HTTP 500 用例必然产生（口径同 run-acceptance.mjs）
+      // 浏览器自己给非 2xx 响应打的资源日志，不是应用报错；HTTP 500 用例必然产生（口径同 tests/integration/full-acceptance.test.mjs）
       allResourceNoise.push(text)
       return
     }
@@ -812,7 +813,7 @@ await runTitleScenario({
 await browser.close()
 cleanup()
 
-console.log(`\n${failures.length === 0 ? 'PASS' : 'FAIL'} tests/test.auto-title.spec.mjs`)
+console.log(`\n${failures.length === 0 ? 'PASS' : 'FAIL'} tests/integration/auto-title.test.mjs`)
 if (evidence.length > 0) {
   console.log('证据：')
   for (const item of evidence) {

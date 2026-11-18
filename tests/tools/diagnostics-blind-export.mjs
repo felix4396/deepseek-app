@@ -1,7 +1,7 @@
 // 盲测导出：制造一个真实故障（断网发消息），走完整反馈流程，把**真正会发出去的 body**
 // 落到 /tmp/feedback-blind.json & /tmp/feedback-blind.log，用于「只看这份 JSON 能否定位问题」的盲评。
 //
-//   cd /root/deepseek-app && node tests/diagnostics-blind-export.mjs
+//   cd /root/deepseek-app && node tests/tools/diagnostics-blind-export.mjs
 //
 // 说明：反馈请求本身被 page.route 截获（不回真后端），所以我们拿到的是逐字节的上传内容。
 import { writeFileSync } from 'node:fs'

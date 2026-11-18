@@ -1,8 +1,9 @@
+// [layer: integration | 依赖: playwright + chromium + 本地静态服务/mock 上游 | 耗时: 1~3 分钟] 说明见 tests/README.md
 // 新用例（1.2.3）：上游把网页当接口数据返回（200 + text/html）时，
 // 必须给出明确错误「上游返回网页而非接口数据，通常是路径不匹配或服务异常」，
 // 并且绝不能把 HTML 渲染进消息气泡。
 //
-// 跑法：APP_URL=http://127.0.0.1:5181 node tests/test.upstream-html.spec.mjs
+// 跑法：APP_URL=http://127.0.0.1:5181 node tests/integration/upstream-html.test.mjs
 import {
   capturePaths,
   clickApiKeyConfirm,
@@ -13,9 +14,9 @@ import {
   openSettingsDataSection,
   sendChat,
   stubModels,
-} from './helpers.mjs'
+} from '../helpers/helpers.mjs'
 
-const name = 'test.upstream-html.spec.mjs'
+const name = 'tests/integration/upstream-html.test.mjs'
 const KEY = 'sk-testkey-html'
 const HTML = '<!doctype html><html><head><title>Sub2API - AI API Gateway</title></head><body>SUB2API_GATEWAY_HTML</body></html>'
 const { browser, page } = await openApp()

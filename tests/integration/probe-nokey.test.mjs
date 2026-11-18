@@ -1,16 +1,17 @@
+// [layer: integration | 依赖: playwright + chromium + 本地静态服务/mock 上游 | 耗时: 1~3 分钟] 说明见 tests/README.md
 // 回归防线：未填 API Key 时点「测试」不应该发出任何探测请求，而是给出明确提示
 // （防止再次回到「发空 Bearer」的老 bug）。
 //
-// 跑法：cd /root/deepseek-app && node tests/test.probe-nokey.spec.mjs
+// 跑法：cd /root/deepseek-app && node tests/integration/probe-nokey.test.mjs
 import {
   captureProbeRequests,
   clickTest,
   finish,
   openApp,
   openSettingsDataSection,
-} from './helpers.mjs'
+} from '../helpers/helpers.mjs'
 
-const name = 'test.probe-nokey.spec.mjs'
+const name = 'tests/integration/probe-nokey.test.mjs'
 const { browser, page } = await openApp()
 const failures = []
 try {

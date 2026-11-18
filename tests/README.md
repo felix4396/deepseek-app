@@ -1,161 +1,178 @@
-# 端到端回归测试（Playwright）
+# 测试总览（后来者请从这里开始）
 
-## 真上游 + 真前端冒烟测试（**每次发版前必跑**）
+这个目录原来是 27 个平铺的 `test.*.spec.mjs` 脚本，跑法只写在各自文件头的注释里，还依赖一个
+`tests/node_modules` 软链（指到某台机器上一个**未提交的绝对路径**，形如 `<别人家目录>/deepseek-web/node_modules`），**别人 clone
+下来一条都跑不起来**。现在按「依赖什么」分层，统一入口 `tests/run-layer.mjs`，装依赖即可跑。
 
-```bash
-cd /root/deepseek-app && E2E_API_KEY=sk-xxx node tests/e2e-real-upstream.spec.mjs
+```
+tests/
+├── unit/          1 个：纯逻辑，零浏览器，毫秒级
+├── integration/  18 个：浏览器 + mock 上游（或自建静态服务），分钟级
+├── e2e/           2 个：真上游 + 真 UI（要 API Key）/ 真实反馈后端
+├── device/        1 个：Android 模拟器或真机（adb）
+├── fixtures/      mock 服务与样本数据（不是测试，被上面引用）
+├── helpers/       共享 Playwright 步骤
+├── tools/         手工用的一次性脚本（不是测试，不参与分层执行）
+└── run-layer.mjs  分层 runner（本文件是唯一入口）
 ```
 
-**为什么需要它**：此前 UI 用例全部用 `page.route` / mock 上游打桩，上游能力全部用 curl 验证，
-两条线从未交叉——「真上游的 SSE 能不能被真前端解析并渲染成文字」这件事一直没有自动化覆盖。
-发版前跑一次，等于给「真 key + 真 UI + 真上游」这条链路做一次完整握手。
+---
 
-| 环境变量 | 默认值 | 说明 |
+## 1. 环境要求
+
+| 项 | 要求 | 说明 |
 | --- | --- | --- |
-| `E2E_API_KEY` | （必填） | 只通过环境变量传，绝不写进文件 |
-| `E2E_UPSTREAM_URL` | `http://123.207.199.196:60010` | 真上游地址 |
-| `E2E_MODEL` | `deepseek-v4.1-flash` | 模型 |
-| `E2E_APP_URL` | `http://100.113.135.55:5181` | 被测页面 |
-| `E2E_ROUNDS` | `2` | 首轮冷启动 + 次轮热路径，同时作为 TTFT 基线 |
+| Node | **22+**（实测 22.23.4） | unit 层直接 `import` 源码 `.ts`，依赖 Node 22 的 type stripping |
+| pnpm | 12+（实测 12.14.0） | 仓库用 pnpm；`npm install` 也能装，但锁文件是 `pnpm-lock.yaml` |
+| Chromium | `npx playwright install chromium` | integration / e2e / device(部分) 都要它 |
+| 静态产物 | `pnpm build`（标准包）/ `pnpm build:internal`（内测包） | 见下面第 3 节的表格，不同用例要的产物不同 |
+| Android 模拟器 | 只有 `device/` 需要 | 需要 `adb`、一个已启动的 AVD |
+| 真 key | 只有 `e2e/` 需要 | `E2E_API_KEY` **只走环境变量**，绝不写进文件 |
 
-流程与断言：设置页**真实键盘输入** API Key → 保存（`chat-demo:api-key`）→ `GET {upstream}/v1/models`
-前置探针（非 200 直接判「上游不可用」）→ 发「你好」→ 记录 **请求发出 / 首个字节(TTFB) / 界面首次出字 /
-流结束** 四个时间点 → 断言助手文字长度 > 0、用户消息内容正确、流结束后 loading 消失、console error = 0
-（浏览器对非 2xx 的资源日志另计）。
-
-失败时按三层给证据，一眼区分是「上游没 flush / 格式不符」还是「前端没解析」：上游不可用（探针或
-`/v1/messages` 非 200）/ 上游格式不兼容（有字节但没有非空 `text_delta`）/ 前端解析渲染问题（有
-`text_delta` 但界面 0 字），并打印状态码、`Content-Type`、`Transfer-Encoding`、已收到的**原始 SSE 前 20 行**。
-
-⚠️ 跑之前确认上游 IP 没被绑到本机回环（内测构建验收会 `ip addr add 123.207.199.196/32 dev lo` 把请求
-打到 mock）。脚本会自检并直接失败；需要先 `ip addr del 123.207.199.196/32 dev lo`。同理，跑
-`test.internal-build.spec.mjs` 前要把它加回来。
-
-## 设置页「测试」按钮的鉴权
-
-
-- `test.probe-auth.spec.mjs`：只在 API Key 输入框里填 key（**不点「确定」**）后点「测试」，断言 `/models` 请求的
-  `Authorization` 头 === `Bearer <输入框里的 key>`。修复前该用例失败（发的是 `Bearer` 空鉴权），修复后通过。
-- `test.probe-nokey.spec.mjs`：完全不填 key 时点「测试」，断言不发任何请求，并且界面给出「请先填写 API Key」。
-
-依赖：任意可用的 playwright（1.64.x）。仓库里没有装，`tests/node_modules` 软链到已有的安装即可（已被 .gitignore 忽略）：
-
-```bash
-ln -sfn /root/bak/deepseek-web/node_modules /root/deepseek-app/tests/node_modules
-```
-
-跑法（被测页面由 http://100.113.135.55:5181 提供 `dist/`）：
-
-```bash
-cd /root/deepseek-app && node tests/test.probe-auth.spec.mjs && node tests/test.probe-nokey.spec.mjs
-# 或：cd tests && node test.probe-auth.spec.mjs
-# 自定义地址：APP_URL=http://127.0.0.1:5181 node tests/test.probe-auth.spec.mjs
-```
-
-## 内测构建（1.4.0-beta.1）的验收：两套构建分开跑
-
-1.4.0 起有两种构建产物，spec 与它们一一对应：
-
-| 构建 | 命令 | 覆盖的 spec |
-| --- | --- | --- |
-| 标准构建（默认，行为同 1.3.0） | `pnpm build` | 既有 9 个 spec（含三种服务类型 / 协议适配 / 旧配置兼容） |
-| 内测构建（固定地址+模型，只留 API Key） | `INTERNAL_BUILD=1 pnpm build:internal` | `test.internal-build.spec.mjs` |
-
-内测构建里「服务类型 / 服务地址 / 模型」三项不可编辑，所以那 9 个依赖切换服务类型、自填地址的用例只对标准构建有意义；
-它们的断言一条都没有削弱，仍然逐字校验 deepseek / anthropic / openai 三条链路。
-
-### 内测构建验收（自建，不依赖真实上游）
-
-```bash
-# 1) 把内测版固定的上游 IP 绑到本机回环，让请求真的打到本地 mock（root 权限）
-ip addr add 123.207.199.196/32 dev lo
-
-# 2) 构建内测包（dist 即内测产物）并跑验收：mock 上游 + 静态服务 + Playwright 都由脚本自己拉起
-pnpm build:internal
-cd tests && node test.internal-build.spec.mjs
-```
-
-`test.internal-build.spec.mjs` 断言：设置页没有 Service URL / Model 输入框、没有服务类型下拉、没有位置信息项，
-只剩 API Key 输入框；发消息请求 URL 必须是 `http://123.207.199.196:60010/v1/messages`、`body.model` 必须是
-`deepseek-v4.1-flash`、请求体不含 `safety_check`/`title`/`tools`/`role:'latest_reminder'`；固定项不落 localStorage；
-console error = 0；并输出截图到 `docs/ui/1.4.0-beta.1-*.png`。
-
-`mock-anthropic.mjs` 是 node 标准库实现的 mock 上游（默认监听 `123.207.199.196:60010`），回标准 Anthropic SSE，
-并把收到的每个请求（含请求体）记到 `/tmp/mock-anthropic-requests.jsonl` 供断言。
-
-## 会话自动标题验收（Anthropic / OpenAI 兼容模式）
-
-```bash
-cd /root/deepseek-app && node tests/test.auto-title.spec.mjs
-```
-
-被测页面是**标准构建**：脚本发现 `dist-standard/` 不存在时会自己用
-`DIST_OUT=dist-standard rspack build` 构建（不会动部署用的 `dist/`），再在 5294 上起静态服务；
-上游全部用 `page.route` 打桩，不连外网、不需要真实 IP。覆盖 9 条验收 + 2 条附加：
-
-| # | 场景 | 期望 |
-| --- | --- | --- |
-| 1 | mock 返回「如何配置代理」 | 标题变成该值；标题请求只发 1 次；走 `{base}/v1/messages`、`max_tokens=32`、非流式、无 thinking、只喂首条消息且包成 JSON 数组 |
-| 2 | mock 延迟 10s | 8s 放弃并回退为「这个网络问题怎么解决…」，期间 UI 可继续输入，迟到响应不覆盖 |
-| 3 | HTTP 500 | 回退到同一截取值 |
-| 4 | 返回空字符串 | 回退 |
-| 5 | 脏输出 `**标题**\n解释…` | 只取「标题」（星号被剥掉） |
-| 6 | `max_tokens` / `tool_use` | 视为失败并回退 |
-| 7 | 手动改名后再发一轮 | 标题保持用户改的名字，且不再发起标题请求 |
-| 8 | DeepSeek 官方模式 | 请求体仍带 `title:{enabled:true}`，无额外本地标题请求，标题保持为空 |
-| 9 | console error | = 0（浏览器对非 2xx 的 `Failed to load resource` 资源日志另计，口径同 `run-acceptance.mjs`） |
-| 10 | OpenAI 兼容模式 | 标题请求走 `{base}/v1/chat/completions`（system + 单条 user） |
-| 11 | 部署验证 | 对 5181（`DEPLOY_URL` 可覆盖）再跑一遍成功路径，不可达则跳过 |
-
-## 交互动效验收（1.4.0-beta.2）
-
-```bash
-cd /root/deepseek-app && node tests/test.motion.spec.mjs
-```
-
-覆盖外壳动效（侧边栏抽屉、设置弹窗、按钮按压、会话列表切项、主题切换），完全不涉及消息流：
-
-- 中间帧：侧边栏 / 设置弹窗在 t=80/150/250ms 各截一张（`docs/ui/motion-*.png`），
-  同时读 `getComputedStyle().transform` 的中间值，证明是渐变而不是瞬变
-- 计算样式：侧边栏打开后 `transform = matrix(1, 0, 0, 1, 0, 0)`；关闭过程中 `tx < 0` 且 DOM 仍在（退出动画不被吞）
-- reduced-motion：`page.emulateMedia({ reducedMotion: 'reduce' })` 下 `transition-duration = 1e-05s`、主题淡入 `animation: none`
-- 静态检查：`src/` 下没有任何 `transition`/`animation` 动布局属性；相对基线提交 `68f9342` 没新增 `transform`/`opacity` 之外的动画属性
-- 消息流冻结：`git diff 68f9342 -- src/components/messages src/components/chatInput` 必须为空
-- 功能回归：侧边栏能点会话、设置能开能关、发消息正常（上游用 `page.route` 打桩，不需要真实 IP）
-
-被测页面默认是 `dist/`（内测构建产物）上的独立静态服务（端口 5292），可用 `APP_URL` / `DIST_DIR` / `PORT` 覆盖。
-
-## 「导入历史会话 → 从链接导入」（仅原生 APK）
-
-目标 ZIP 在 DeepSeek 官方 OBS 桶上、未开 CORS，浏览器 fetch 必被拦，因此该能力只在原生端通过
-`CapacitorHttp` 提供（`src/services/chat/history/urlImport.ts`）。三个 spec：
-
-| spec | 覆盖 | 跑法 |
-| --- | --- | --- |
-| `test.url-import-native.spec.mjs` | mock 原生桥（`window.androidBridge` + `Capacitor.PluginHeaders` + `nativePromise`），7 个用例：ArrayBuffer 数据走完 `importHistory`、base64 数据（Android 实测形态）、非 ZIP、Content-Length > 200MB、下载中取消、网络失败、超时 | `node tests/test.url-import-native.spec.mjs`（需 5181 上的 dist） |
-| `test.url-import-web.spec.mjs` | 网页端不渲染链接入口 + 提示替代做法；本地文件上传回归 | `node tests/test.url-import-web.spec.mjs` |
-| `test.url-import-device.spec.mjs` | 真机/模拟器：`CapacitorHttp.get` 返回的 `data` 类型实测 + 真实 UI 导入（需要模拟器、`adb`、5199 上的导出 ZIP） | `node tests/test.url-import-device.spec.mjs` |
-
-夹具 `archive-fixture.mjs` 用 fflate 生成最小导出 ZIP（manifest + 1 个会话 + index），格式与
-`src/services/chat/history/format.ts` 对齐。断言口径：会话数取 IndexedDB `chat-demo/sessions`，
-「走完链路」还要求 `sessionsStaging` / `filesStaging` 已清空（覆盖事务已提交）。
-
-## 诊断日志与反馈上传（采集 / 上传解耦）
-
-三个 spec 与 `src/services/diagnostics/` 一一对应。页面需带 `?diag-debug` 才会挂 `window.__diagnostics`
-调试入口（正常使用不暴露），spec 通过它读日志、注入 mock transport、断言裁剪结果。
-
-| spec | 覆盖 | 依赖 |
-| --- | --- | --- |
-| `test.diagnostics.spec.mjs` | 环形缓冲（500 条 + 30 分钟双限）、脱敏、截断、hook、transport 可替换、2MB 体积控制、UI 提交流程、`validatePayload` 自检、设置页「检查日志完整性」 | `pnpm build:internal`（dist） |
-| `test.diagnostics-contract.spec.mjs` | 6 类故障注入的字段契约：导入 403 / 发消息 502 / 请求超时 / 未捕获异常 / 配置保存失败 / 长任务 | 自己构建 `dist-standard`（配置项可编辑） |
-| `test.diagnostics-e2e.spec.mjs` | legacy 通道真实提交（`logSize` 回显）、`log` 字符串与 `content` 干净、150KB 裁剪 + `[truncated]`、连接重置后 50KB 降级重试、脱敏、413 可读提示 | 5181 已部署 + 能访问 `62.106.70.167:60012` |
-| `diagnostics-blind-export.mjs` | 盲测取样：断网发消息 → 导出真正会发出的 body 到 `/tmp/feedback-blind.json` | 同上 |
+## 2. 一次性安装
 
 ```bash
 cd /root/deepseek-app
-pnpm build:internal && node tests/test.diagnostics.spec.mjs
-node tests/test.diagnostics-contract.spec.mjs
-node tests/test.diagnostics-e2e.spec.mjs      # 会真实提交到后端
-node tests/diagnostics-blind-export.mjs        # 生成盲测样本（不发真后端）
+pnpm install                      # 会装上 playwright 1.64.1（根 package.json 的 devDependencies）
+npx playwright install chromium   # 下载浏览器（~150MB，只需一次）
 ```
+
+> 历史坑：以前 `tests/node_modules` 是指向本机路径的软链，`pnpm install` 也会跳过它。
+> **软链已删除**，依赖统一由根 `package.json` 管；如果你在哪里又看到这个软链，直接删掉，别再建。
+
+## 3. 各层怎么跑
+
+```bash
+npm test                # = node tests/run-layer.mjs unit
+npm run test:integration
+npm run test:e2e
+npm run test:device
+npm run test:all        # unit → integration（日常/CI 就这一条）
+```
+
+`run-layer.mjs` 的用法：
+
+```bash
+node tests/run-layer.mjs <unit|integration|e2e|device|all>
+node tests/run-layer.mjs integration --only motion   # 只跑文件名含 motion 的
+node tests/run-layer.mjs integration --list          # 只列出要跑哪些
+node tests/run-layer.mjs integration --bail          # 第一个失败就停
+```
+
+它在仓库根目录用子进程逐个执行用例（历史用例都是「自执行 + `process.exit()`」，同进程 `import()`
+会被第一个 `exit` 带走），汇总 PASS/FAIL 与耗时，任一失败退出码非 0。用例如果改写成 `node:test`
+风格（文件里 `import 'node:test'`），runner 会自动改用 `node --test <file>`。
+`tests/integration/` 里「自己起静态服务」的用例（internal-build / motion / diagnostics /
+diagnostics-contract / auto-title）**不吃外部 `APP_URL`**，runner 会把 `APP_URL` 清空让它们用默认端口。
+
+| 层 | 命令 | 预计耗时 | 前置条件 |
+| --- | --- | --- | --- |
+| unit | `npm test` | < 5s | 无（不启浏览器，不需要产物） |
+| integration | `npm run test:integration` | 8~15 分钟（18 个文件） | `npx playwright install chromium`；**标准构建**（`pnpm build` 后把 `dist/` 挂在 `APP_URL`，默认 `http://127.0.0.1:5181`）；内测类用例还要一份**内测构建**在 `dist/`（或 `DIST_DIR` 指定） |
+| e2e | `npm run test:e2e` | 1~2 分钟 | `E2E_API_KEY`、真上游可达、`dist/` 已部署在 `E2E_APP_URL`；`diagnostics-upload` 还要能访问反馈后端 |
+| device | `npm run test:device` | 3~8 分钟 | 已启动的 AVD（`-memory 1280`）+ `adb` + 一份装好的 APK |
+
+### 单个文件单独跑（调试时最常用）
+
+每个文件都能单独执行，cwd 必须是**仓库根目录**：
+
+```bash
+node tests/unit/openai-adapter.test.mjs
+APP_URL=http://127.0.0.1:5181 node tests/integration/request-body.test.mjs
+pnpm build:internal && DIST_DIR=$PWD/dist PORT=5291 node tests/integration/internal-build.test.mjs
+E2E_API_KEY=sk-xxx node tests/e2e/real-upstream.test.mjs
+```
+
+### 各文件的前置条件（重要，别一视同仁）
+
+| 文件 | 需要什么 |
+| --- | --- |
+| `integration/paths` `provider-anthropic` `caps` `request-body` `upstream-html` `probe-auth` `probe-nokey` `legacy-config` `url-import-web` `url-import-native` `mode-switch` `full-acceptance` | 一份**标准构建**挂在 `APP_URL`（默认 5181）；语音相关用例要求 `127.0.0.1` 这类安全上下文 |
+| `integration/internal-build` `motion` `diagnostics` | 一份**内测构建**（`pnpm build:internal`）在 `dist/`；`internal-build` 还要 `ip addr add 123.207.199.196/32 dev lo` |
+| `integration/auto-title` `diagnostics-contract` | 无外部前置：自己 `DIST_OUT=dist-standard` 构建 + 自己起静态服务（会占端口 5295/5296） |
+| `integration/mode-switch-plain` | 两份产物：`PLAIN_URL`（当前标准构建）/ `BASELINE_URL`（改动前 baseline），默认 5191 / 5192 |
+| `e2e/real-upstream` | `E2E_API_KEY` + 真上游；**跑之前确认上游 IP 没被绑在 lo 上**（`ip addr del 123.207.199.196/32 dev lo`） |
+| `e2e/diagnostics-upload` | 真实反馈后端可达（会真的提交一条反馈） |
+| `device/url-import-device` | AVD + `adb`；脚本自己起 5227 提供 20MB 导入包 |
+
+## 4. 哪些不用跑
+
+- **`device/`**：需要模拟器，CI 和日常开发都不跑，只在改动「从链接导入 / CapacitorHttp」时手动跑。
+- **`e2e/`**：要真 key、真上游、真后端，只在**发版前**跑；`diagnostics-upload` 会往真实后端写数据，别在联调时乱跑。
+- **`integration/` 里的 `mode-switch-plain`、`auto-title`、`diagnostics-contract`**：要临时构建/占端口，改到相关代码时才跑。
+- **`tools/`**：不是测试，是人工排障脚本（例如 `diagnostics-blind-export.mjs` 导出真实反馈 body）。
+- CI 只需要：`pnpm install && npx playwright install chromium && npm run test`（再可选 `npm run test:integration`，前提是 CI 里有构建产物）。
+
+## 5. 写新测试的约定
+
+1. **放哪层**：纯函数/协议翻译 → `unit/`；要浏览器或 HTTP mock → `integration/`；要真上游/真后端 → `e2e/`；要模拟器/真机 → `device/`。
+2. **命名**：`<被测对象>.test.mjs`，不用 `.spec`。
+3. **必须能单独跑**：cwd 一律假设仓库根；跨文件的公共逻辑放 `helpers/`，样本/ mock 放 `fixtures/`，**不要**用相对路径跨层硬拼。
+4. **文件头模板**（新文件请照抄，第一行就是 runner 用的层标记）：
+
+```js
+// [layer: integration | 依赖: playwright + chromium + 5181 标准构建 | 耗时: ~40s]
+// 被测对象：设置页「测试」按钮发出的探测请求
+// 前置：APP_URL 上的标准构建；上游用 page.route 打桩，不连外网
+// 断言：……
+```
+
+5. **单文件不超过 500 行**。超了就拆文件（按场景拆），不要学 `integration/full-acceptance.test.mjs`。
+6. **自己起服务就自己收拾**：`spawn` 出来的静态服务/mock 务必在 `finally` 里 kill，端口用 `process.env.PORT || 默认值` 便于并发。
+7. **不要引入 jest/vitest/mocha**：`unit` 层用自建 `ok()` 或 `node:test` 都行，runner 两种都支持。
+
+## 6. 常见坑
+
+1. **别再建 `tests/node_modules` 软链**。它曾指向某台机器的绝对路径（`<别人家目录>/deepseek-web/node_modules`），别人那边根本不存在，导致「本机能跑、clone 下来全挂」。依赖统一从根 `package.json` 装。
+2. **真上游测试要 `E2E_API_KEY`**，只走环境变量：`E2E_API_KEY=sk-xxx npm run test:e2e`。没有这个变量脚本会直接告诉你缺什么。
+3. **模拟器要 `-memory 1280`**：`-memory 2048` 会把这台 4G slice 打满后卡死。
+4. **断网测试用 `ip link set eth0 down`**：`svc wifi disable` 在 AVD 上无效（模拟器没有 wifi service 状态）。
+5. **内测包和标准包别混**：内测包 `pnpm build:internal`（上游/模型/服务类型钉死，设置页只剩 API Key），标准包 `pnpm build`（可自填地址）。内测类用例必须配内测包，标准类用例必须配标准包，否则断言会从「UI 没入口」开始一路失败。
+6. **上游 IP 绑回环是个开关**：跑 `internal-build` 前要 `ip addr add 123.207.199.196/32 dev lo`，跑 `e2e/real-upstream` 前要 `ip addr del 123.207.199.196/32 dev lo`（脚本会自检并给提示）。
+7. **`dist-standard/` 是测试副产物**：`auto-title` / `diagnostics-contract` 会自己 `DIST_OUT=dist-standard` 构建，已 gitignore；别把它当部署产物。
+8. **端口冲突会伪装成断言失败**：静态服务端口被占时脚本可能连到旧服务。跑之前 `ss -ltnp | grep 5181` 看一眼。
+
+## 7. 发版前必须跑哪几条
+
+```bash
+pnpm install && npx playwright install chromium   # 一次性
+pnpm build:internal && npm run test:integration -- --only internal-build
+npm test                                          # unit
+pnpm build                                        # 标准包
+npm run test:all                                  # unit + integration
+E2E_API_KEY=sk-xxx npm run test:e2e               # 真上游握手（发版前必跑）
+```
+
+清单（按顺序勾）：
+
+- [ ] `npm test`（unit）通过
+- [ ] `npm run test:integration` 通过（含 internal-build / motion / diagnostics）
+- [ ] `E2E_API_KEY=sk-xxx npm run test:e2e` 通过（真 key + 真 UI + 真上游）
+- [ ] 改动涉及「从链接导入」时：`npm run test:device` 通过
+- [ ] 产物用的是发版对应的那一种（标准包 / 内测包），没有拿错 `dist/`
+
+## 8. 旧名字对照表（供老文档、老 CHANGELOG 参照）
+
+| 以前 | 现在 |
+| --- | --- |
+| `tests/test.openai-adapter.spec.mjs` | `tests/unit/openai-adapter.test.mjs` |
+| `tests/test.paths-deepseek.spec.mjs` | `tests/integration/paths.test.mjs` |
+| `tests/test.provider-anthropic.spec.mjs` | `tests/integration/provider-anthropic.test.mjs` |
+| `tests/test.caps-anthropic.spec.mjs` | `tests/integration/caps.test.mjs` |
+| `tests/test.request-body.spec.mjs` | `tests/integration/request-body.test.mjs` |
+| `tests/test.upstream-html.spec.mjs` | `tests/integration/upstream-html.test.mjs` |
+| `tests/test.probe-auth.spec.mjs` / `test.probe-nokey.spec.mjs` | `tests/integration/probe-auth.test.mjs` / `probe-nokey.test.mjs` |
+| `tests/test.legacy-config.spec.mjs` | `tests/integration/legacy-config.test.mjs` |
+| `tests/test.internal-build.spec.mjs` | `tests/integration/internal-build.test.mjs` |
+| `tests/test.motion.spec.mjs` | `tests/integration/motion.test.mjs` |
+| `tests/test.auto-title.spec.mjs` | `tests/integration/auto-title.test.mjs` |
+| `tests/mode-switch-acceptance.mjs` | `tests/integration/mode-switch.test.mjs` |
+| `tests/mode-switch-plain-regression.mjs` | `tests/integration/mode-switch-plain.test.mjs` |
+| `tests/test.url-import-web.spec.mjs` / `-native` / `-device` | `tests/integration/url-import-web.test.mjs` / `url-import-native.test.mjs` / `tests/device/url-import-device.test.mjs` |
+| `tests/test.diagnostics.spec.mjs` | `tests/integration/diagnostics.test.mjs` |
+| `tests/test.diagnostics-contract.spec.mjs` | `tests/integration/diagnostics-contract.test.mjs` |
+| `tests/test.diagnostics-e2e.spec.mjs` | `tests/e2e/diagnostics-upload.test.mjs` |
+| `tests/e2e-real-upstream.spec.mjs` | `tests/e2e/real-upstream.test.mjs` |
+| `tests/run-acceptance.mjs`（36KB 巨型套件） | `tests/integration/full-acceptance.test.mjs` |
+| `tests/helpers.mjs` / `archive-fixture.mjs` / `mock-anthropic.mjs` | `tests/helpers/helpers.mjs` / `tests/fixtures/archive-fixture.mjs` / `tests/fixtures/mock-anthropic.mjs` |
+| `tests/package.json`（自带 playwright 依赖） | 删除，依赖统一由根 `package.json` 提供 |

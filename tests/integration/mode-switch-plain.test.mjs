@@ -1,7 +1,8 @@
+// [layer: integration | 依赖: playwright + chromium + 本地静态服务/mock 上游 | 耗时: 1~3 分钟] 说明见 tests/README.md
 // 正式包（非内测）回归：deepseek spec 下「深度思考 / 智能搜索 / 附件 / 语音」入口一个不少，
 // 并逐项对比改动前的 baseline 包，证明空态加的模式切换没有动到输入区。
 //
-//   cd /root/deepseek-app && node tests/mode-switch-plain-regression.mjs
+//   cd /root/deepseek-app && node tests/integration/mode-switch-plain.test.mjs
 //
 // 需要先把两套静态产物起在本地（见 docs/ui 说明）：
 //   python3 -m http.server 5191 --directory dist-plain      # 当前源码的正式包

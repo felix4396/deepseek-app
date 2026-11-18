@@ -1,6 +1,16 @@
+// [layer: integration | 依赖: playwright + chromium + 本地静态服务/mock 上游 | 耗时: 1~3 分钟] 说明见 tests/README.md
+// ============================================================================
+// ⚠️ 历史遗留的巨型套件（36KB / 约 860 行，别再长）
+//
+// 这是 1.3.0 时期「一次性验收」的合集：8 组断言挤在一个文件里，跑法靠文件头注释。为了
+// 保留既有覆盖没有重写，但**新测试一律拆小**（单个用例一个文件、不超过 500 行，放
+// integration/ 下按被测对象命名），不要往这个文件里加东西。
+// 需要哪组就抄出去做独立文件，然后从这里删掉对应段落。
+// 约定见 tests/README.md「写新测试的约定」。
+// ============================================================================
 // 1.3.0 一次性验收脚本：本地标准库 mock 上游（不依赖任何外网），覆盖 8 组断言。
 //
-//   cd /root/deepseek-app && APP_URL=http://127.0.0.1:5181 node tests/run-acceptance.mjs
+//   cd /root/deepseek-app && APP_URL=http://127.0.0.1:5181 node tests/integration/full-acceptance.test.mjs
 //
 // 1. openai 模式：POST 打到 /v1/chat/completions，header 为 Authorization: Bearer <key>
 // 2. openai 请求体转换：system 进 messages 头部，无 safety_check/title/tools
@@ -299,10 +309,10 @@ const gone = async (nameRe) => !(await usable(nameRe))
 try {
   // ============ 3/4. 翻译器单测：直接 import 适配器，不启浏览器 ============
   console.log('\n[3] 翻译器单测（OpenAI SSE → Anthropic 事件流）')
-  const repoRoot = fileURLToPath(new URL('..', import.meta.url))
+  const repoRoot = fileURLToPath(new URL('../..', import.meta.url))
   let translatorOut = ''
   try {
-    translatorOut = execFileSync(process.execPath, ['tests/test.openai-adapter.spec.mjs'], {
+    translatorOut = execFileSync(process.execPath, ['tests/unit/openai-adapter.test.mjs'], {
       cwd: repoRoot,
       encoding: 'utf8',
     })
@@ -313,10 +323,10 @@ try {
   const translatorFailures = translatorOut
     .split('\n')
     .filter((line) => line.trim().startsWith('✗'))
-  if (!translatorOut.includes('PASS tests/test.openai-adapter.spec.mjs')) {
+  if (!translatorOut.includes('PASS tests/unit/openai-adapter.test.mjs')) {
     bad(`3/4) 翻译器单测未通过：${translatorFailures.slice(0, 3).join(' | ') || '无输出'}`)
   } else {
-    ok('3) 翻译器单测通过（子进程 node tests/test.openai-adapter.spec.mjs）')
+    ok('3) 翻译器单测通过（子进程 node tests/unit/openai-adapter.test.mjs）')
   }
   const sequence = translatorOut
     .split('\n')
@@ -855,8 +865,8 @@ try {
     console.log('  ' + line)
   }
   if (failures.length > 0) {
-    console.error(`\nFAIL tests/run-acceptance.mjs（${failures.length} 条）`)
+    console.error(`\nFAIL tests/integration/full-acceptance.test.mjs（${failures.length} 条）`)
     process.exit(1)
   }
-  console.log('\nPASS tests/run-acceptance.mjs')
+  console.log('\nPASS tests/integration/full-acceptance.test.mjs')
 }

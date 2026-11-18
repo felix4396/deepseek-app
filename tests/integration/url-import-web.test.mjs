@@ -1,12 +1,13 @@
+// [layer: integration | 依赖: playwright + chromium + 本地静态服务/mock 上游 | 耗时: 1~3 分钟] 说明见 tests/README.md
 // Web 端（5181）验收：不提供「从链接导入」，只保留手动上传 ZIP；顺带回归本地文件上传。
 import { mkdtemp, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { chromium } from 'playwright'
-import { buildArchiveZip } from './archive-fixture.mjs'
+import { buildArchiveZip } from '../fixtures/archive-fixture.mjs'
 
 const APP_URL = process.env.APP_URL || 'http://127.0.0.1:5181'
-const SHOT_DIR = new URL('../docs/ui/', import.meta.url).pathname
+const SHOT_DIR = new URL('../../docs/ui/', import.meta.url).pathname
 const SESSION_TITLE = '网页上传测试会话'
 
 const failures = []

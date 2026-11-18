@@ -1,7 +1,8 @@
+// [layer: integration | 依赖: playwright + chromium + 本地静态服务/mock 上游 | 耗时: 1~3 分钟] 说明见 tests/README.md
 // 新用例（1.2.3）：Anthropic 协议不支持搜索 / 附件 / 语音，这三个入口必须隐藏或置灰，
 // 「深度思考」保留可用（该协议仍支持 thinking）。
 //
-// 跑法：APP_URL=http://127.0.0.1:5181 node tests/test.caps-anthropic.spec.mjs
+// 跑法：APP_URL=http://127.0.0.1:5181 node tests/integration/caps.test.mjs
 import {
   closeSettings,
   fillApiKey,
@@ -9,9 +10,9 @@ import {
   openApp,
   openSettingsDataSection,
   selectProviderKind,
-} from './helpers.mjs'
+} from '../helpers/helpers.mjs'
 
-const name = 'test.caps-anthropic.spec.mjs'
+const name = 'tests/integration/caps.test.mjs'
 const { browser, page } = await openApp()
 const failures = []
 

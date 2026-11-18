@@ -1,6 +1,7 @@
+// [layer: e2e | 依赖: E2E_API_KEY + 真上游可达 | 耗时: 1~2 分钟] 说明见 tests/README.md
 // legacy 通道（后端实际接口）端到端验收（真实提交 + 裁剪 + 降级重试）：
 //
-//   cd /root/deepseek-app && node tests/test.diagnostics-e2e.spec.mjs
+//   cd /root/deepseek-app && node tests/e2e/diagnostics-upload.test.mjs
 //
 // 被测页面默认是部署在 5181 的 dist（APP_URL 可覆盖），会**真实提交**到后端：
 //   POST http://62.106.70.167:60012/feedback  Body: { content, type, contact, version, log }
@@ -337,7 +338,7 @@ try {
   await browser.close()
 }
 
-console.log(`\n${failures.length === 0 ? 'PASS' : 'FAIL'} tests/test.diagnostics-e2e.spec.mjs`)
+console.log(`\n${failures.length === 0 ? 'PASS' : 'FAIL'} tests/e2e/diagnostics-upload.test.mjs`)
 if (evidence.length > 0) {
   console.log('实测数据：')
   for (const item of evidence) {

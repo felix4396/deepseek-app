@@ -1,6 +1,7 @@
+// [layer: e2e | 依赖: E2E_API_KEY + 真上游可达 | 耗时: 1~2 分钟] 说明见 tests/README.md
 // 真上游 + 真前端 的端到端冒烟测试（**不用任何 mock**）。
 //
-//   cd /root/deepseek-app && E2E_API_KEY=sk-xxx node tests/e2e-real-upstream.spec.mjs
+//   cd /root/deepseek-app && E2E_API_KEY=sk-xxx node tests/e2e/real-upstream.test.mjs
 //
 // 为什么需要它：此前 UI 用例全部用 page.route / mock 上游打桩，上游能力全部用 curl 验证，
 // 两条线从未交叉——「真实 SSE 能不能被前端解析并渲染成文字」这件事一直没有自动化覆盖。
@@ -217,7 +218,7 @@ const formatEvidence = (record) => {
 
 // ---------- 主流程 ----------
 if (!API_KEY) {
-  console.error('缺少 E2E_API_KEY：E2E_API_KEY=sk-xxx node tests/e2e-real-upstream.spec.mjs')
+  console.error('缺少 E2E_API_KEY：E2E_API_KEY=sk-xxx node tests/e2e/real-upstream.test.mjs')
   process.exit(2)
 }
 

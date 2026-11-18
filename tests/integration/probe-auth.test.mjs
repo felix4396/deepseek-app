@@ -1,7 +1,8 @@
+// [layer: integration | 依赖: playwright + chromium + 本地静态服务/mock 上游 | 耗时: 1~3 分钟] 说明见 tests/README.md
 // FIXME: Test 按钮读的是 store 里已保存的 apiKey，而非输入框当前值，导致未保存时发出空 Bearer
 //
 // 跑法（无需在仓库安装 playwright：tests/node_modules 已软链到已有的 playwright 1.64.1）：
-//   cd /root/deepseek-app && node tests/test.probe-auth.spec.mjs
+//   cd /root/deepseek-app && node tests/integration/probe-auth.test.mjs
 //   可选环境变量：APP_URL（默认 http://100.113.135.55:5181）
 //
 // 用例：只在 API Key 输入框里 fill 一个假 key（不点「确定」，不写 store），
@@ -18,9 +19,9 @@ import {
   openApp,
   openSettingsDataSection,
   waitForProbe,
-} from './helpers.mjs'
+} from '../helpers/helpers.mjs'
 
-const name = 'test.probe-auth.spec.mjs'
+const name = 'tests/integration/probe-auth.test.mjs'
 const { browser, page } = await openApp()
 const failures = []
 try {

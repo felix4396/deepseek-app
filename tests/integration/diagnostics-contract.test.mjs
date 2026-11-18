@@ -1,6 +1,7 @@
+// [layer: integration | 依赖: playwright + chromium + 本地静态服务/mock 上游 | 耗时: 1~3 分钟] 说明见 tests/README.md
 // 诊断日志「有效性」契约测试（自建、纯本地、不依赖真实后端）：
 //
-//   cd /root/deepseek-app && pnpm build:internal && node tests/test.diagnostics-contract.spec.mjs
+//   cd /root/deepseek-app && pnpm build:internal && node tests/integration/diagnostics-contract.test.mjs
 //
 // 目的：光有环形缓冲不算「有效覆盖」。这里对 6 类真实故障各注入一次，断言上传的 payload 里
 // **必须出现指定字段** —— 少一个字段，事后就拿不到定位问题的证据。
@@ -20,7 +21,7 @@ import path from 'node:path'
 import { chromium } from 'playwright'
 
 const HERE = path.dirname(fileURLToPath(import.meta.url))
-const ROOT = path.resolve(HERE, '..')
+const ROOT = path.resolve(HERE, '../..')
 const INTERNAL_DIST = process.env.DIST_DIR || path.join(ROOT, 'dist')
 const STANDARD_DIST = process.env.STANDARD_DIST_DIR || path.join(ROOT, 'dist-standard')
 const INTERNAL_PORT = process.env.PORT || '5295'
@@ -334,7 +335,7 @@ try {
   cleanup()
 }
 
-console.log(`\n${failures.length === 0 ? 'PASS' : 'FAIL'} tests/test.diagnostics-contract.spec.mjs`)
+console.log(`\n${failures.length === 0 ? 'PASS' : 'FAIL'} tests/integration/diagnostics-contract.test.mjs`)
 if (evidence.length > 0) {
   console.log('实际断言到的字段：')
   for (const item of evidence) {

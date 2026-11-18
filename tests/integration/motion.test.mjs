@@ -1,6 +1,7 @@
+// [layer: integration | 依赖: playwright + chromium + 本地静态服务/mock 上游 | 耗时: 1~3 分钟] 说明见 tests/README.md
 // 1.4.0-beta.2 交互动效验收（自建、可自动化、不依赖真实上游）
 //
-//   cd /root/deepseek-app && node tests/test.motion.spec.mjs
+//   cd /root/deepseek-app && node tests/integration/motion.test.mjs
 //
 // 被测页面是**内测构建**的 dist（`INTERNAL_BUILD=1 pnpm build:internal`），
 // 由脚本自己拉起静态服务；上游 http://123.207.199.196:60010 用 page.route 打桩，
@@ -25,7 +26,7 @@ import path from 'node:path'
 import { chromium } from 'playwright'
 
 const HERE = path.dirname(fileURLToPath(import.meta.url))
-const ROOT = path.resolve(HERE, '..')
+const ROOT = path.resolve(HERE, '../..')
 const DIST = process.env.DIST_DIR || path.join(ROOT, 'dist')
 const PORT = process.env.PORT || '5292'
 const APP_URL = process.env.APP_URL || `http://127.0.0.1:${PORT}`
@@ -845,7 +846,7 @@ try {
   cleanup()
 }
 
-console.log(`\n${failures.length === 0 ? 'PASS' : 'FAIL'} tests/test.motion.spec.mjs`)
+console.log(`\n${failures.length === 0 ? 'PASS' : 'FAIL'} tests/integration/motion.test.mjs`)
 if (evidence.length > 0) {
   console.log('证据：')
   for (const item of evidence) {

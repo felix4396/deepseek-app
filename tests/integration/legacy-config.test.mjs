@@ -1,7 +1,8 @@
+// [layer: integration | 依赖: playwright + chromium + 本地静态服务/mock 上游 | 耗时: 1~3 分钟] 说明见 tests/README.md
 // 兼容用例（1.2.3）：升级前的老用户只有 chat-demo:api-key / base-url / model，没有 provider-kind。
 // 升级后必须：按 deepseek 处理、路径不变、并且继续用他们已存的服务地址与模型（无感兼容）。
 //
-// 跑法：APP_URL=http://127.0.0.1:5181 node tests/test.legacy-config.spec.mjs
+// 跑法：APP_URL=http://127.0.0.1:5181 node tests/integration/legacy-config.test.mjs
 import {
   capturePaths,
   closeSettings,
@@ -11,9 +12,9 @@ import {
   sendChat,
   stubMessagesStream,
   stubModels,
-} from './helpers.mjs'
+} from '../helpers/helpers.mjs'
 
-const name = 'test.legacy-config.spec.mjs'
+const name = 'tests/integration/legacy-config.test.mjs'
 const LEGACY_BASE = 'https://legacy-relay.example.com'
 const LEGACY_MODEL = 'legacy-model'
 const { browser, page } = await openApp()

@@ -1,6 +1,7 @@
+// [layer: integration | 依赖: playwright + chromium + 本地静态服务/mock 上游 | 耗时: 1~3 分钟] 说明见 tests/README.md
 // 日志采集 + 反馈上传验收（自建、纯本地，不依赖真实后端）：
 //
-//   cd /root/deepseek-app && pnpm build:internal && node tests/test.diagnostics.spec.mjs
+//   cd /root/deepseek-app && pnpm build:internal && node tests/integration/diagnostics.test.mjs
 //
 // 被测页面是 dist（内测构建）上的独立静态服务（默认 5293），上游与反馈后端都不连真实服务：
 // - 反馈"后端"用注入的 mock transport（页面内 setFeedbackTransport）与 page.route 打桩；
@@ -19,7 +20,7 @@
 //   [8] console error = 0
 //   [9] 提交前自检 validatePayload：少日志 / 没网络 / 跨度<1s 三条提示 + 缺 state_snapshot 时自动补
 //  [10] 「检查日志完整性」按钮实测：条数 / 时间跨度 / 覆盖事件类型数 / 缺失项（含截图）
-//  （6 类故障注入的契约测试见 tests/test.diagnostics-contract.spec.mjs）
+//  （6 类故障注入的契约测试见 tests/integration/diagnostics-contract.test.mjs）
 import { spawn } from 'node:child_process'
 import { mkdirSync, readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
@@ -27,7 +28,7 @@ import path from 'node:path'
 import { chromium } from 'playwright'
 
 const HERE = path.dirname(fileURLToPath(import.meta.url))
-const ROOT = path.resolve(HERE, '..')
+const ROOT = path.resolve(HERE, '../..')
 const DIST = process.env.DIST_DIR || path.join(ROOT, 'dist')
 const PORT = process.env.PORT || '5293'
 const APP_URL = process.env.APP_URL || `http://127.0.0.1:${PORT}`
@@ -687,7 +688,7 @@ try {
   cleanup()
 }
 
-console.log(`\n${failures.length === 0 ? 'PASS' : 'FAIL'} tests/test.diagnostics.spec.mjs`)
+console.log(`\n${failures.length === 0 ? 'PASS' : 'FAIL'} tests/integration/diagnostics.test.mjs`)
 if (evidence.length > 0) {
   console.log('关键值：')
   for (const item of evidence) {

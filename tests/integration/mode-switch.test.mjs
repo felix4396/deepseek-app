@@ -1,6 +1,7 @@
+// [layer: integration | 依赖: playwright + chromium + 本地静态服务/mock 上游 | 耗时: 1~3 分钟] 说明见 tests/README.md
 // 模式切换控件的自建验收：402×874 截图 + getComputedStyle 断言 + 3 次切换 + 回归（输入/按钮/发消息）。
 //
-//   cd /root/deepseek-app && node tests/mode-switch-acceptance.mjs
+//   cd /root/deepseek-app && node tests/integration/mode-switch.test.mjs
 //
 // 内测构建把上游钉死在 http://123.207.199.196:60010（/v1/models、/v1/messages），
 // 这里用 Playwright 路由拦截本地 mock，不依赖任何真实网络。
@@ -306,7 +307,7 @@ expect(modeAfterTyping.ariaPressed === 'true', '输入文字不影响模式选�
 const thinkButton = page.getByRole('button', { name: /深度思考|DeepThink|Thinking/ }).first()
 expect(await thinkButton.isVisible(), '深度思考按钮仍在')
 // 内测包钉死 anthropic spec（caps.search=false），智能搜索入口本来就不渲染；
-// 「智能搜索仍在」由正式包的对比回归（tests/mode-switch-plain-regression.mjs）证明。
+// 「智能搜索仍在」由正式包的对比回归（tests/integration/mode-switch-plain.test.mjs）证明。
 const searchCount = await page.getByRole('button', { name: /智能搜索|Search/ }).count()
 console.log(
   `  ·   智能搜索入口 count=${searchCount}（内测包 anthropic spec caps.search=false，与改动前一致；正式包已验证存在）`

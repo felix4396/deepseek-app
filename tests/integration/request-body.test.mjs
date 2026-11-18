@@ -1,10 +1,11 @@
+// [layer: integration | 依赖: playwright + chromium + 本地静态服务/mock 上游 | 耗时: 1~3 分钟] 说明见 tests/README.md
 // 核心验收（1.2.3）：请求体必须按服务类型剥离 DeepSeek 扩展字段，否则裸 Anthropic 上游每个请求都 400。
 //
 // A) Anthropic 协议：请求体里不许出现 safety_check / title / tools / role:'latest_reminder'
 //    （latestReminder 的内容改拼进 system，不丢信息）
 // B) DeepSeek 官方：上述字段原样保留（回归硬约束，不能为适配把官方模式改坏）
 //
-// 跑法：APP_URL=http://127.0.0.1:5181 node tests/test.request-body.spec.mjs
+// 跑法：APP_URL=http://127.0.0.1:5181 node tests/integration/request-body.test.mjs
 import {
   capturePaths,
   clickApiKeyConfirm,
@@ -19,9 +20,9 @@ import {
   sendChat,
   stubMessagesStream,
   stubModels,
-} from './helpers.mjs'
+} from '../helpers/helpers.mjs'
 
-const name = 'test.request-body.spec.mjs'
+const name = 'tests/integration/request-body.test.mjs'
 const failures = []
 const ANTHROPIC_PATH = /\/v1\/messages$/
 const DEEPSEEK_PATH = /\/anthropic\/v1\/messages$/

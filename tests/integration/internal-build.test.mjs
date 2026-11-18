@@ -1,6 +1,7 @@
+// [layer: integration | 依赖: playwright + chromium + 本地静态服务/mock 上游 | 耗时: 1~3 分钟] 说明见 tests/README.md
 // 1.4.0-beta.1 内测版验收（自建、可自动化，不依赖真实上游）：
 //
-//   cd /root/deepseek-app && node tests/test.internal-build.spec.mjs
+//   cd /root/deepseek-app && node tests/integration/internal-build.test.mjs
 //
 // 被测页面是**内测构建**（INTERNAL_BUILD=1）：服务地址 / 模型 / 服务类型由
 // src/services/api/internalBuild.ts 的常量钉死，设置页不渲染这三项的编辑入口。
@@ -23,7 +24,7 @@ import path from 'node:path'
 import { chromium } from 'playwright'
 
 const HERE = path.dirname(fileURLToPath(import.meta.url))
-const ROOT = path.resolve(HERE, '..')
+const ROOT = path.resolve(HERE, '../..')
 const DIST = process.env.DIST_DIR || path.join(ROOT, 'dist')
 const PORT = process.env.PORT || '5291'
 const APP_URL = process.env.APP_URL || `http://127.0.0.1:${PORT}`
@@ -85,7 +86,7 @@ const cleanup = () => {
 }
 
 // ---------- 0) 起 mock 上游 + 静态服务 ----------
-const mock = start('node', ['tests/mock-anthropic.mjs'], { MOCK_REPLY_TEXT: REPLY })
+const mock = start('node', [path.join(ROOT, 'tests/fixtures/mock-anthropic.mjs')], { MOCK_REPLY_TEXT: REPLY })
 await waitForLine(mock, 'mock anthropic upstream').catch((error) => {
   bad(`mock 上游没起来：${error.message}（是否忘了 ip addr add 123.207.199.196/32 dev lo？）`)
 })
@@ -313,7 +314,7 @@ try {
   cleanup()
 }
 
-console.log(`\n${failures.length === 0 ? 'PASS' : 'FAIL'} tests/test.internal-build.spec.mjs`)
+console.log(`\n${failures.length === 0 ? 'PASS' : 'FAIL'} tests/integration/internal-build.test.mjs`)
 if (evidence.length > 0) {
   console.log('证据：')
   for (const item of evidence) {

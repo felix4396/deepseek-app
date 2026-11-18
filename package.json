@@ -11,7 +11,12 @@
     "build:internal": "rm -rf dist && INTERNAL_BUILD=1 NODE_ENV=production rspack build -c rspack.config.ts",
     "type": "tsc -p tsconfig.json",
     "lint": "oxlint src rspack.config.ts",
-    "format": "oxfmt --write ."
+    "format": "oxfmt --write .",
+    "test": "node tests/run-layer.mjs unit",
+    "test:integration": "node tests/run-layer.mjs integration",
+    "test:e2e": "node tests/run-layer.mjs e2e",
+    "test:device": "node tests/run-layer.mjs device",
+    "test:all": "npm run test && npm run test:integration"
   },
   "dependencies": {
     "@types/katex": "^0.16.5",
@@ -46,6 +51,7 @@
     "@types/node": "~20.9.2",
     "oxfmt": "0.48.0",
     "oxlint": "1.63.0",
+    "playwright": "1.64.1",
     "typescript": "7.0.2"
   }
 }

@@ -1,3 +1,4 @@
+// [layer: integration | 依赖: playwright + chromium + 本地静态服务/mock 上游 | 耗时: 1~3 分钟] 说明见 tests/README.md
 // 「导入历史会话 → 从链接导入」原生（APK）链路的自动化验收。
 //
 // 在真实 dist 上运行，只把 Capacitor 的原生桥替换掉：
@@ -8,10 +9,10 @@
 //
 // 因此断言走的是真实代码：CapacitorHttp.get → urlImport 解析 → importHistory → staging → IndexedDB。
 import { chromium } from 'playwright'
-import { buildArchiveZip, textPayload } from './archive-fixture.mjs'
+import { buildArchiveZip, textPayload } from '../fixtures/archive-fixture.mjs'
 
 const APP_URL = process.env.APP_URL || 'http://127.0.0.1:5181'
-const SHOT_DIR = new URL('../docs/ui/', import.meta.url).pathname
+const SHOT_DIR = new URL('../../docs/ui/', import.meta.url).pathname
 const ZIP_URL = 'https://obs.example.test/deepseek_data-2026-11-01.zip'
 const SESSION_TITLE = '链接导入测试会话'
 const OVER_LIMIT_BYTES = 300 * 1024 * 1024

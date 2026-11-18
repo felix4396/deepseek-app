@@ -1,14 +1,15 @@
+// [layer: device | 依赖: Android 模拟器/真机 + adb | 耗时: 3~8 分钟] 说明见 tests/README.md
 // 真机（Android WebView）验收：从链接导入 + CapacitorHttp 返回的 data 类型实测。
 //
 // 前置（脚本会自己处理能自动的部分）：
 //   - 模拟器已启动（heavy-run ... -avd test34 -memory 1280）
 //   - 5227 端口的静态服务由脚本自己拉起，提供 20MB / 40 会话的导出 ZIP
-// 运行：node tests/test.url-import-device.spec.mjs
+// 运行：node tests/device/url-import-device.test.mjs
 // 说明：模拟器访问宿主机回环用 10.0.2.2；Playwright 的 connectOverCDP 不支持 WebView 的浏览器级
 //       协议（Browser.setDownloadBehavior 报错），所以这里直接走 WebView 页面级 CDP。
 import { execFileSync, spawn } from 'node:child_process'
 import { mkdirSync, writeFileSync } from 'node:fs'
-import { buildArchive } from './archive-fixture.mjs'
+import { buildArchive } from '../fixtures/archive-fixture.mjs'
 
 const ADB = process.env.ADB || '/root/android-sdk/platform-tools/adb'
 const PACKAGE = 'com.example.deepseekchat'
@@ -20,7 +21,7 @@ const ARCHIVE_DIR = process.env.ARCHIVE_DIR || '/tmp/device-archive'
 // 传了就用它、不起本地服务，会话数按界面提示的导入结果与 IndexedDB 对账。
 const EXTERNAL_URL = process.env.DEVICE_ZIP_URL || ''
 const ZIP_URL = EXTERNAL_URL || `http://10.0.2.2:${PORT}/deepseek_data.zip`
-const SHOT_DIR = new URL('../docs/ui/', import.meta.url).pathname
+const SHOT_DIR = new URL('../../docs/ui/', import.meta.url).pathname
 
 const sh = (...args) => execFileSync(ADB, args, { encoding: 'utf8' }).trim()
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
