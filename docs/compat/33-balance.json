@@ -1,0 +1,101 @@
+{
+  "api": 33,
+  "generatedAt": "2026-11-18T08:24:59.983Z",
+  "keyMask": "…013812",
+  "keySource": "/root/.secrets/ours-test-key（只读，内容不入报告）",
+  "request": {
+    "method": "request",
+    "urlPath": "/api/balance",
+    "hasQuery": false,
+    "hasAuthorizationHeader": true,
+    "status": null,
+    "bodyHead": ""
+  },
+  "uiText": "Quota & card codes\nRedeemable quota\nCheck quota\nQuota check timed out, retry later\nCurrent key ••••013812\nPlans\n入门包 100万 token\n¥3.00 / 0 token\n标准包 500万 token\n¥39.00 / 0 token\nPayment not open yet\nPayment is not open yet: no purchase or order entry is offered, and success is never faked.\nRedeem card code\nRedeem",
+  "consoleErrors": [
+    "Object"
+  ],
+  "checks": [
+    {
+      "name": "注入 CapacitorHttp 桥探针（只观测，不改请求）",
+      "status": "pass",
+      "detail": "ok"
+    },
+    {
+      "name": "打开设置",
+      "status": "pass",
+      "detail": "侧栏=opened 结果=ok"
+    },
+    {
+      "name": "切到 Data/数据管理（beta.8 把渠道与 Key 放在这一页）",
+      "status": "pass"
+    },
+    {
+      "name": "填入 API Key（长度不回显内容）",
+      "status": "fail",
+      "detail": "no-password-input"
+    },
+    {
+      "name": "Key 保存后 UI 用掩码显示（明文不落在文本节点里）",
+      "status": "fail",
+      "detail": "{\"passwordInputGone\":true,\"masked\":true,\"tailShown\":\"no\",\"hasFullKeyInDom\":false}"
+    },
+    {
+      "name": "打开「额度与卡密」弹窗",
+      "status": "pass",
+      "detail": "row=ok 按钮=[\"\",\"Check quota\",\"入门包 100万 token¥3.00 / 0 token\",\"标准包 500万 token¥39.00 / 0 token\",\"Payment not open yet\",\"Redeem\"]"
+    },
+    {
+      "name": "点击「查询额度」",
+      "status": "pass",
+      "detail": "ok"
+    },
+    {
+      "name": "请求走 /api/balance 且 URL 无 query",
+      "status": true,
+      "detail": "request /api/balance"
+    },
+    {
+      "name": "请求用 Authorization: Bearer（Key 不进 URL/不进日志）",
+      "status": true,
+      "detail": "hasAuth=true keyInQuery=false"
+    },
+    {
+      "name": "后端返回 200",
+      "status": false,
+      "detail": "status=null"
+    },
+    {
+      "name": "余额与后端一致（当前 0）",
+      "status": false,
+      "detail": "body="
+    },
+    {
+      "name": "UI 显示「未查询到该 Key 的兑换额度（或额度为 0）」类文案",
+      "status": false,
+      "detail": "Quota & card codes / Redeemable quota / Check quota / Quota check timed out, retry later / Current key ••••013812 / Plans / 入门包 100万 token / ¥3.00 / 0 token / 标准包 500万 token / ¥39.00 / 0 token / Payme"
+    },
+    {
+      "name": "UI 显示 Key 掩码（尾 6 位）",
+      "status": true,
+      "detail": "tail=013812 命中=true"
+    },
+    {
+      "name": "未出现「额度不足 / 报错」类文案",
+      "status": true,
+      "detail": ""
+    },
+    {
+      "name": "无 console error",
+      "status": false,
+      "detail": "Object"
+    },
+    {
+      "name": "截图前确认整页 DOM 无完整 Key",
+      "status": true,
+      "detail": "hasFullKey=false"
+    }
+  ],
+  "screenshot": "/root/worktrees/deepseek-compat-matrix/docs/compat/shots/33-balance.png",
+  "verdict": "fail"
+}

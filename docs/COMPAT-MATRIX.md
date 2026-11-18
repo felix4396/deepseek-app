@@ -4,8 +4,8 @@
 > 真实版本 + 能力探测 + 首屏 + 反馈滚动 + 导入入口 + 系统信息真值，产出 `docs/compat/<api>*.json`
 > 与关键截图，结论三分类；OEM 真机残余风险只记边界，不挂单。
 >
-> 当前进度：**API 30 与 API 31 已跑完**；API 33 / API 34 因发布构建占用 CPU/内存，
-> 按资源协调要求暂停（见文末「未完成项」）。
+> 当前进度：**API 30 / API 31 / API 33 已跑完**（API 33 用 beta.8 正式包复测了争议项）；
+> API 34 对照按资源协调取消（父代理决定「compat33 平台上就够，不要再开第二台」）。
 
 ## 1. 被测对象与矩阵为什么是这四个点
 
@@ -85,8 +85,8 @@ bash tests/device/avd-boot.sh --stop compat31
 | --- | --- | --- | --- |
 | 30 | Android 11 / WebView 83.0.4103.106 | **该内核确实失败（首屏白屏）** | 见 4.1 |
 | 31 | Android 12 / WebView 91.0.4472.114 | **部分可用但存在硬失败**（首屏 OK；弹窗内手势滚动、取消保留表单、URL 导入走到 staging 失败） | 见 4.2 |
-| 33 | — | 未覆盖（暂停中） | 资源协调 |
-| 34 | — | 未覆盖（暂停中，作对照组） | 资源协调 |
+| 33 | Android 13 / WebView 109.0.5414.123（**beta.8**） | 首屏/系统信息通过；**3 处争议项全部仍失败** → 跨内核普遍（产品 bug） | 见 4.4 |
+| 34 | — | 未覆盖（父代理取消对照：结论在 33 上已足以定性） | 资源协调 |
 
 ### 4.1 API 30 = 白屏，且是「解析级」不兼容
 
@@ -163,3 +163,50 @@ docs/compat/shots/*.png        # 关键截图（绝对路径见 30.json / 31.jso
 tests/device/compat-matrix.mjs # 矩阵脚本（低层 CDP，不用 Playwright 高层 CDP）
 tests/device/avd-boot.sh       # 单台串行启动器（内存守卫 + 按真实强制 RAM 算预算）
 ```
+
+
+## 4.4 API 33 + beta.8（1.4.0-beta.8 / code15）：三处争议项复测
+
+被测包换成线上同源的 beta.8（`/root/worktrees/deepseek-release-beta8-full/.../app-debug.apk`，
+badging 实测 `versionName=1.4.0-beta.8 versionCode=15 minSdk=24`），内核 **Chrome 109.0.5414.123**
+（≥ 108，dvh 可用；≥ 105，构建基线达标）。只跑关键项（`--light 1`）。
+
+| 项 | 结果 | 证据 |
+| --- | --- | --- |
+| 首屏渲染 | **通过** | 134 节点 / 944 字符 / `textarea` 占位符 `Enter a message`；bundle 兼容检查 2/2 pass（Chrome109 ≥ 105 基线）→ 反证 API30 白屏是「Chrome<105 语法解析」而非产品逻辑 |
+| ① 反馈弹窗首尾手势滚动 | **仍失败** | `scrollTop` 0 → 0（内容 1974 / 可视 491）；触摸事件确实到达页面 `touchstart=13 / touchmove=163 / touchend=13`；CDP 触摸无效后回落 `adb shell input swipe` 仍不动 → 不是「注入没到」，是**手势没有产生滚动** |
+| ② 取消后重开表单保留 | **仍失败** | 写入「compat-matrix 表单保留自测」→ 点 Cancel → 重开，`textarea` 为空 |
+| ③ URL 导入 staging「文件不完整」 | **仍失败** | 阶段 `downloading(200 OK) > importing(staging)` 后抛 `BackupError 文件内容不完整`，会话 0/8；界面给错误提示、不崩不白屏 |
+| 系统信息 JSON | **通过** | 导出 JSON 的 `androidVersion=13`、`webviewVersion=109.0.5414.123`、`androidSdk=33`、`webviewPackage`、`fontScale=1`、`nativePath=DiagnosticsDevice`、`capabilities` 全对（25 项 pass） |
+
+**定位结论（父代理要求的分类）**：
+- ① 弹窗手势滚动：**跨内核普遍（产品 bug）** —— Chrome 91 与 Chrome 109 都复现，且触摸事件已确证到达页面。
+- ② 取消后表单被清空：**跨内核普遍（产品 bug 或产品预期偏差，需产品确认）** —— 两个内核一致复现。
+- ③ URL 导入 staging「文件不完整」：**跨内核普遍（产品 bug 或 fixture 不合规，二者必居其一）** ——
+  两个内核一致；**注意**：用的是仓库自带 `tests/fixtures/archive-fixture.mjs`（`sessionCount:8, imageBytes:512KB`），
+  与既有 device 用例（40 会话 / 512KB）参数不同但结构相同，尚未用 40/512KB 参数复测排除 fixture 因素，
+  开单前建议先跑一次既有 device 用例确认。
+
+**最小复现步骤（供开单）**
+1. 装 beta.8 → 打开 App → 设置 → Data（数据管理）→「反馈与日志」：
+   - 在「问题描述」输入任意文本 → 点 Cancel → 再点「反馈与日志」→ 描述为空（期望保留）。
+   - 手指在弹窗内上下滑动（真机或模拟器 `adb shell input swipe`）：日志预览/弹窗区域不滚动（`scrollTop` 恒 0）。
+2. 设置 → Data →「从链接导入」→ 填入可访问的导出 ZIP 链接 → 导入 → 确认导入：
+   - 阶段停在 `staging`，报「文件内容不完整，无法导入」，会话数不增加（同一 mock 包在 API31/API33 均复现）。
+
+## 4.5 真机额度查询验证（Issue #10 追加项，compat33 / beta.8）
+
+| 断言 | 结果 | 证据 |
+| --- | --- | --- |
+| 请求打到 `/api/balance` | **通过** | 桥级探针捕获 `GET /api/balance`（path 记录，无 query 串） |
+| 用 `Authorization: Bearer`、Key 不进 URL | **通过** | `hasAuth=true`、`keyInQuery=false` |
+| Key 掩码为尾 6 位 `013812` | **通过** | UI `Current key ••••013812`；整页 DOM 无完整 Key，截图已核对 |
+| 无「额度不足」类误报 | **通过** | 0 额度场景下出现的是 `Quota check timed out, retry later`（超时文案），不是额度不足、不是错误弹窗；`额度查询超时/网络不可用` 两条文案按设计区分 |
+| 后端 200 + 余额 = 0 的展示 | **未通过（不可判定）** | 设备侧请求 10s 超时（`Quota check timed out`），未取到 200 响应体；宿主直连该接口无鉴权返回 401、模拟器 ping 该 IP 14ms 可达 → 属设备侧本次请求未完成，**不能写成「后端一致」** |
+
+安全说明：Key 只从 `/root/.secrets/ours-test-key` 读入并填进 App；报告只写尾 6 位；测试后已
+`adb shell pm clear com.example.deepseekchat` 清除 App 内保存的 Key。截图：
+`docs/compat/shots/33-balance.png`（含尾号掩码，无完整 Key）。
+
+复测建议（网络更稳窗口 / 真机）：同一份 `tests/device/ours-balance-device.mjs --api 34` 即可，
+只要 `GET /api/balance` 返回 200 就会断言 `balance` 与 UI 文案一致。

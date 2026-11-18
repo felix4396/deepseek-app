@@ -38,6 +38,7 @@ const AVD = arg('avd', process.env.AVD || `compat${API}`)
 const SERIAL = arg('serial', process.env.SERIAL || 'emulator-5554')
 const PORT = Number(arg('port', process.env.ARCHIVE_PORT || 5231))
 const SKIP_INSTALL = arg('skip-install', '') === '1'
+const LIGHT = arg('light', '') === '1'   // 精简模式：跳过字体阶段与多余截图（33/34 对照用）
 const CDP_PORT = Number(arg('cdp-port', 9230))
 
 const ZIP_URL = `http://10.0.2.2:${PORT}/deepseek_data.zip`
@@ -119,7 +120,12 @@ const connectCdp = async (url) => {
   return { socket, send, evaluate, listeners }
 }
 
+const LIGHT_SHOTS = new Set(['startup', 'import-done', 'feedback-top', 'import-settings'])
 const shot = async (cdp, name) => {
+  if (LIGHT && !LIGHT_SHOTS.has(name)) {
+    console.log(`     截图 ${name} 跳过（light 模式只留首屏/导入等关键图）`)
+    return null
+  }
   try {
     const image = await cdp.send('Page.captureScreenshot', { format: 'png' }, 120_000)
     const file = `${SHOT_DIR}${API}-${name}.png`
@@ -1291,9 +1297,26 @@ const run = async () => {
   mkdirSync(SHOT_DIR, { recursive: true })
   if (!existsSync(APK)) throw new Error(`找不到 APK: ${APK}`)
   const apkSha = createHash('sha256').update(readFileSync(APK)).digest('hex')
+  // 被测包身份：直接读 APK 里的 versionName/versionCode（不靠文件名或目录名）
+  let apkBadging = { versionName: 'unknown', versionCode: 0, minSdk: null }
+  try {
+    const aapt2 = execFileSync('bash', ['-c', 'ls /root/android-sdk/build-tools/*/aapt2 | head -1'], {
+      encoding: 'utf8',
+    }).trim()
+    const badging = execFileSync(aapt2, ['dump', 'badging', APK], { encoding: 'utf8' })
+    apkBadging = {
+      versionName: /versionName='([^']+)'/.exec(badging)?.[1] ?? 'unknown',
+      versionCode: Number(/versionCode='(\d+)'/.exec(badging)?.[1] ?? 0),
+      minSdk: /minSdkVersion:'(\d+)'/.exec(badging)?.[1] ?? null,
+    }
+  } catch (error) {
+    console.log(`[warn] 读 APK badging 失败: ${String(error.message).slice(0, 100)}`)
+  }
 
   console.log(`[compat-matrix] API=${API} AVD=${AVD} serial=${SERIAL}`)
-  console.log(`[apk] ${APK}\n      sha256=${apkSha}`)
+  console.log(
+    `[apk] ${APK}\n      versionName=${apkBadging.versionName} versionCode=${apkBadging.versionCode} minSdk=${apkBadging.minSdk}\n      sha256=${apkSha}`
+  )
 
   const facts = deviceFacts()
   console.log(
@@ -1405,7 +1428,9 @@ const run = async () => {
 
   // 大字体阶段需要重启 App，放在最后（会重置表单与 CDP 连接）
   let fontOut = null
-  if (!fatal) {
+  if (LIGHT) {
+    skip('fontscale', '大字体 1.3 / 1.5', 'light 模式跳过：已在 API31 覆盖，33/34 只做对照')
+  } else if (!fatal) {
     try {
       fontOut = await stageFontScale(facts)
     } catch (error) {
@@ -1421,7 +1446,14 @@ const run = async () => {
     avd: AVD,
     serial: SERIAL,
     generatedAt: new Date().toISOString(),
-    artifact: { apk: APK, sha256: apkSha, versionName: 'see-apk', note: 'built from worktree' },
+    artifact: {
+      apk: APK,
+      sha256: apkSha,
+      versionName: apkBadging.versionName,
+      versionCode: apkBadging.versionCode,
+      minSdk: apkBadging.minSdk,
+      note: 'versionName/versionCode 由 APK 自身 badging 读出，不靠文件名',
+    },
     device: facts,
     probe: probeOut,
     startup: startup.render ?? startup,
