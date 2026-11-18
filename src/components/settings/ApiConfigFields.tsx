@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, useCallback } from 'react'
 import { IconEditOutline16 } from '../base/icons.js'
 import {
   getBaseUrl,
@@ -270,6 +270,7 @@ const ModelField = ({ spec }: { spec: ProviderSpec }) => {
   const [status, setStatus] = useState<'idle' | 'loading' | 'ready' | 'empty' | 'error'>('idle')
   const [error, setError] = useState<TranslationKey | null>(null)
   const requestId = useRef(0)
+  const defaultBaseUrl = spec.defaults?.baseUrl ?? ''
 
   useEffect(() => {
     setValue(stored || fallback)
@@ -288,11 +289,13 @@ const ModelField = ({ spec }: { spec: ProviderSpec }) => {
     setValue(value.trim())
   }
 
-  const loadModels = async () => {
+  const loadModels = useCallback(async () => {
     const id = ++requestId.current
     setStatus('loading')
-    const result = await probeProvider({ baseUrl: baseUrl || spec.defaults?.baseUrl || '', apiKey })
-    if (id !== requestId.current) return
+    const result = await probeProvider({ baseUrl: baseUrl || defaultBaseUrl, apiKey })
+    if (id !== requestId.current) {
+      return
+    }
     if (!result.ok) {
       setModels([])
       setStatus('error')
@@ -300,12 +303,17 @@ const ModelField = ({ spec }: { spec: ProviderSpec }) => {
     }
     setModels(result.models)
     setStatus(result.models.length ? 'ready' : 'empty')
-  }
+  }, [baseUrl, apiKey, defaultBaseUrl])
 
   useEffect(() => {
-    if (apiKey && (baseUrl || spec.defaults?.baseUrl)) void loadModels()
-    return () => { requestId.current++ }
-  }, [spec.kind, baseUrl, apiKey])
+    if (apiKey && (baseUrl || defaultBaseUrl)) {
+      void loadModels()
+    }
+    const slot = requestId
+    return () => {
+      slot.current++
+    }
+  }, [spec.kind, baseUrl, apiKey, defaultBaseUrl, loadModels])
 
   const options = models.includes(value.trim()) || !value.trim() ? models : [value.trim(), ...models]
   const [open, setOpen] = useState(false)
@@ -314,7 +322,9 @@ const ModelField = ({ spec }: { spec: ProviderSpec }) => {
     selecting.current = true
     setValue(model)
     setOpen(false)
-    if (!setModel(model)) setError('settingsModelInvalid')
+    if (!setModel(model)) {
+      setError('settingsModelInvalid')
+    }
     window.setTimeout(() => { selecting.current = false }, 0)
   }
   return (
@@ -328,8 +338,21 @@ const ModelField = ({ spec }: { spec: ProviderSpec }) => {
               autoComplete="off" spellCheck={false} aria-label={t('settingsModelLabel')} value={value}
               onFocus={() => setOpen(true)}
               onChange={(event) => { setValue(event.target.value); setError(null); setOpen(true) }}
-              onKeyDown={(event) => { if (event.key === 'Escape') setOpen(false); if (event.key === 'Enter' && !event.nativeEvent.isComposing) { save(); setOpen(false) } }}
-              onBlur={() => { setOpen(false); if (!selecting.current) save() }}
+              onKeyDown={(event) => {
+                if (event.key === 'Escape') {
+                  setOpen(false)
+                }
+                if (event.key === 'Enter' && !event.nativeEvent.isComposing) {
+                  save()
+                  setOpen(false)
+                }
+              }}
+              onBlur={() => {
+                setOpen(false)
+                if (!selecting.current) {
+                  save()
+                }
+              }}
             />
             {open && options.length > 0 ? <div className={styles.modelOptions} role="listbox" aria-label={t('settingsModelsAvailable')}>
               {options.map((model) => <button key={model} type="button" role="option" aria-selected={model === value} className={styles.modelOption} onMouseDown={(event) => event.preventDefault()} onClick={() => chooseModel(model)}>{model}</button>)}

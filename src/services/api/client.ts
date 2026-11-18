@@ -393,7 +393,9 @@ export const probeProvider = async (
     let body: unknown
     try {
       body = text
-      if (typeof body === 'string') body = JSON.parse(body)
+      if (typeof body === 'string') {
+        body = JSON.parse(body)
+      }
     } catch {
       return {
         ok: false,
