@@ -14,7 +14,7 @@
 //   [A] 入口只在 ours 渠道出现：切到 DeepSeek 官方后一条 DOM 都没有
 //   [B] 设备码：首次生成、可见、符合 8–128 / [A-Za-z0-9._:-]、重开不变（持久化）
 //   [C] 首次使用自动 /apply；已有 Key 时**不再自动 /apply**（不覆盖用户已填的 Key）
-//   [D] 额度只认邀请服务 /me 的 remaining_points（1 元 = 100 积分），并显示「约可消费 ¥X」
+//   [D] 额度只认邀请服务 /me 的 remaining_points，且只显示「N 积分」（#75：不做 ¥ 折算）
 //   [E] 邀请码：展示自己的 + 已邀请人数；填别人的走 /redeem，六类错误码各有文案
 //   [F] 套餐价格/积分来自 /api/plans；/buy 只点一次；order_token 必须落盘
 //   [G] 订单轮询：待支付 → 已发卡；发卡后显示卡密尾 4 位并提供「一键兑换」
@@ -381,7 +381,9 @@ const runViewport = async ({ width, height, label }) => {
   eq(deviceCode2, deviceCode, `${width}px：设备码不变（持久化，不因切渠道/改 Key 变化）`)
   eq(await page.evaluate((keyName) => window.localStorage.getItem(keyName), DEVICE_KEY), deviceCode, `${width}px：设备码落在固定存储键`)
   const quotaText = await page.getByTestId('ours-quota-value').innerText()
-  eq(quotaText, '100 积分（约可消费 ¥1.00）', `${width}px：额度来自 /me remaining_points（1 元 = 100 积分）`)
+  eq(quotaText, '100 积分', `${width}px：额度来自 /me remaining_points，只显示积分（#75）`)
+  const quotaBlockText = await page.getByTestId('ours-quota').innerText()
+  truthy(!/¥|约可消费|approx/.test(quotaBlockText), `${width}px：额度区块里没有 ¥ 折算残留（#75）`)
   const inviteText = await page.getByTestId('ours-invite-code').innerText()
   truthy(inviteText.includes('G7TA7UR3'), `${width}px：展示自己的邀请码`)
   const inviteCount = await page.getByTestId('ours-invite-count').innerText()
@@ -408,7 +410,7 @@ const runViewport = async ({ width, height, label }) => {
   mock.remaining = 0
   await page.getByTestId('ours-quota-refresh').click()
   await page.waitForTimeout(700)
-  eq(await page.getByTestId('ours-quota-value').innerText(), '0 积分（约可消费 ¥0.00）', `${width}px：额度为零文案`)
+  eq(await page.getByTestId('ours-quota-value').innerText(), '0 积分', `${width}px：额度为零文案（只显示积分）`)
   const zeroHint = await page.getByTestId('ours-quota-hint').innerText()
   truthy(/额度已用完/.test(zeroHint), `${width}px：额度为零给下一步建议（${zeroHint}）`)
   await scrollTo(page, 'ours-quota')

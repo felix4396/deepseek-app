@@ -7,7 +7,6 @@ import {
   fetchPlans,
   formatPlanMeta,
   formatPoints,
-  formatYuan,
   ORDER_STATUS_KEYS,
   OURS_PAYMENT_OPEN,
   pollOrder,
@@ -54,7 +53,7 @@ import styles from './OursServices.module.css'
  *  - 邀请 / 额度服务 http://62.106.70.167:60013（明文 HTTP）：设备码、Key、邀请码、剩余积分
  *  - 卡密 / 支付服务 https://apia.ecsafe.cn（HTTPS）：套餐、/buy 的 302 收银台、订单、卡密兑换
  *
- * 额度口径：**只认邀请服务的 remaining_points**（1 元 = 100 积分，同时显示「约可消费 ¥X」）。
+ * 额度口径：**只认邀请服务的 remaining_points**，界面上只显示「N 积分」，不做人民币折算（#75）。
  * /api/balance 只用来判断 Key 是否有效，绝不当余额。
  *
  * 失败一律给可读文案 + 可重试，且重试都是安全的：
@@ -550,10 +549,7 @@ const OursServicesDialog = ({ onClose }: { onClose: () => void }) => {
           {claim.status === 'ok' ? (
             <div className={clsx(styles.value, styles.valueSuccess)} data-testid="ours-claim-status">
               {claim.firstTime
-                ? t('oursClaimOk', {
-                    points: formatPoints(claim.points),
-                    yuan: formatYuan(claim.points),
-                  })
+                ? t('oursClaimOk', { points: formatPoints(claim.points) })
                 : t('oursClaimOkExisting')}
             </div>
           ) : null}
@@ -615,10 +611,7 @@ const OursServicesDialog = ({ onClose }: { onClose: () => void }) => {
             )}
           >
             {balance.status === 'ok'
-              ? t('oursQuotaValue', {
-                  points: formatPoints(balance.profile.remainingPoints),
-                  yuan: formatYuan(balance.profile.remainingPoints),
-                })
+              ? t('oursQuotaValue', { points: formatPoints(balance.profile.remainingPoints) })
               : balance.status === 'error'
                 ? t(balance.messageKey)
                 : balance.status === 'loading'
@@ -694,10 +687,7 @@ const OursServicesDialog = ({ onClose }: { onClose: () => void }) => {
             >
               {inviteResult.kind === 'error'
                 ? t(inviteResult.messageKey)
-                : t('oursInviteOk', {
-                    points: formatPoints(inviteResult.points),
-                    yuan: formatYuan(inviteResult.points),
-                  })}
+                : t('oursInviteOk', { points: formatPoints(inviteResult.points) })}
             </div>
           ) : null}
         </section>
@@ -872,14 +862,8 @@ const OursServicesDialog = ({ onClose }: { onClose: () => void }) => {
                   ? // 202（CREDIT_PENDING / VERIFY_PENDING）只有一种说法：处理中，稍后自动到账
                     t('oursRedeemProcessing')
                   : redeem.messageKey === 'oursRedeemDuplicate'
-                    ? t('oursRedeemDuplicate', {
-                        points: formatPoints(redeem.points),
-                        yuan: formatYuan(redeem.points),
-                      })
-                    : t('oursRedeemSuccess', {
-                        points: formatPoints(redeem.points),
-                        yuan: formatYuan(redeem.points),
-                      })}
+                    ? t('oursRedeemDuplicate', { points: formatPoints(redeem.points) })
+                    : t('oursRedeemSuccess', { points: formatPoints(redeem.points) })}
               {redeem.cardTail === '' ? '' : `（${redeem.cardTail}）`}
             </div>
           ) : null}

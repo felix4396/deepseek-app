@@ -1,0 +1,42 @@
+{
+  "appUrl": "http://127.0.0.1:8090",
+  "mode": "Playwright Chromium + rspack dev 产物（非真机）",
+  "cases": [
+    {
+      "viewport": "390x844",
+      "locale": "zh-CN",
+      "quotaText": "100 积分",
+      "planText": "套餐 | 入门包 100万 token | ¥3.00 · 300 积分 | 标准包 500万 token | ¥39.00 · 3,900 积分 | 去支付 | 网页版会跳到支付宝收银台（同一标签页）；付完回来会自动查单，请先留在本页。",
+      "panelHasYen": true,
+      "panelHasApproxWord": false,
+      "shot": "docs/ui/quota-no-cny/panel-390x844-zh.png"
+    },
+    {
+      "viewport": "390x844",
+      "locale": "en-US",
+      "quotaText": "100 积分",
+      "planText": "Plans | 入门包 100万 token | ¥3.00 · 300 积分 | 标准包 500万 token | ¥39.00 · 3,900 积分 | Pay | The web build opens the Alipay checkout in this tab; when you come back it polls the order automatically.",
+      "panelHasYen": true,
+      "panelHasApproxWord": false,
+      "shot": "docs/ui/quota-no-cny/panel-390x844-en.png"
+    },
+    {
+      "viewport": "360x780",
+      "locale": "zh-CN",
+      "quotaText": "100 积分",
+      "planText": "套餐 | 入门包 100万 token | ¥3.00 · 300 积分 | 标准包 500万 token | ¥39.00 · 3,900 积分 | 去支付 | 网页版会跳到支付宝收银台（同一标签页）；付完回来会自动查单，请先留在本页。",
+      "panelHasYen": true,
+      "panelHasApproxWord": false,
+      "shot": "docs/ui/quota-no-cny/panel-360x780-zh.png"
+    },
+    {
+      "viewport": "360x780",
+      "locale": "en-US",
+      "quotaText": "100 积分",
+      "planText": "Plans | 入门包 100万 token | ¥3.00 · 300 积分 | 标准包 500万 token | ¥39.00 · 3,900 积分 | Pay | The web build opens the Alipay checkout in this tab; when you come back it polls the order automatically.",
+      "panelHasYen": true,
+      "panelHasApproxWord": false,
+      "shot": "docs/ui/quota-no-cny/panel-360x780-en.png"
+    }
+  ]
+}

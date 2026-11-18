@@ -209,26 +209,20 @@ const transportFailure = (result: Exclude<OursHttpResult, { kind: 'response' }>)
 const messageKeyFor = (code: string, status: number): OursMessageKey =>
   OURS_ERROR_KEYS[code] ?? OURS_STATUS_KEYS[status] ?? 'oursErrUnknown'
 
-// ------------------------------------------------------------------ 积分 ↔ 金额
+// ------------------------------------------------------------------ 积分文案
 
 /**
- * 积分与金额的换算：**1 元 = 100 积分**（服务端 /api/plans 的口径：¥3.00 / 300 积分）。
- * 界面上积分与「约可消费 ¥X」同时显示，不写 token、不写美元。
+ * 积分文案：300 → "300 积分"（千分位，不跟 locale 变）。
+ *
+ * 只显示积分，**不做 points → 人民币折算**（Issue #75）：`/api/plans` 的实际口径不是
+ * 「1 元 = 100 积分」（p1 = ¥0.10 / 300 积分），折算会给用户错误预期；人民币价格只在
+ * 「套餐」处用后端下发的 price 展示。原来的 POINTS_PER_YUAN / pointsToYuan / formatYuan
+ * 已随 #75 一并删除，别再拼回来。
  */
-export const POINTS_PER_YUAN = 100
-
-/** 积分 → 金额（元），保留两位小数（不做四舍五入以外的花样） */
-export const pointsToYuan = (points: number): number =>
-  Math.round((Number.isFinite(points) ? points : 0) * 100 / POINTS_PER_YUAN) / 100
-
-/** 积分文案：300 → "300 积分"（千分位，不跟 locale 变） */
 export const formatPoints = (points: number): string =>
   `${Math.trunc(Number.isFinite(points) ? points : 0)
     .toString()
     .replace(/\B(?=(\d{3})+(?!\d))/g, ',')} 积分`
-
-/** 金额文案：300 → "¥3.00" */
-export const formatYuan = (points: number): string => `¥${pointsToYuan(points).toFixed(2)}`
 
 // ------------------------------------------------------------------ Key 校验
 
