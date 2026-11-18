@@ -6,6 +6,8 @@ import { App } from './app/App.js'
 import { ErrorBoundary } from './app/ErrorBoundary.js'
 import { setupTheme } from './app/theme.js'
 import { readDiagnosticsFacts } from './app/diagnosticsContext.js'
+import { openOursServices } from './components/settings/settingsDialogState.js'
+import { consumeOrderReturn } from './services/ours/returnParams.js'
 import {
   initDiagnostics,
   installDiagnosticsDebugHandle,
@@ -31,6 +33,13 @@ installDiagnosticsDebugHandle()
 
 // 告诉 index.html 的 ES5 守卫「入口跑起来了」，它就不用再兜底报白屏（见 src/index.html）。
 ;(window as Window & { __DEEPSEEK_BOOTED__?: boolean }).__DEEPSEEK_BOOTED__ = true
+// 网页版付款回跳（Issue #36）：地址栏带 ?no=<out_trade_no>&order_token=<token> 时，
+// 先解析并清掉参数（order_token 等同凭据，不该留在历史里），再直接打开「我们的渠道」弹层
+// 进入订单查询（2s 一次、最多 60s；fulfilled 才显示卡密）。
+if (consumeOrderReturn(window) !== null) {
+  openOursServices()
+}
+
 // 根部包一层错误边界：渲染期异常不再是整屏白屏，而是一张可读的错误页（issue #28）
 createRoot(document.getElementById('root') as HTMLElement).render(
   <ErrorBoundary>
