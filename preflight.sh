@@ -31,6 +31,8 @@ CHANGELOG=${CHANGELOG:-CHANGELOG.md}
 SKIP_TESTS=0
 DRY_RUN=0
 PLANNED_VER=''
+PLANNED_VC=''
+ALLOW_SAME=0
 
 usage() {
   cat <<'USAGE'
@@ -40,7 +42,10 @@ usage() {
 
   --skip-tests              跳过第 4/5/6 项（unit / integration / e2e），会打印醒目警告
   --dry-run                 只打印将执行什么，不真跑
-  --planned-version <x.y.z> 发布预演：第 7 项按「versionCode+1 且 versionName=<x.y.z>」评估
+  --planned-version <x.y.z> 发布预演：第 7 项按「versionName=<x.y.z>」评估
+  --planned-versioncode <n> 配合 --planned-version：直接用 n 作为待发布 versionCode
+  --allow-same-version      同版本续发：允许 planned versionCode == 远端 latest 且版本号相同
+                            （release-apk.sh 发现同 artifact 续发时自动透传）
   -h, --help                显示本帮助
 
 退出码：0 = 通过（允许 SKIP）；1 = 有 FAIL；2 = 参数错误
@@ -53,6 +58,9 @@ while (( $# )); do
     --dry-run) DRY_RUN=1 ;;
     --planned-version) shift; PLANNED_VER=${1:-}; [[ -n ${PLANNED_VER} ]] || { usage >&2; printf 'ERROR: --planned-version 缺少参数\n' >&2; exit 2; } ;;
     --planned-version=*) PLANNED_VER=${1#*=} ;;
+    --planned-versioncode) shift; PLANNED_VC=${1:-}; [[ ${PLANNED_VC} =~ ^[0-9]+$ ]] || { usage >&2; printf 'ERROR: --planned-versioncode 需要数字\n' >&2; exit 2; } ;;
+    --planned-versioncode=*) PLANNED_VC=${1#*=} ;;
+    --allow-same-version) ALLOW_SAME=1 ;;
     -h|--help) usage; exit 0 ;;
     *) usage >&2; printf 'ERROR: 未知参数 %s\n' "$1" >&2; exit 2 ;;
   esac
@@ -156,7 +164,9 @@ fi
 if (( DRY_RUN )); then
   printf '\n%s[dry-run] 只打印计划，不执行任何检查、不改任何文件%s\n' "${C_CYN}" "${C_OFF}"
 fi
-[[ -n ${PLANNED_VER} ]] && printf '预演版本 %s（第 7 项按 versionCode+1 / versionName=%s 评估）\n' "${PLANNED_VER}" "${PLANNED_VER}"
+[[ -n ${PLANNED_VER} ]] && printf '预演版本 %s（第 7 项按 versionName=%s / versionCode=%s 评估%s）\n' \
+  "${PLANNED_VER}" "${PLANNED_VER}" "${PLANNED_VC:-<本地+1>}" "$([[ ${ALLOW_SAME} == 1 ]] && echo '，允许同版本续发')"
+
 
 # ---------------------------------------------------------------- 1) git 干净
 item 1 "git 工作区干净"
@@ -262,14 +272,14 @@ item 6 "e2e 真上游测试"
 if (( SKIP_TESTS )); then
   verdict SKIP "被 --skip-tests 跳过（未验证）"
 elif (( DRY_RUN )); then
-  if [[ -z ${E2E_API_KEY:-} ]]; then plan "检测 E2E_API_KEY → 未设置将 SKIP（只警告不阻断）"
+  if [[ -z ${E2E_API_KEY:-} ]]; then plan "检测 E2E_API_KEY → 未设置将 FAIL（缺证阻断；显式 --skip-tests 才可跳过并留痕）"
   elif [[ -n ${E2E_CMD:-} ]]; then plan "${E2E_CMD}"
   elif has_script test:e2e; then plan "npm run test:e2e"; else plan "node tests/e2e-real-upstream.spec.mjs"; fi
   verdict PLANNED
 else
   if [[ -z ${E2E_API_KEY:-} ]]; then
-    printf '\n      %s⚠️  警告：未设置 E2E_API_KEY，真上游 e2e 没跑（发布后请人工冒烟一次）%s\n' "${C_YEL}" "${C_OFF}"
-    verdict SKIP "缺 E2E_API_KEY（不阻断，但这次发布没验真上游链路）"
+    verdict FAIL "缺 E2E_API_KEY：真上游 + 真前端链路没有任何证据，不能算完整通过" \
+      'export E2E_API_KEY=sk-xxx 后重跑；确需带病发版必须显式 --skip-tests（CHANGELOG/Release notes 会留痕 [未过门禁]）'
   else
     if [[ -n ${E2E_CMD:-} ]]; then E2E_RUN=(bash -c "${E2E_CMD}"); E2E_DESC="E2E_CMD: ${E2E_CMD}"
     elif has_script test:e2e; then E2E_RUN=(npm run test:e2e); E2E_DESC='npm run test:e2e'
@@ -285,12 +295,13 @@ LVC=$(gradle_versioncode); LVN=$(gradle_versionname)
 if [[ -z ${LVC} || -z ${LVN} ]]; then
   verdict FAIL "读不到 build.gradle 的 versionCode/versionName（${GRADLE}）" "确认文件存在且行格式为 'versionCode N' / 'versionName \"x.y.z\"'"
 elif (( DRY_RUN )); then
-  plan "读 ${GRADLE}（versionCode=${LVC}, versionName=${LVN}）→ curl -fsS ${RELEASES_URL} → 要求 latest.versionCode < 本地 versionCode（网络不通则降级比 CHANGELOG 最新版本）"
+  plan "读 ${GRADLE}（versionCode=${LVC}, versionName=${LVN}）→ curl -fsS ${RELEASES_URL} → 要求待发布 versionCode(${PLANNED_VC:-$((LVC+1))}) > latest.versionCode（网络不通则降级比 CHANGELOG 最新版本）"
   verdict PLANNED
 else
   T_VC=${LVC}; T_VN=${LVN}; PRE_NOTE=''
   if [[ -n ${PLANNED_VER} ]]; then
-    T_VC=$(( LVC + 1 )); T_VN=${PLANNED_VER}
+    T_VN=${PLANNED_VER}
+    if [[ -n ${PLANNED_VC} ]]; then T_VC=${PLANNED_VC}; else T_VC=$(( LVC + 1 )); fi
     PRE_NOTE="（预演口径：versionCode ${LVC}→${T_VC}, versionName ${LVN}→${T_VN}）"
   fi
   RJSON=''
@@ -318,9 +329,11 @@ print(vc,v)
   fi
   if [[ -n ${RVC} && ${RVC} != 0 ]]; then
     if (( T_VC > RVC )); then
-      verdict PASS "远端 latest=v${RV} versionCode=${RVC} < 本地 ${T_VC} ${PRE_NOTE}"
+      verdict PASS "远端 latest=v${RV} versionCode=${RVC} < 待发布 ${T_VC} ${PRE_NOTE}"
+    elif (( ALLOW_SAME )) && (( T_VC == RVC )) && [[ ${T_VN} == "${RV}" ]]; then
+      verdict PASS "同版本续发：${T_VN} 的 versionCode ${T_VC} 已等于远端 latest（服务端允许同版本重传，不重复递增）"
     else
-      verdict FAIL "远端已发布 versionCode=${RVC}（v${RV}），本地只有 ${T_VC}，没有递增" "把 ${GRADLE} 的 versionCode 提到 $(( RVC + 1 )) 以上（release-apk.sh 第 3 步会自动 +1）"
+      verdict FAIL "远端已发布 versionCode=${RVC}（v${RV}），待发布只有 ${T_VC}，没有递增" "把 ${GRADLE} 的 versionCode 提到 $(( RVC + 1 )) 以上（release-apk.sh 会按 max(本地,远端)+1 自动设定）"
     fi
   else
     # 网络不通 → 降级为与 CHANGELOG 最新版本比较
@@ -368,11 +381,11 @@ else
   AVC=$(printf '%s\n' "${BADGING}" | sed -n "s/^package:.* versionCode='\([0-9]*\)'.*/\1/p" | head -1)
   AVN=$(printf '%s\n' "${BADGING}" | sed -n "s/^package:.* versionName='\([^']*\)'.*/\1/p" | head -1)
   if [[ -z ${AVC} ]]; then
-    verdict FAIL "aapt2 读不到 APK 的 versionCode（APK 可能损坏）" "重新构建：cd android && ./gradlew assembleDebug"
+    verdict SKIP "aapt2 读不到现有 APK 的 versionCode（APK 旧/损坏）——构建前不阻断，构建后由 release-apk 强校验"
   elif [[ ${AVC} == "${LVC}" && ${AVN} == "${LVN}" ]]; then
-    verdict PASS "APK=${AVN}(${AVC}) 与 gradle=${LVN}(${LVC}) 一致"
+    verdict PASS "现有 APK=${AVN}(${AVC}) 与 gradle=${LVN}(${LVC}) 一致"
   else
-    verdict FAIL "APK=${AVN:-?}(${AVC}) 与 gradle=${LVN}(${LVC}) 不一致（APK 是旧的）" "重新构建后重跑门禁：npx cap sync android && (cd android && ./gradlew assembleDebug)"
+    verdict SKIP "现有 APK=${AVN:-?}(${AVC}) 是旧版本（gradle=${LVN}(${LVC})）：构建前**不阻断**，构建后必须重新校验"
   fi
 fi
 
@@ -405,7 +418,7 @@ if (( DRY_RUN )); then
 elif (( SKIP_TESTS )); then
   printf '\n%s⚠️  通过（但 --skip-tests 生效：4/5/6 未验证，CHANGELOG 会标 [未过门禁]）%s\n' "${C_YEL}" "${C_OFF}"
 elif (( NS > 0 )); then
-  printf '\n✅ 门禁通过（%d 项 SKIP：见上表说明，通常是没有对应测试目标或未配 E2E key）\n' "${NS}"
+  printf '\n✅ 门禁通过（%d 项 SKIP：见上表，通常是测试目标缺失或旧 APK 待重建）\n' "${NS}"
 else
   printf '\n%s✅ 门禁全部通过%s\n' "${C_GRN}" "${C_OFF}"
 fi
