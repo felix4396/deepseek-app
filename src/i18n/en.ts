@@ -415,7 +415,7 @@ export const en = {
   oursBuyAction: 'Pay',
   oursBuyBusy: 'Creating order…',
   oursBuyHint: 'Payment happens in the system browser (Alipay); the app polls the order when you come back. Prices and points come from the server.',
-  oursBuyWebUnsupported: 'The web build cannot read the checkout URL: buy inside the app, or redeem a card code after paying.',
+  oursBuyWebHint: 'The web build opens the Alipay checkout in this tab; when you come back it polls the order automatically.',
   oursOrderTitle: 'Order',
   oursOrderChecking: 'Checking order…',
   oursOrderWaiting: 'Waiting for payment (every 2s, up to 60s)',

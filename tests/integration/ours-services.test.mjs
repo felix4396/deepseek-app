@@ -206,10 +206,13 @@ const wireMock = async (page) => {
     }
     if (url.pathname === '/buy') {
       calls.buy += 1
+      // Issue #36：网页版「去支付」= 浏览器顶层导航到 /buy?plan=（不是 fetch 读 302）。
+      // 顶层导航会真的跟随 302，而 Playwright 拦不到「被 route 满足的 302 之后自动跟随的那一跳」，
+      // 所以这里直接回一页收银台桩页：导航机制不变，且不会打到真实收银台。
       await route.fulfill({
-        status: 302,
-        headers: { ...CORS, location: CHECKOUT_URL },
-        body: '',
+        status: 200,
+        headers: { ...CORS, 'content-type': 'text/html; charset=utf-8' },
+        body: `<!doctype html><meta charset="utf-8"><title>收银台（桩）</title><h1>支付宝收银台（桩页）</h1><p>${OUT_TRADE_NO}</p>`,
       })
       return
     }
@@ -447,25 +450,54 @@ const runViewport = async ({ width, height, label }) => {
   await scrollTo(page, 'ours-plans')
   await shot('05-plans')
 
-  // ---------- [F] 去支付：网页版如实说明拿不到收银台地址，且只发一次 /buy ----------
-  calls.order = 0
-  calls.buy = 0
-  await page.getByTestId('ours-buy').click()
-  await page.waitForTimeout(1200)
-  eq(calls.buy, 1, `${width}px：/buy 只点一次（每次都会新建订单）`)
-  const buyRequest = requestLog.filter((item) => item.path === '/buy').at(-1)
-  eq(buyRequest.search, '?plan=p1', `${width}px：/buy 带 plan=p1`)
-  const buyNotice = await page.getByTestId('ours-pay-notice').innerText()
-  truthy(/请在 App 内购买/.test(buyNotice), `${width}px：网页版如实提示（${buyNotice}）`)
-  eq(calls.order, 0, `${width}px：拿不到单号就不轮询（不猜单）`)
-  truthy(
-    (await page.evaluate((keyName) => window.localStorage.getItem(keyName), ORDER_KEY)) === null,
-    `${width}px：没有单号时不写订单存档`
-  )
+  // ---------- [F] 去支付：网页版 = 浏览器顶层导航到 /buy?plan=（不再 fetch 读 302） ----------
+  // 顶层导航会把页面带走，所以另开一张临时页面做这一步，主页面继续跑后面的用例。
+  // Issue #36 的完整验收（含回跳参数、390/360 截图）见 tests/integration/ours-webpay.test.mjs。
+  {
+    const probe = await context.newPage()
+    await wireMock(probe)
+    await probe.goto(APP_URL, { waitUntil: 'domcontentloaded' })
+    await probe.waitForTimeout(900)
+    await openSettingsData(probe)
+    await openPanel(probe)
+    await probe.waitForTimeout(600)
+    const seen = []
+    probe.on('request', (request) => seen.push({ url: request.url(), type: request.resourceType() }))
+    await probe.evaluate(() => {
+      window.__fetches = []
+      const original = window.fetch
+      window.fetch = function patched(input, init) {
+        window.__fetches.push(String(input))
+        return original.call(this, input, init)
+      }
+    })
+    const navigated = probe.waitForURL(`${CARD_API}/buy?plan=p1`, { timeout: 15000 })
+    await probe.getByTestId('ours-buy').click()
+    await navigated
+    await probe.waitForLoadState('domcontentloaded')
+    const buyHits = seen.filter((item) => item.url === `${CARD_API}/buy?plan=p1`)
+    eq(buyHits.map((item) => item.type), ['document'], `${width}px：/buy 由 document 顶层导航请求一次（不再 fetch）`)
+    eq(
+      await probe.evaluate(() => (window.__fetches ?? []).filter((url) => String(url).includes('/buy'))),
+      [],
+      `${width}px：点「去支付」没有用 fetch 打 /buy`
+    )
+    truthy(
+      (await probe.getByText('支付宝收银台', { exact: false }).count()) > 0,
+      `${width}px：浏览器顶层导航后落在收银台页（跨域顶层跳转不受 CORS 约束）`
+    )
+    eq(calls.order, 0, `${width}px：网页版跳转前不建单查单（单号由收银台回跳带回）`)
+    truthy(
+      (await probe.evaluate((keyName) => window.localStorage.getItem(keyName), ORDER_KEY)) === null,
+      `${width}px：网页版跳转前不写订单存档`
+    )
+    await probe.close()
+  }
 
   // ---------- [G] 回跳续查：订单令牌存档 → 轮询 待支付 → 已发卡 ----------
-  // 原生上「点支付 → 系统浏览器付款 → 回到 App」后就是这条路径：读存档、按 no+order_token 每 2s 查单。
-  // 网页版拿不到 302 的 Location，所以这里直接落一份存档来跑同一条真实轮询链路。
+  // 「付款 → 回来 → 续查」这条链路的存档路径：读存档、按 no + order_token 每 2s 查单（原生就是这样）。
+  // 网页版走的是另一条入口（地址栏 ?no=&order_token= → returnParams 解析 → 落同样的存档），
+  // 见 tests/integration/ours-webpay.test.mjs。
   await page.keyboard.press('Escape')
   await page.waitForTimeout(400)
   await page.evaluate(
