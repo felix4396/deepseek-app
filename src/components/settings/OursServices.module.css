@@ -120,6 +120,22 @@
   overflow-wrap: anywhere;
 }
 
+/* ---------- 设备码 ---------- */
+.deviceCode {
+  display: block;
+  box-sizing: border-box;
+  padding: 8px 12px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 12px;
+  background-color: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-primary);
+  font-family: var(--ds-font-family-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-size: 12px;
+  line-height: 18px;
+  overflow-wrap: anywhere;
+  user-select: all;
+}
+
 /* ---------- 套餐 ---------- */
 .plans {
   display: flex;

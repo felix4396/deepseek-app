@@ -1,58 +1,130 @@
 import clsx from 'clsx'
 import { useEffect, useRef, useState } from 'react'
-import { useApiConfig } from '../../services/api/apiConfig.js'
+import { setApiKey, useApiConfig } from '../../services/api/apiConfig.js'
 import { useTranslate } from '../../i18n/index.js'
 import {
-  createRequestId,
-  fetchBalance,
   fetchPlans,
-  formatPlanPrice,
-  formatQuota,
-  maskCard,
-  maskKey,
+  formatPlanMeta,
+  formatPoints,
+  formatYuan,
+  ORDER_STATUS_KEYS,
   OURS_PAYMENT_OPEN,
+  pollOrder,
+  probeApiKey,
   redeemCard,
-  type OursBalanceState,
+  requestIdForCard,
+  startCheckout,
+  type OursKeyProbe,
+  type OursMessageKey,
+  type OursOrderStatus,
   type OursPlansState,
   type OursRedeemResult,
 } from '../../services/ours/api.js'
-import { httpTransport } from '../../services/ours/transport.js'
+import {
+  applyForKey,
+  fetchInviteProfile,
+  isInviteCodeShape,
+  normalizeInviteCode,
+  redeemInviteCode,
+  type InviteMessageKey,
+  type InviteProfile,
+} from '../../services/invite/api.js'
+import { ensureDeviceId } from '../../services/invite/device.js'
+import { httpTransport, isNativePlatform, openCheckout } from '../../services/ours/transport.js'
+import { copyText } from '../../utils/clipboard.js'
 import { Button } from '../base/Button.js'
 import { Modal } from '../base/Modal.js'
 import styles from './OursServices.module.css'
 
 /**
- * 「我们的渠道」的额度与卡密入口（只在 kind === 'ours' 时渲染，其他渠道一条 DOM 都不留）。
+ * 「我们的渠道」的设备码 / 额度 / 邀请 / 套餐购买 / 订单 / 卡密兑换入口。
+ * 整个组件只在 kind === 'ours' 时渲染（其他渠道一条 DOM 都不留，见 OursServicesRow）。
  *
- * 为什么是一行 + 独立弹层，而不是把输入框直接摊在设置页：
- * 设置页「数据管理」区在 ours 渠道下只有 API Key 一个输入框（1.4.0-beta.3 的验收断言），
- * 卡密输入框塞进去会破坏那条约束；而且三块内容比设置行高得多，
- * 折叠进独立弹层在 360/390 的手机视口上不用滚很长的设置页。
+ * 两套后端（都在 services/ 里，纯逻辑 + 注入传输，单测覆盖）：
+ *  - 邀请 / 额度服务 http://62.106.70.167:60013（明文 HTTP）：设备码、Key、邀请码、剩余积分
+ *  - 卡密 / 支付服务 https://apia.ecsafe.cn（HTTPS）：套餐、/buy 的 302 收银台、订单、卡密兑换
  *
- * 本次范围（beta.8）只放开「只读 + 不产生订单」的部分：
- *   - 额度查询：手动触发，挂载不请求、无 interval
- *   - 套餐展示：价格与额度全部来自 /api/plans
- *   - 卡密兑换：POST /api/redeem（request_id 复用、IDEMPOTENT 按成功）
- *   - 支付：只有一行「支付暂未开放」说明。建单/查单/轮询逻辑留在 services/ours/api.ts
- *     并有单测覆盖，但界面上不提供入口：/buy 目前 302 到收银台且金额（0.10）与套餐标价
- *     不符，属资损风险，未核实前不能放开，也不能建出永远付不了的订单。
+ * 额度口径：**只认邀请服务的 remaining_points**（1 元 = 100 积分，同时显示「约可消费 ¥X」）。
+ * /api/balance 只用来判断 Key 是否有效，绝不当余额。
+ *
+ * 失败一律给可读文案 + 可重试，且重试都是安全的：
+ *  - /apply 对同一 device_id 幂等（201 首次 / 200 已申请）
+ *  - /api/redeem 用卡密本身当 request_id（同一张卡重发就是同一笔）
+ *  - /buy **绝不自动重试**：每次 GET 都会新建订单
  */
+type BalanceView =
+  | { status: 'idle' | 'loading' }
+  | { status: 'ok'; profile: InviteProfile }
+  | { status: 'error'; messageKey: InviteMessageKey }
 
-type BalanceView = OursBalanceState | { status: 'loading'; keyTail: string }
+type ClaimView =
+  | { status: 'idle' }
+  | { status: 'busy'; auto: boolean }
+  | { status: 'ok'; firstTime: boolean; points: number }
+  | { status: 'error'; messageKey: InviteMessageKey }
 
-/** 1000000 → 1,000,000（只做千分位，不跟着 locale 变） */
-const formatTokenCount = (value: number): string =>
-  Math.trunc(value)
-    .toString()
-    .replace(/\B(?=(\d{3})+(?!\d))/g, ',')
+type OrderView = {
+  outTradeNo: string
+  orderToken: string
+  status: OursOrderStatus | null
+  cardTail: string
+  busy: boolean
+  timedOut: boolean
+  errorKey: OursMessageKey | null
+}
 
-/** 套餐列表里默认选中的套餐 id（没有可用套餐就是 null） */
-const firstPlanId = (state: OursPlansState | { status: 'loading' }): string | null => {
-  if (state.status !== 'success') {
+/** 未完成订单的存档：order_token 必须留下来，否则之后 /api/order 一律 403 */
+const ORDER_STORAGE_KEY = 'chat-demo:ours-order'
+/** 超过这个时间的存档不再自动续查（订单本身 15 分钟就过期了） */
+const ORDER_RESUME_MAX_AGE_MS = 30 * 60 * 1000
+
+type StoredOrder = { outTradeNo: string; orderToken: string; planId: string; startedAt: number }
+
+const readStoredOrder = (): StoredOrder | null => {
+  try {
+    const raw = localStorage.getItem(ORDER_STORAGE_KEY)
+    if (raw === null) {
+      return null
+    }
+    const parsed: unknown = JSON.parse(raw)
+    if (parsed === null || typeof parsed !== 'object') {
+      return null
+    }
+    const record = parsed as Partial<StoredOrder>
+    if (
+      typeof record.outTradeNo !== 'string' ||
+      typeof record.orderToken !== 'string' ||
+      record.outTradeNo === '' ||
+      record.orderToken === ''
+    ) {
+      return null
+    }
+    return {
+      outTradeNo: record.outTradeNo,
+      orderToken: record.orderToken,
+      planId: typeof record.planId === 'string' ? record.planId : '',
+      startedAt: typeof record.startedAt === 'number' ? record.startedAt : 0,
+    }
+  } catch {
     return null
   }
-  return state.plans[0]?.id ?? null
 }
+
+const writeStoredOrder = (order: StoredOrder | null) => {
+  try {
+    if (order === null) {
+      localStorage.removeItem(ORDER_STORAGE_KEY)
+      return
+    }
+    localStorage.setItem(ORDER_STORAGE_KEY, JSON.stringify(order))
+  } catch {
+    // 存不进去只影响「重开设置后自动续查」，不影响本次轮询
+  }
+}
+
+/** 套餐列表默认选中的套餐 id（没有可用套餐就是 null） */
+const firstPlanId = (state: OursPlansState | { status: 'loading' }): string | null =>
+  state.status === 'success' ? (state.plans[0]?.id ?? null) : null
 
 /** 设置页里的入口行：只有我们的渠道才出现 */
 export const OursServicesRow = () => {
@@ -84,45 +156,171 @@ export const OursServicesRow = () => {
   )
 }
 
-/**
- * 额度与卡密弹层：额度查询（手动）、套餐（只读 + 支付未开放说明）、卡密兑换。
- * 额度**不在挂载时请求**，也没有任何 interval：只有点「查询额度」或用 Key 兑换成功后才查一次。
- */
 const OursServicesDialog = ({ onClose }: { onClose: () => void }) => {
   const t = useTranslate()
   const apiKey = useApiConfig((state) => state.apiKey)
-  const hasKey = apiKey.trim() !== ''
+  const [deviceId] = useState(() => ensureDeviceId())
+  const [claim, setClaim] = useState<ClaimView>({ status: 'idle' })
   const [balance, setBalance] = useState<BalanceView>({ status: 'idle' })
-  const [balanceBusy, setBalanceBusy] = useState(false)
+  const [keyProbe, setKeyProbe] = useState<OursKeyProbe | null>(null)
+  /** 服务端为该设备生成的 Key 与当前已填的不同：不自动覆盖，等用户点「使用此 Key」 */
+  const [pendingKey, setPendingKey] = useState('')
   const [plans, setPlans] = useState<OursPlansState | { status: 'loading' }>({ status: 'loading' })
   const [planId, setPlanId] = useState('')
+  const [buyBusy, setBuyBusy] = useState(false)
+  const [buyError, setBuyError] = useState<OursMessageKey | null>(null)
+  const [order, setOrder] = useState<OrderView | null>(null)
+  const [inviteInput, setInviteInput] = useState('')
+  const [inviteBusy, setInviteBusy] = useState(false)
+  const [inviteResult, setInviteResult] = useState<
+    { kind: 'ok'; points: number } | { kind: 'error'; messageKey: InviteMessageKey } | null
+  >(null)
   const [cardNo, setCardNo] = useState('')
   const [redeemBusy, setRedeemBusy] = useState(false)
   const [redeem, setRedeem] = useState<OursRedeemResult | null>(null)
-  // 一次「逻辑提交」一个 request_id：重试沿用同一个，服务端靠它去重（IDEMPOTENT）
-  const requestIdRef = useRef<string | null>(null)
+  const [copied, setCopied] = useState<'device' | 'invite' | 'card' | null>(null)
 
-  // 套餐不带 Key，挂载时拉一次；失败给「重新加载」。额度不在这里查。
+  /** 完整卡密只留内存（「一键兑换」要用）：不进 localStorage、不进日志、不进文案 */
+  const orderCardRef = useRef('')
+  /** 关闭弹层 / 组件卸载时取消轮询 */
+  const cancelled = useRef(false)
+  const alive = useRef(true)
+
   useEffect(() => {
-    let alive = true
-    void fetchPlans(httpTransport).then((next) => {
-      if (!alive) {
-        return
-      }
-      setPlans(next)
-      const nextId = firstPlanId(next)
-      if (nextId !== null) {
-        setPlanId((current) => (current === '' ? nextId : current))
-      }
-    })
+    alive.current = true
+    cancelled.current = false
     return () => {
-      alive = false
+      alive.current = false
+      cancelled.current = true
     }
   }, [])
+
+  // ---------------------------------------------------------------- 额度 / 领取
+
+  const refreshBalance = async () => {
+    setBalance({ status: 'loading' })
+    const result = await fetchInviteProfile(deviceId, httpTransport)
+    if (!alive.current) {
+      return
+    }
+    setBalance(
+      result.kind === 'ok'
+        ? { status: 'ok', profile: result.profile }
+        : { status: 'error', messageKey: result.messageKey }
+    )
+  }
+
+  /**
+   * 领 Key（POST /apply）。
+   * 自动路径只在「当前没有任何 Key」时走；手动点按钮也走这里 ——
+   * 已有 Key 且与服务端下发的不一致时**不覆盖**，只提示「使用此 Key」让用户自己决定。
+   */
+  const claimKey = async (auto: boolean) => {
+    setClaim({ status: 'busy', auto })
+    const result = await applyForKey(deviceId, httpTransport)
+    if (!alive.current) {
+      return
+    }
+    if (result.kind === 'error') {
+      setClaim({ status: 'error', messageKey: result.messageKey })
+      return
+    }
+    setBalance({ status: 'ok', profile: result.profile })
+    setClaim({ status: 'ok', firstTime: result.firstTime, points: result.profile.remainingPoints })
+    const current = useApiConfig.getState().apiKey.trim()
+    if (current === '') {
+      setApiKey(result.apiKey)
+    } else if (result.apiKey !== current) {
+      setPendingKey(result.apiKey)
+    }
+    // 服务端认不认这把 Key：只用来提示，不参与额度
+    const probe = await probeApiKey(result.apiKey, httpTransport)
+    if (alive.current) {
+      setKeyProbe(probe)
+    }
+  }
+
+  // ---------------------------------------------------------------- 订单轮询
+
+  /** 轮询状态机在 services/ours/api.ts（单测覆盖），这里只负责渲染与取消 */
+  const runPoll = async (outTradeNo: string, orderToken: string) => {
+    cancelled.current = false
+    orderCardRef.current = ''
+    setOrder({
+      outTradeNo,
+      orderToken,
+      status: null,
+      cardTail: '',
+      busy: true,
+      timedOut: false,
+      errorKey: null,
+    })
+    const result = await pollOrder({
+      outTradeNo,
+      orderToken,
+      transport: httpTransport,
+      onUpdate: (next) => {
+        if (!alive.current) {
+          return
+        }
+        setOrder({
+          outTradeNo,
+          orderToken,
+          status: next.status,
+          cardTail: next.cardTail,
+          busy: true,
+          timedOut: false,
+          errorKey: null,
+        })
+      },
+      shouldStop: () => cancelled.current || !alive.current,
+    })
+    if (!alive.current || result.kind === 'cancelled') {
+      return
+    }
+    if (result.kind === 'error') {
+      setOrder((current) => (current === null ? null : { ...current, busy: false, errorKey: result.messageKey }))
+      return
+    }
+    if (result.kind === 'ok') {
+      orderCardRef.current = result.order.status === 'fulfilled' ? result.order.cardNo : ''
+      setOrder((current) =>
+        current === null
+          ? null
+          : {
+              ...current,
+              status: result.order.status,
+              cardTail: result.order.cardTail,
+              busy: false,
+              timedOut: false,
+            }
+      )
+      writeStoredOrder(null)
+      // 发卡成功说明这笔钱已到账，额度可能变了：顺手刷一次
+      if (result.order.status === 'fulfilled') {
+        void refreshBalance()
+      }
+      return
+    }
+    // timeout：不重复下单，只留「再查一次」
+    setOrder((current) => (current === null ? null : { ...current, busy: false, timedOut: true }))
+  }
+
+  const requeryOrder = async () => {
+    if (order === null) {
+      return
+    }
+    await runPoll(order.outTradeNo, order.orderToken)
+  }
+
+  // ---------------------------------------------------------------- 套餐 / 挂载
 
   const reloadPlans = async () => {
     setPlans({ status: 'loading' })
     const next = await fetchPlans(httpTransport)
+    if (!alive.current) {
+      return
+    }
     setPlans(next)
     const nextId = firstPlanId(next)
     if (nextId !== null) {
@@ -130,67 +328,149 @@ const OursServicesDialog = ({ onClose }: { onClose: () => void }) => {
     }
   }
 
-  const refreshBalance = async () => {
-    if (!hasKey) {
+  useEffect(() => {
+    void (async () => {
+      if (useApiConfig.getState().apiKey.trim() === '') {
+        // 首次使用：自动领取（无 Key 才会走到这里，不会覆盖用户已填的 Key）
+        await claimKey(true)
+      } else {
+        await refreshBalance()
+      }
+      if (!alive.current) {
+        return
+      }
+      const nextPlans = await fetchPlans(httpTransport)
+      if (!alive.current) {
+        return
+      }
+      setPlans(nextPlans)
+      const nextId = firstPlanId(nextPlans)
+      if (nextId !== null) {
+        setPlanId((current) => (current === '' ? nextId : current))
+      }
+      // 上次没查完的订单：续查（只有存过 order_token 的才查得到）
+      const stored = readStoredOrder()
+      if (stored !== null && Date.now() - stored.startedAt < ORDER_RESUME_MAX_AGE_MS) {
+        await runPoll(stored.outTradeNo, stored.orderToken)
+      }
+    })()
+    // 只跑一次：挂载即初始化，之后都由用户操作驱动
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  // ---------------------------------------------------------------- 购买
+
+  /**
+   * 去支付：GET /buy?plan=（**只发一次**）→ 取 302 的 Location → 系统浏览器打开。
+   * 原生靠 CapacitorHttp 的 disableRedirects（读不到 location 头时走原生插件兜底）。
+   * 网页版拿不到 Location（opaqueredirect），界面直接说「请在 App 内购买」——
+   * 不猜单号、不重发 /buy（每发一次都会新建订单）。
+   */
+  const buy = async () => {
+    if (!OURS_PAYMENT_OPEN || planId === '' || buyBusy) {
       return
     }
-    setBalanceBusy(true)
-    setBalance({ status: 'loading', keyTail: maskKey(apiKey) })
-    const next = await fetchBalance(apiKey, httpTransport)
-    setBalance(next)
-    setBalanceBusy(false)
+    setBuyBusy(true)
+    setBuyError(null)
+    const result = await startCheckout(planId, httpTransport)
+    if (!alive.current) {
+      return
+    }
+    if (result.kind !== 'ok') {
+      setBuyBusy(false)
+      setBuyError(
+        result.kind === 'no-location' || !isNativePlatform()
+          ? 'oursErrCheckoutUnsupported'
+          : result.messageKey
+      )
+      return
+    }
+    const opened = await openCheckout(result.checkout.payUrl)
+    if (!alive.current) {
+      return
+    }
+    setBuyBusy(false)
+    if (!opened) {
+      setBuyError('oursErrCheckoutUnsupported')
+      return
+    }
+    writeStoredOrder({
+      outTradeNo: result.checkout.outTradeNo,
+      orderToken: result.checkout.orderToken,
+      planId,
+      startedAt: Date.now(),
+    })
+    await runPoll(result.checkout.outTradeNo, result.checkout.orderToken)
   }
 
-  const submitRedeem = async () => {
-    if (!hasKey) {
-      setRedeem({ kind: 'error', code: 'API_KEY_MISSING', messageKey: 'oursErrKeyMissing', cardTail: maskCard(cardNo), retryable: false })
+  // ---------------------------------------------------------------- 兑换 / 邀请
+
+  const submitRedeem = async (card: string) => {
+    const trimmed = card.trim()
+    if (trimmed === '') {
+      setRedeem({ kind: 'error', code: 'CARD_MISSING', messageKey: 'oursErrCardMissing', cardTail: '', retryable: false })
       return
     }
-    if (cardNo.trim() === '') {
-      setRedeem({ kind: 'error', code: 'CARD_MISSING', messageKey: 'oursErrCardMissing', cardTail: maskCard(cardNo), retryable: false })
+    if (apiKey.trim() === '') {
+      setRedeem({ kind: 'error', code: 'API_KEY_MISSING', messageKey: 'oursErrKeyMissing', cardTail: '', retryable: false })
       return
-    }
-    if (requestIdRef.current === null) {
-      requestIdRef.current = createRequestId()
     }
     setRedeemBusy(true)
-    const result = await redeemCard({ cardNo, apiKey, requestId: requestIdRef.current }, httpTransport)
+    // request_id 就是卡密：重试（含「重试」按钮）天然复用同一个
+    const result = await redeemCard(
+      { cardNo: trimmed, apiKey, requestId: requestIdForCard(trimmed) },
+      httpTransport
+    )
+    if (!alive.current) {
+      return
+    }
     setRedeemBusy(false)
     setRedeem(result)
-    if (result.kind === 'success') {
-      // 成功后这一轮提交结束，下次输入新的卡密再用新的请求号
-      requestIdRef.current = null
+    if (result.kind !== 'error') {
       setCardNo('')
-      // 兑换成功即刷新额度（不轮询）
+      orderCardRef.current = ''
       void refreshBalance()
     }
   }
 
-  const balanceText = (): string => {
-    switch (balance.status) {
-      case 'idle':
-        return hasKey ? t('oursBalanceIdleHint') : t('oursBalanceNeedsKey')
-      case 'loading':
-        return t('oursBalanceLoading')
-      case 'success':
-        return t('oursBalanceValue', { tokens: formatTokenCount(balance.balance) })
-      case 'unknown-balance':
-        return t('oursBalanceUnknown')
-      case 'network':
-        return t('oursBalanceNetwork')
-      case 'timeout':
-        return t('oursBalanceTimeout')
-      case 'invalid-json':
-        return t('oursBalanceInvalidJson')
+  const submitInvite = async () => {
+    setInviteBusy(true)
+    const result = await redeemInviteCode({ deviceId, inviteCode: inviteInput }, httpTransport)
+    if (!alive.current) {
+      return
+    }
+    setInviteBusy(false)
+    if (result.kind === 'error') {
+      setInviteResult({ kind: 'error', messageKey: result.messageKey })
+      return
+    }
+    setInviteResult({ kind: 'ok', points: result.rewardPoints })
+    setInviteInput('')
+    if (result.profile !== null) {
+      setBalance({ status: 'ok', profile: result.profile })
+    } else {
+      void refreshBalance()
     }
   }
 
-  const balanceTone =
-    balance.status === 'success'
-      ? styles.valueSuccess
-      : balance.status === 'network' || balance.status === 'timeout' || balance.status === 'invalid-json'
-        ? styles.valueError
-        : undefined
+  const copy = async (target: 'device' | 'invite' | 'card', value: string) => {
+    const done = await copyText(value)
+    if (!alive.current) {
+      return
+    }
+    setCopied(done ? target : null)
+  }
+
+  // ---------------------------------------------------------------- 渲染
+
+  const profile = balance.status === 'ok' ? balance.profile : null
+  const hasKey = apiKey.trim() !== ''
+  const orderStatusText = (current: OrderView): string => {
+    if (current.errorKey !== null) {
+      return t(current.errorKey)
+    }
+    return current.status === null ? t('oursOrderChecking') : t(ORDER_STATUS_KEYS[current.status])
+  }
 
   return (
     <Modal
@@ -201,34 +481,202 @@ const OursServicesDialog = ({ onClose }: { onClose: () => void }) => {
       mainClassName={styles.main}
     >
       <div className={styles.sections} data-testid="ours-services-dialog">
-        {/* 1. 额度查询（最高优先）：手动触发，零轮询 */}
-        <section className={styles.section} data-testid="ours-balance">
+        {/* 1. 设备码：账号凭据，可见、可复制、可备份；不写日志 */}
+        <section className={styles.section} data-testid="ours-device">
           <div className={styles.sectionHead}>
-            <h3 className={styles.sectionTitle}>{t('oursBalanceTitle')}</h3>
+            <h3 className={styles.sectionTitle}>{t('oursDeviceTitle')}</h3>
             <Button
               variant="outlined"
               size="s"
               className={styles.sectionAction}
-              data-testid="ours-balance-refresh"
-              disabled={!hasKey || balanceBusy}
+              data-testid="ours-device-copy"
+              onClick={() => void copy('device', deviceId)}
+            >
+              {copied === 'device' ? t('oursDeviceCopied') : t('oursDeviceCopy')}
+            </Button>
+          </div>
+          <code className={styles.deviceCode} data-testid="ours-device-code">
+            {deviceId}
+          </code>
+          <div className={styles.hint}>{t('oursDeviceDescription')}</div>
+
+          <div className={styles.actions}>
+            <Button
+              size="m"
+              data-testid="ours-claim"
+              disabled={claim.status === 'busy'}
+              onClick={() => void claimKey(false)}
+            >
+              {claim.status === 'busy' && !claim.auto ? t('oursClaimBusy') : t('oursClaimAction')}
+            </Button>
+            {hasKey ? (
+              <span className={styles.hint} data-testid="ours-claim-key">
+                {t('oursClaimKeyTail', { tail: `••••${apiKey.trim().slice(-6)}` })}
+              </span>
+            ) : null}
+          </div>
+
+          {claim.status === 'busy' && claim.auto ? (
+            <div className={styles.hint} data-testid="ours-claim-status">
+              {t('oursClaimAuto')}
+            </div>
+          ) : null}
+          {claim.status === 'ok' ? (
+            <div className={clsx(styles.value, styles.valueSuccess)} data-testid="ours-claim-status">
+              {claim.firstTime
+                ? t('oursClaimOk', {
+                    points: formatPoints(claim.points),
+                    yuan: formatYuan(claim.points),
+                  })
+                : t('oursClaimOkExisting')}
+            </div>
+          ) : null}
+          {claim.status === 'error' ? (
+            <div className={clsx(styles.value, styles.valueError)} data-testid="ours-claim-status">
+              {t(claim.messageKey)}
+            </div>
+          ) : null}
+          {keyProbe !== null ? (
+            <div className={styles.hint} data-testid="ours-key-probe">
+              {keyProbe.status === 'valid'
+                ? t('oursKeyProbeValid', { tail: keyProbe.keyTail })
+                : keyProbe.status === 'invalid'
+                  ? t('oursKeyProbeInvalid', { tail: keyProbe.keyTail })
+                  : keyProbe.status === 'timeout'
+                    ? t('oursKeyProbeTimeout')
+                    : t('oursKeyProbeNetwork')}
+            </div>
+          ) : null}
+          {pendingKey !== '' ? (
+            <div className={styles.actions}>
+              <Button
+                variant="outlined"
+                size="s"
+                data-testid="ours-claim-use"
+                onClick={() => {
+                  setApiKey(pendingKey)
+                  setPendingKey('')
+                }}
+              >
+                {t('oursClaimKeyTail', { tail: `••••${pendingKey.slice(-6)}` })}
+              </Button>
+            </div>
+          ) : null}
+        </section>
+
+        {/* 2. 额度：只认邀请服务的 remaining_points；1 元 = 100 积分 */}
+        <section className={styles.section} data-testid="ours-quota">
+          <div className={styles.sectionHead}>
+            <h3 className={styles.sectionTitle}>{t('oursQuotaTitle')}</h3>
+            <Button
+              variant="outlined"
+              size="s"
+              className={styles.sectionAction}
+              data-testid="ours-quota-refresh"
+              disabled={balance.status === 'loading'}
               onClick={() => void refreshBalance()}
             >
-              {balanceBusy ? t('oursBalanceLoading') : t('oursBalanceAction')}
+              {balance.status === 'loading' ? t('oursQuotaLoading') : t('oursQuotaAction')}
             </Button>
           </div>
           <div
             role="status"
-            data-testid="ours-balance-value"
-            className={clsx(styles.value, balanceTone)}
+            data-testid="ours-quota-value"
+            className={clsx(
+              styles.value,
+              balance.status === 'ok' && styles.valueSuccess,
+              balance.status === 'error' && styles.valueError
+            )}
           >
-            {balanceText()}
+            {balance.status === 'ok'
+              ? t('oursQuotaValue', {
+                  points: formatPoints(balance.profile.remainingPoints),
+                  yuan: formatYuan(balance.profile.remainingPoints),
+                })
+              : balance.status === 'error'
+                ? t(balance.messageKey)
+                : balance.status === 'loading'
+                  ? t('oursQuotaLoading')
+                  : t('oursQuotaNeedsClaim')}
           </div>
-          {balance.status !== 'idle' ? (
-            <div className={styles.hint}>{t('oursBalanceKeyTail', { tail: balance.keyTail })}</div>
+          {profile !== null && profile.remainingPoints <= 0 ? (
+            <div className={styles.hint} data-testid="ours-quota-hint">
+              {t('oursQuotaZeroHint')}
+            </div>
           ) : null}
         </section>
 
-        {/* 2. 套餐：价格与额度全部来自 /api/plans；支付只留一行说明，不建单、不跳转 */}
+        {/* 3. 邀请码：自己的（可复制）+ 别人的（全部错误码） */}
+        <section className={styles.section} data-testid="ours-invite">
+          <div className={styles.sectionHead}>
+            <h3 className={styles.sectionTitle}>{t('oursInviteTitle')}</h3>
+            <Button
+              variant="outlined"
+              size="s"
+              className={styles.sectionAction}
+              data-testid="ours-invite-copy"
+              disabled={profile === null}
+              onClick={() => void copy('invite', profile?.inviteCode ?? '')}
+            >
+              {copied === 'invite' ? t('oursInviteCopied') : t('oursInviteCopy')}
+            </Button>
+          </div>
+          <div className={styles.value} data-testid="ours-invite-code">
+            {profile === null
+              ? t('oursInviteNeedsClaim')
+              : `${t('oursInviteOwnLabel')}：${profile.inviteCode}`}
+          </div>
+          {profile !== null ? (
+            <div className={styles.hint} data-testid="ours-invite-count">
+              {t('oursInviteCount', { invited: profile.invitedCount, upper: profile.maxInvites })}
+            </div>
+          ) : null}
+          <div className={styles.redeemForm}>
+            <input
+              className={styles.input}
+              type="text"
+              inputMode="text"
+              autoComplete="off"
+              spellCheck={false}
+              data-testid="ours-invite-input"
+              placeholder={t('oursInviteInputPlaceholder')}
+              aria-label={t('oursInviteInputPlaceholder')}
+              value={inviteInput}
+              onChange={(event) => setInviteInput(event.target.value)}
+              disabled={inviteBusy}
+            />
+            <Button
+              size="m"
+              data-testid="ours-invite-submit"
+              disabled={inviteBusy || normalizeInviteCode(inviteInput) === ''}
+              onClick={() => void submitInvite()}
+            >
+              {inviteBusy ? t('oursInviteBusy') : t('oursInviteAction')}
+            </Button>
+          </div>
+          {inviteInput !== '' && !isInviteCodeShape(inviteInput) ? (
+            <div className={styles.hint}>{t('oursInviteShapeHint')}</div>
+          ) : null}
+          {inviteResult !== null ? (
+            <div
+              role="status"
+              data-testid="ours-invite-result"
+              className={clsx(
+                styles.value,
+                inviteResult.kind === 'error' ? styles.valueError : styles.valueSuccess
+              )}
+            >
+              {inviteResult.kind === 'error'
+                ? t(inviteResult.messageKey)
+                : t('oursInviteOk', {
+                    points: formatPoints(inviteResult.points),
+                    yuan: formatYuan(inviteResult.points),
+                  })}
+            </div>
+          ) : null}
+        </section>
+
+        {/* 4. 套餐 + 购买：价格与积分来自 /api/plans，App 不硬编码 */}
         <section className={styles.section} data-testid="ours-plans">
           <div className={styles.sectionHead}>
             <h3 className={styles.sectionTitle}>{t('oursPlansTitle')}</h3>
@@ -237,6 +685,7 @@ const OursServicesDialog = ({ onClose }: { onClose: () => void }) => {
                 variant="outlined"
                 size="s"
                 className={styles.sectionAction}
+                data-testid="ours-plans-retry"
                 onClick={() => void reloadPlans()}
               >
                 {t('oursPlansRetry')}
@@ -255,31 +704,106 @@ const OursServicesDialog = ({ onClose }: { onClose: () => void }) => {
                     type="button"
                     className={clsx(styles.plan, plan.id === planId && styles.planActive)}
                     aria-pressed={plan.id === planId}
+                    data-testid={`ours-plan-${plan.id}`}
                     onClick={() => setPlanId(plan.id)}
                   >
                     <span className={styles.planName}>{plan.name}</span>
-                    <span className={styles.planMeta}>
-                      {t('oursPlanPriceQuota', {
-                        price: formatPlanPrice(plan),
-                        quota: formatQuota(plan.quota),
-                      })}
-                    </span>
+                    <span className={styles.planMeta}>{formatPlanMeta(plan)}</span>
                   </button>
                 </li>
               ))}
             </ul>
           )}
           <div className={styles.actions}>
-            <Button size="m" data-testid="ours-buy" disabled={!OURS_PAYMENT_OPEN}>
-              {OURS_PAYMENT_OPEN ? t('oursBuyOpen') : t('oursBuyClosed')}
+            <Button
+              size="m"
+              data-testid="ours-buy"
+              disabled={!OURS_PAYMENT_OPEN || buyBusy || planId === ''}
+              onClick={() => void buy()}
+            >
+              {buyBusy ? t('oursBuyBusy') : t('oursBuyAction')}
             </Button>
           </div>
-          <div className={styles.hint} data-testid="ours-pay-notice">
-            {t('oursBuyClosedHint')}
+          <div
+            className={clsx(styles.hint, buyError !== null && styles.valueError)}
+            data-testid="ours-pay-notice"
+          >
+            {buyError !== null
+              ? t(buyError)
+              : isNativePlatform()
+                ? t('oursBuyHint')
+                : `${t('oursBuyHint')} ${t('oursBuyWebUnsupported')}`}
           </div>
         </section>
 
-        {/* 3. 卡密兑换 */}
+        {/* 5. 订单：待支付 → 已发卡；超时只说「稍后再看」，不重复下单 */}
+        {order !== null ? (
+          <section className={styles.section} data-testid="ours-order">
+            <div className={styles.sectionHead}>
+              <h3 className={styles.sectionTitle}>{t('oursOrderTitle')}</h3>
+              {order.timedOut || order.errorKey !== null ? (
+                <Button
+                  variant="outlined"
+                  size="s"
+                  className={styles.sectionAction}
+                  data-testid="ours-order-requery"
+                  disabled={order.busy}
+                  onClick={() => void requeryOrder()}
+                >
+                  {t('oursOrderRequery')}
+                </Button>
+              ) : null}
+            </div>
+            <div
+              role="status"
+              data-testid="ours-order-status"
+              className={clsx(
+                styles.value,
+                order.status === 'fulfilled' && styles.valueSuccess,
+                (order.timedOut || order.errorKey !== null) && styles.valueError
+              )}
+            >
+              {orderStatusText(order)}
+            </div>
+            {order.busy ? (
+              <div className={styles.hint} data-testid="ours-order-waiting">
+                {t('oursOrderWaiting')}
+              </div>
+            ) : null}
+            {order.timedOut ? (
+              <div className={styles.hint} data-testid="ours-order-timeout">
+                {t('oursOrderTimeout')}
+              </div>
+            ) : null}
+            {order.status === 'fulfilled' && order.cardTail !== '' ? (
+              <>
+                <div className={styles.value} data-testid="ours-order-card">
+                  {t('oursOrderCard', { tail: order.cardTail })}
+                </div>
+                <div className={styles.actions}>
+                  <Button
+                    variant="outlined"
+                    size="s"
+                    data-testid="ours-order-copy"
+                    onClick={() => void copy('card', orderCardRef.current)}
+                  >
+                    {copied === 'card' ? t('oursOrderCopyCardDone') : t('oursOrderCopyCard')}
+                  </Button>
+                  <Button
+                    size="s"
+                    data-testid="ours-order-redeem"
+                    disabled={redeemBusy}
+                    onClick={() => void submitRedeem(orderCardRef.current)}
+                  >
+                    {redeemBusy ? t('oursRedeemBusy') : t('oursOrderRedeem')}
+                  </Button>
+                </div>
+              </>
+            ) : null}
+          </section>
+        ) : null}
+
+        {/* 6. 卡密兑换（手输与发卡后一键兑换共用同一套语义） */}
         <section className={styles.section} data-testid="ours-redeem">
           <div className={styles.sectionHead}>
             <h3 className={styles.sectionTitle}>{t('oursRedeemTitle')}</h3>
@@ -302,7 +826,7 @@ const OursServicesDialog = ({ onClose }: { onClose: () => void }) => {
               size="m"
               data-testid="ours-redeem-submit"
               disabled={redeemBusy || !hasKey}
-              onClick={() => void submitRedeem()}
+              onClick={() => void submitRedeem(cardNo)}
             >
               {redeemBusy ? t('oursRedeemBusy') : t('oursRedeemAction')}
             </Button>
@@ -316,7 +840,15 @@ const OursServicesDialog = ({ onClose }: { onClose: () => void }) => {
                 redeem.kind === 'error' ? styles.valueError : styles.valueSuccess
               )}
             >
-              {`${t(redeem.messageKey)}${redeem.cardTail === '' ? '' : `（${redeem.cardTail}）`}`}
+              {redeem.kind === 'error'
+                ? t(redeem.messageKey)
+                : redeem.kind === 'pending'
+                  ? t('oursRedeemPending')
+                  : t('oursRedeemSuccess', {
+                      points: formatPoints(redeem.points),
+                      yuan: formatYuan(redeem.points),
+                    })}
+              {redeem.cardTail === '' ? '' : `（${redeem.cardTail}）`}
             </div>
           ) : null}
           {redeem !== null && redeem.kind === 'error' && redeem.retryable ? (
@@ -324,13 +856,22 @@ const OursServicesDialog = ({ onClose }: { onClose: () => void }) => {
               <Button
                 variant="outlined"
                 size="s"
+                data-testid="ours-redeem-retry"
                 disabled={redeemBusy}
-                onClick={() => void submitRedeem()}
+                onClick={() => void submitRedeem(cardNo)}
               >
                 {t('oursRedeemRetry')}
               </Button>
             </div>
           ) : null}
+        </section>
+
+        {/* 7. 安全说明：明文 HTTP 的邀请服务与 HTTPS 的支付服务混用，说清楚但不吓人 */}
+        <section className={styles.section}>
+          <h3 className={styles.sectionTitle}>{t('oursSecurityTitle')}</h3>
+          <div className={styles.hint} data-testid="ours-security-notice">
+            {t('oursSecurityNotice')}
+          </div>
         </section>
       </div>
     </Modal>
