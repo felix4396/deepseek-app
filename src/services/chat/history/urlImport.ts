@@ -539,12 +539,22 @@ const downloadArchive = async (
  * 直链导入：校验 URL → 分块下载（实时进度，可取消）→ 校验 ZIP → 解析 → 逐会话导入（进度 n/总数）。
  * 取消：下载期间不发新块并丢弃已下载内容；导入期间在条目边界中断，暂存被清空、正式数据不变。
  */
+const newCorrelationId = (): string => {
+  try {
+    return crypto.randomUUID().slice(0, 12)
+  } catch {
+    return Math.random().toString(36).slice(2, 14)
+  }
+}
+
 export const importHistoryFromUrl = async (
   url: string,
   options: UrlImportOptions = {}
 ): Promise<number> => {
+  const correlationId = newCorrelationId()
   if (!Capacitor.isNativePlatform()) {
     record('import_error', 'error', 'import rejected: not native', {
+      correlationId,
       stage: 'validate',
       'error.msg': 'native platform required',
     })
@@ -553,13 +563,14 @@ export const importHistoryFromUrl = async (
   const link = url.trim()
   if (!/^https?:\/\/\S+$/i.test(link)) {
     record('import_error', 'error', 'import rejected: invalid url', {
+      correlationId,
       stage: 'validate',
       'url.path': redactUrl(link),
       'error.msg': 'invalid http(s) url',
     })
     fail('historyImportUrlInvalid')
   }
-  recordAction('import_start', 'import-history-url', { source: 'url', 'url.path': redactUrl(link) })
+  recordAction('import_start', 'import-history-url', { correlationId, source: 'url', 'url.path': redactUrl(link) })
   const startedAt = Date.now()
   const trace = options.onTrace
   const emit = (entry: Omit<ImportTraceEntry, 'at'>) => trace?.({ at: Date.now() - startedAt, ...entry })
@@ -569,6 +580,7 @@ export const importHistoryFromUrl = async (
   let lastImages = 0
   let checkReported = false
   try {
+    recordEvent('import_stage', 'import: native download begin', { correlationId, stage: 'download' })
     const file = await downloadArchive(link, options, trace)
     // 下载期间点了取消：结果直接丢弃，不进入暂存与替换事务。
     throwIfCancelled(options.signal)
@@ -612,6 +624,7 @@ export const importHistoryFromUrl = async (
     if (options.signal?.aborted || error instanceof UrlImportCancelled) {
       // 取消不是失败：单独记一条，便于区分「用户取消」与「链路失败」。
       record('warning', 'warn', 'import cancelled by user', {
+        correlationId,
         stage: 'url-import',
         'url.path': redactUrl(link),
       })
@@ -621,6 +634,13 @@ export const importHistoryFromUrl = async (
     // 下载阶段的失败已经在原处带过状态与原因；这里补「校验/导入阶段」的失败事实。
     const isDownloadFailure = error instanceof BackupError && error.key.startsWith('historyImportUrl')
     if (!isDownloadFailure) {
+      record('import_error', 'error', 'import failed', {
+        correlationId,
+        stage: 'parse-or-write',
+        durationMs: Date.now() - startedAt,
+        ...(error instanceof BackupError ? { errorCode: error.key } : {}),
+        ...errorMeta(error),
+      })
       emit({ kind: 'error', message: error instanceof BackupError ? error.key : 'unknown' })
     }
     throw error

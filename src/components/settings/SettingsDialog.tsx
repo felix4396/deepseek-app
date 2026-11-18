@@ -23,6 +23,7 @@ import {
   type UrlImportProgress,
 } from '../../services/chat/history/urlImport.js'
 import { copyText } from '../../utils/clipboard.js'
+import { recordAction, recordEvent } from '../../services/diagnostics/index.js'
 import { useIsMobile } from '../../app/viewport.js'
 import { useChatStore } from '../../services/chat/store.js'
 import {
@@ -782,6 +783,7 @@ const useHistoryImport = () => {
         onTrace: pushTrace,
       })
       setSource(null)
+      recordEvent('import_done', 'import url done', { stage: 'write', count })
       setStatus({
         target: 'url',
         message: { key: count === 1 ? 'historyImportedOne' : 'historyImported', params: { count } },
@@ -800,8 +802,10 @@ const useHistoryImport = () => {
 
   const confirm = async () => {
     if (!source || importing.current) {
+      recordEvent('warning', 'import confirm blocked', { reason: !source ? 'no-source' : 'already-running' })
       return
     }
+    recordAction('import_start', 'import-confirm', { source: source.kind })
     importing.current = true
     const id = run.current
     setBusy(true)
@@ -821,6 +825,7 @@ const useHistoryImport = () => {
 
   /** 取消：关闭弹窗并丢弃结果（CapacitorHttp 不能 abort，只能不发新块、不再采用它的返回值）。 */
   const cancel = () => {
+    recordEvent('warning', 'import cancelled', { stage: importing.current ? 'running' : 'confirm' })
     run.current += 1
     importing.current = false
     abort.current?.abort()
