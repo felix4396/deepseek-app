@@ -485,4 +485,15 @@ export const zh = {
   errorScreenCopyFailed: '复制失败，请重试',
   errorScreenHint:
     '若重载后仍然这样，请复制诊断信息附在反馈里（只有错误位置与版本，不含聊天正文与 API Key）。',
+  // Issue #72：兑换迁本机池 / device 自愈 / 202 处理中 / 设备码备份提示
+  oursErrCardLeased: '该卡密已转入 App 兑换通道，请在 App 内兑换',
+  oursErrCardNotFoundOrExpired: '卡密不存在或已失效',
+  oursErrApiKeyNotIssued: '请先在 App 内领取 Key 再兑换',
+  oursRedeemProcessing: '兑换处理中，稍后自动到账',
+  oursRedeemDuplicate: '该卡密此前已兑换，已到账 {points}（约可消费 {yuan}）',
+  oursRedeemRefreshBalance: '刷新额度',
+  oursDeviceBackupHint: '设备码就是你的账号凭据：请复制备份，清理站点数据或换机后无法找回。',
+  oursDeviceBackupHintOk: '我知道了',
+  oursInviteErrApplyRateLimited: '今天领取次数过多，请明天再试',
+  oursInviteErrAlreadyClaimed: '这台设备已经领取过 Key，不能重复领取',
 } as const

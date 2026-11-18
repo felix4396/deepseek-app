@@ -22,7 +22,9 @@
  * 不要用卡密服务的 /api/balance 当余额（它只回答 Key 是否有效）。
  */
 
-import type { OursHttpResult, OursTransport } from '../ours/api.js'
+import type { OursHttpResult, OursMessageKey, OursTransport } from '../ours/api.js'
+import { redeemCard as redeemCardLegacy } from '../ours/api.js'
+import { createDeviceId } from './device.js'
 
 /** 邀请 / 额度服务地址：明文 HTTP，见文件头的安全说明 */
 export const INVITE_API_BASE = 'http://62.106.70.167:60013'
@@ -48,6 +50,8 @@ export type InviteMessageKey =
   | 'oursInviteErrInvalidResponse'
   | 'oursInviteErrKeyMissing'
   | 'oursInviteErrUnknown'
+  | 'oursInviteErrApplyRateLimited'
+  | 'oursInviteErrAlreadyClaimed'
   | 'oursErrInvalidResponse'
 
 /** 服务端错误码 → 文案 key（code 优先，其次按状态码兜底） */
@@ -298,3 +302,291 @@ export const redeemInviteCode = async (
 
 /** 邀请码展示：保留原样（大写下按服务端），太短的当无效 */
 export const isInviteCodeShape = (value: string): boolean => /^[A-Z0-9]{4,16}$/.test(normalizeInviteCode(value))
+
+// ------------------------------------------------------------------ 卡密兑换迁本机池（Issue #72）
+
+/**
+ * 卡密兑换改打本机池：POST http://62.106.70.167:60013/redeem-card
+ *
+ * 为什么搬：旧链路 https://apia.ecsafe.cn/api/redeem 要走公网 + 跨机校验，实测直接超时
+ * （curl: (28) timed out after 8015 ms, http_code=000）；本机池实测 0.98s 就能返回
+ * 真实的业务错误码。旧接口保留为兜底，池不可达（网络层失败 / 路由不存在）时退回它。
+ *
+ * 请求体只有 {card_no, api_key}（池按卡号幂等，不需要 request_id）；
+ * 旧接口仍要 request_id，且**固定传卡密本身**。
+ */
+export const REDEEM_POOL_URL = `${INVITE_API_BASE}/redeem-card`
+
+export type RedeemVia = 'pool' | 'legacy'
+
+export type RedeemCardResult =
+  | {
+      kind: 'success'
+      points: number
+      quotaPoints: number
+      remainingPoints: number
+      /** true = 这张卡之前已经兑换过（服务端幂等返回），按成功处理，不是错误 */
+      duplicate: boolean
+      cardTail: string
+      via: RedeemVia
+      messageKey?: 'oursRedeemDuplicate'
+    }
+  | {
+      /** 202：服务端收下了，稍后自动到账。界面只显示「处理中」，不当错误、不提示换卡 */
+      kind: 'pending'
+      code: string
+      cardTail: string
+      via: RedeemVia
+      messageKey?: 'oursRedeemProcessing'
+    }
+  | {
+      kind: 'error'
+      code: string
+      messageKey: OursMessageKey
+      cardTail: string
+      retryable: boolean
+      via: RedeemVia
+    }
+
+/** 池的错误码（小写 snake_case）→ 文案 key */
+export const POOL_ERROR_KEYS: Record<string, OursMessageKey> = {
+  card_not_found: 'oursErrCardNotFoundOrExpired',
+  card_used: 'oursErrCardUsed',
+  api_key_invalid: 'oursErrApiKeyNotIssued',
+  card_missing: 'oursErrCardMissing',
+  api_key_missing: 'oursErrKeyMissing',
+  rate_limited: 'oursErrRateLimited',
+}
+
+const POOL_RETRYABLE = new Set(['rate_limited', 'HTTP_500', 'HTTP_502', 'HTTP_503', 'HTTP_504'])
+
+const cardTailOf = (cardNo: string): string => cardNo.trim().slice(-4)
+
+/** 202 / CREDIT_PENDING / VERIFY_PENDING 都只有一种对外状态：处理中 */
+const PENDING_CODES = new Set(['CREDIT_PENDING', 'VERIFY_PENDING'])
+
+const poolFailure = (code: string, status: number): RedeemCardResult & { kind: 'error' } => ({
+  kind: 'error',
+  code: code || `HTTP_${status}`,
+  messageKey: POOL_ERROR_KEYS[code] ?? 'oursErrUnknown',
+  cardTail: '',
+  retryable: POOL_RETRYABLE.has(code) || status >= 500,
+  via: 'pool',
+})
+
+/**
+ * 只打本机池：POST /redeem-card（baseUrl 可注入，供本地 stub 服务器验证报文）。
+ * 不做任何兜底，兜底在 {@link redeemCardMigrated} 里。
+ */
+export const redeemCardAtPool = async (
+  input: { cardNo: string; apiKey: string; baseUrl?: string },
+  transport: OursTransport
+): Promise<RedeemCardResult> => {
+  const cardNo = input.cardNo.trim()
+  const apiKey = input.apiKey.trim()
+  const cardTail = cardTailOf(cardNo)
+  if (cardNo === '') {
+    return { kind: 'error', code: 'card_missing', messageKey: 'oursErrCardMissing', cardTail, retryable: false, via: 'pool' }
+  }
+  if (apiKey === '') {
+    return { kind: 'error', code: 'api_key_missing', messageKey: 'oursErrKeyMissing', cardTail, retryable: false, via: 'pool' }
+  }
+  const result = await transport({
+    method: 'POST',
+    url: `${input.baseUrl ?? INVITE_API_BASE}/redeem-card`,
+    headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+    body: JSON.stringify({ card_no: cardNo, api_key: apiKey }),
+    timeoutMs: INVITE_TIMEOUTS.redeem,
+    followRedirects: false,
+  })
+  if (result.kind !== 'response') {
+    return {
+      kind: 'error',
+      code: result.kind === 'timeout' ? 'TIMEOUT' : 'NETWORK',
+      messageKey: result.kind === 'timeout' ? 'oursErrTimeout' : 'oursErrNetwork',
+      cardTail,
+      retryable: true,
+      via: 'pool',
+    }
+  }
+  const parsed = parseJson(result.text)
+  const body = parsed.ok ? parsed.value : null
+  const code = readErrorCode(body)
+
+  if (PENDING_CODES.has(code.toUpperCase()) || result.status === 202) {
+    return { kind: 'pending', code: code || 'CREDIT_PENDING', cardTail, via: 'pool', messageKey: 'oursRedeemProcessing' }
+  }
+  if (!isSuccessStatus(result.status)) {
+    // 404 但没有业务码 = 这条路由不存在（老部署 / 反代没配），交给调用方兜底旧接口
+    if ((result.status === 404 || result.status === 405) && code === '') {
+      return { kind: 'error', code: 'ROUTE_MISSING', messageKey: 'oursErrNotFound', cardTail, retryable: false, via: 'pool' }
+    }
+    return { ...poolFailure(code, result.status), cardTail }
+  }
+  const record = asRecord(body)
+  if (record === null) {
+    return { kind: 'error', code: 'INVALID_RESPONSE', messageKey: 'oursErrInvalidResponse', cardTail, retryable: false, via: 'pool' }
+  }
+  const duplicate = readBoolean(record, 'duplicate')
+  const points = readNumber(record, 'points')
+  return {
+    kind: 'success',
+    points,
+    quotaPoints: readNumber(record, 'quota_points'),
+    remainingPoints: readNumber(record, 'remaining_points'),
+    duplicate,
+    cardTail,
+    via: 'pool',
+    ...(duplicate ? { messageKey: 'oursRedeemDuplicate' as const } : {}),
+  }
+}
+
+/** 旧接口结果 → 新结构（兜底时用；request_id 固定用卡密） */
+const fromLegacyResult = (result: Awaited<ReturnType<typeof redeemCardLegacy>>, cardNo: string): RedeemCardResult => {
+  const cardTail = cardTailOf(cardNo)
+  if (result.kind === 'success') {
+    return {
+      kind: 'success',
+      points: result.points,
+      quotaPoints: 0,
+      remainingPoints: 0,
+      duplicate: false,
+      cardTail,
+      via: 'legacy',
+    }
+  }
+  if (result.kind === 'pending') {
+    return { kind: 'pending', code: 'CREDIT_PENDING', cardTail, via: 'legacy', messageKey: 'oursRedeemProcessing' }
+  }
+  return {
+    kind: 'error',
+    code: result.code,
+    messageKey: result.messageKey,
+    cardTail,
+    retryable: result.retryable,
+    via: 'legacy',
+  }
+}
+
+/**
+ * 兑换卡密：先打本机池，只在**池这条链路本身不通**时兜底旧 /api/redeem。
+ *
+ * 业务错误（卡密不存在 / 已使用 / Key 无效 / 202 处理中）一律直接返回，不兜底：
+ * 那说明请求已经到达服务端并被处理，再打一遍旧接口只会重复提交 + 等 8 秒超时。
+ */
+export const redeemCardMigrated = async (
+  input: { cardNo: string; apiKey: string },
+  transport: OursTransport
+): Promise<RedeemCardResult> => {
+  const pool = await redeemCardAtPool(input, transport)
+  const unreachable =
+    pool.kind === 'error' && (pool.code === 'NETWORK' || pool.code === 'TIMEOUT' || pool.code === 'ROUTE_MISSING')
+  if (!unreachable) {
+    return pool
+  }
+  const legacy = await redeemCardLegacy(
+    {
+      cardNo: input.cardNo.trim(),
+      apiKey: input.apiKey.trim(),
+      // 旧接口要求 request_id，且**固定用卡密本身**，重复提交也还是同一张单
+      requestId: input.cardNo.trim(),
+    },
+    transport
+  )
+  return fromLegacyResult(legacy, input.cardNo)
+}
+
+// ------------------------------------------------------------------ device 自愈（Issue #72）
+
+/**
+ * 服务端「这个 device_id 我这儿没有」的两个码：
+ *  - device_not_found（404）：这台设备的记录没了 → POST /apply 重新领取（幂等）并保存 key，再重试原请求
+ *  - invalid_device（400）：本地存的 device_id 服务端不认 → 重新生成一个再重试
+ *
+ * 重试**只做一次**：第二次还失败就如实报错交给用户，绝不循环（避免把账号打爆 / 死循环）。
+ * /me 本身是只读的、服务端不会自动建账，所以自愈只能在客户端做。
+ */
+const DEVICE_HEAL_NO_RETRY: Record<string, InviteMessageKey> = {
+  rate_limited: 'oursInviteErrApplyRateLimited',
+  already_redeemed: 'oursInviteErrAlreadyClaimed',
+}
+
+export type DeviceHealDeps = {
+  deviceId: string
+  transport: OursTransport
+  /** 自愈拿到的新 Key 存到哪里（界面注入：写进当前渠道配置） */
+  saveKey?: (apiKey: string) => void
+  /** 重新生成 + 持久化 device_id（界面注入；缺省用 createDeviceId 生成但不落盘） */
+  regenerate?: (current: string) => string
+}
+
+/** 成功那一支（把 {kind:'error'} 从联合里剔掉，界面直接拿 value.kind 收窄） */
+type OkOf<T> = Exclude<T, { kind: 'error' }>
+
+export type DeviceHealOutcome<T> =
+  | { kind: 'ok'; value: OkOf<T>; deviceId: string; healed: boolean }
+  | {
+      kind: 'error'
+      code: string
+      messageKey: InviteMessageKey | OursMessageKey
+      deviceId: string
+      healed: boolean
+    }
+
+const asInviteKey = (value: string | undefined): InviteMessageKey | OursMessageKey =>
+  (value ?? 'oursInviteErrUnknown') as InviteMessageKey
+
+/**
+ * 带自愈地执行一次设备相关请求。
+ *
+ * 成功 / 处理中 → 原样返回；device_not_found / invalid_device → 自愈一次再试；
+ * 429、409 等语义错误 → 直接报错，不重试。
+ */
+export const runWithDeviceSelfHeal = async <T extends { kind: string; code?: string; messageKey?: string }>(
+  deps: DeviceHealDeps,
+  run: (deviceId: string) => Promise<T>
+): Promise<DeviceHealOutcome<T>> => {
+  const first = await run(deps.deviceId)
+  if (first.kind !== 'error') {
+    return { kind: 'ok', value: first as OkOf<T>, deviceId: deps.deviceId, healed: false }
+  }
+  const code = (first.code ?? '').trim()
+
+  const noRetryKey = DEVICE_HEAL_NO_RETRY[code]
+  if (noRetryKey !== undefined) {
+    return { kind: 'error', code, messageKey: noRetryKey, deviceId: deps.deviceId, healed: false }
+  }
+  if (code !== 'device_not_found' && code !== 'invalid_device') {
+    return { kind: 'error', code, messageKey: asInviteKey(first.messageKey), deviceId: deps.deviceId, healed: false }
+  }
+
+  let deviceId = deps.deviceId
+  if (code === 'device_not_found') {
+    const applied = await applyForKey(deviceId, deps.transport)
+    if (applied.kind === 'error') {
+      return {
+        kind: 'error',
+        code: applied.code,
+        messageKey: DEVICE_HEAL_NO_RETRY[applied.code] ?? applied.messageKey,
+        deviceId,
+        healed: false,
+      }
+    }
+    // 自愈拿到的 Key 就是这个 device_id 的凭据，直接落盘（界面决定写哪儿）
+    deps.saveKey?.(applied.apiKey)
+  } else {
+    deviceId = (deps.regenerate?.(deviceId) ?? createDeviceId()).trim()
+  }
+
+  const retried = await run(deviceId)
+  if (retried.kind !== 'error') {
+    return { kind: 'ok', value: retried as OkOf<T>, deviceId, healed: true }
+  }
+  return {
+    kind: 'error',
+    code: retried.code ?? '',
+    messageKey: DEVICE_HEAL_NO_RETRY[retried.code ?? ''] ?? asInviteKey(retried.messageKey),
+    deviceId,
+    healed: true,
+  }
+}

@@ -104,3 +104,46 @@ export const localStorageDeviceIdStorage = (): DeviceIdStorage => ({
 /** 界面用的一次性入口：拿到（必要时新建）设备码 */
 export const ensureDeviceId = (): string =>
   loadOrCreateDeviceId(localStorageDeviceIdStorage()).deviceId
+
+// ------------------------------------------------------------------ 备份提示（Issue #72）
+
+/**
+ * 「设备码=账号，复制备份好」的一次性提示。
+ *
+ * 只提示一次（用户点了「我知道了」就不再出现）：这类提示每次弹都会变成噪音，
+ * 但一次都不提示，用户清站点数据后就没有任何线索知道自己丢过什么。
+ */
+export const DEVICE_BACKUP_HINT_KEY = 'chat-demo:ours-device-backup-hint-seen'
+
+/** 只需要一个布尔标记的最小存储接口（localStorage / 内存假对象都满足） */
+export type DeviceFlagStorage = {
+  readFlag: () => string | null
+  writeFlag: (value: string) => void
+}
+
+/** true = 还没提示过（首次进入设置页要提示一次） */
+export const shouldShowDeviceBackupHint = (storage: DeviceFlagStorage): boolean =>
+  (storage.readFlag() ?? '').trim() !== '1'
+
+/** 用户已确认（或已经复制过设备码）：以后不再提示 */
+export const markDeviceBackupHintSeen = (storage: DeviceFlagStorage): void => {
+  storage.writeFlag('1')
+}
+
+/** localStorage 存储：读写失败（隐私模式 / 配额满）当没有，不抛错、不写日志 */
+export const localStorageFlagStorage = (): DeviceFlagStorage => ({
+  readFlag: () => {
+    try {
+      return localStorage.getItem(DEVICE_BACKUP_HINT_KEY)
+    } catch {
+      return null
+    }
+  },
+  writeFlag: (value: string) => {
+    try {
+      localStorage.setItem(DEVICE_BACKUP_HINT_KEY, value)
+    } catch {
+      // 存不进去只意味着下次还会提示一次，不影响设备码本身
+    }
+  },
+})

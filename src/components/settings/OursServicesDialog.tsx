@@ -12,25 +12,32 @@ import {
   OURS_PAYMENT_OPEN,
   pollOrder,
   probeApiKey,
-  redeemCard,
-  requestIdForCard,
   startCheckout,
   type OursKeyProbe,
   type OursMessageKey,
   type OursOrderStatus,
   type OursPlansState,
-  type OursRedeemResult,
 } from '../../services/ours/api.js'
 import {
   applyForKey,
   fetchInviteProfile,
   isInviteCodeShape,
   normalizeInviteCode,
+  redeemCardMigrated,
   redeemInviteCode,
+  runWithDeviceSelfHeal,
   type InviteMessageKey,
+  type RedeemCardResult,
   type InviteProfile,
 } from '../../services/invite/api.js'
-import { ensureDeviceId } from '../../services/invite/device.js'
+import {
+  createDeviceId,
+  ensureDeviceId,
+  localStorageDeviceIdStorage,
+  localStorageFlagStorage,
+  markDeviceBackupHintSeen,
+  shouldShowDeviceBackupHint,
+} from '../../services/invite/device.js'
 import { readStoredOrder, writeStoredOrder, ORDER_RESUME_MAX_AGE_MS } from '../../services/ours/orderStore.js'
 import { httpTransport, isNativePlatform, navigateTopLevel, openCheckout } from '../../services/ours/transport.js'
 import { copyText } from '../../utils/clipboard.js'
@@ -58,7 +65,7 @@ import styles from './OursServices.module.css'
 type BalanceView =
   | { status: 'idle' | 'loading' }
   | { status: 'ok'; profile: InviteProfile }
-  | { status: 'error'; messageKey: InviteMessageKey }
+  | { status: 'error'; messageKey: InviteMessageKey | OursMessageKey }
 
 type ClaimView =
   | { status: 'idle' }
@@ -114,7 +121,10 @@ export const OursServicesRow = () => {
 const OursServicesDialog = ({ onClose }: { onClose: () => void }) => {
   const t = useTranslate()
   const apiKey = useApiConfig((state) => state.apiKey)
-  const [deviceId] = useState(() => ensureDeviceId())
+  /** 设备码可变：invalid_device 自愈时会重新生成一个（见 runWithDeviceSelfHeal） */
+  const [deviceId, setDeviceId] = useState(() => ensureDeviceId())
+  /** 设备码备份提示只提示一次（Issue #72 条件 4） */
+  const [showBackupHint, setShowBackupHint] = useState(() => shouldShowDeviceBackupHint(localStorageFlagStorage()))
   const [claim, setClaim] = useState<ClaimView>({ status: 'idle' })
   const [balance, setBalance] = useState<BalanceView>({ status: 'idle' })
   const [keyProbe, setKeyProbe] = useState<OursKeyProbe | null>(null)
@@ -132,7 +142,7 @@ const OursServicesDialog = ({ onClose }: { onClose: () => void }) => {
   >(null)
   const [cardNo, setCardNo] = useState('')
   const [redeemBusy, setRedeemBusy] = useState(false)
-  const [redeem, setRedeem] = useState<OursRedeemResult | null>(null)
+  const [redeem, setRedeem] = useState<RedeemCardResult | null>(null)
   const [copied, setCopied] = useState<'device' | 'invite' | 'card' | null>(null)
 
   /** 完整卡密只留内存（「一键兑换」要用）：不进 localStorage、不进日志、不进文案 */
@@ -152,16 +162,40 @@ const OursServicesDialog = ({ onClose }: { onClose: () => void }) => {
 
   // ---------------------------------------------------------------- 额度 / 领取
 
+  /**
+   * 自愈依赖：device_not_found → POST /apply 重新领取并把 Key 落盘；
+   * invalid_device → 重新生成设备码并持久化。两者都只重试一次（见 runWithDeviceSelfHeal）。
+   */
+  const saveHealedKey = (key: string) => {
+    setApiKey(key)
+    setPendingKey('')
+  }
+  const regenerateDevice = (current: string): string => {
+    const next = createDeviceId()
+    localStorageDeviceIdStorage().write(next)
+    return next === current ? `${next}0` : next
+  }
+  const acknowledgeBackupHint = () => {
+    markDeviceBackupHintSeen(localStorageFlagStorage())
+    setShowBackupHint(false)
+  }
+
   const refreshBalance = async () => {
     setBalance({ status: 'loading' })
-    const result = await fetchInviteProfile(deviceId, httpTransport)
+    const outcome = await runWithDeviceSelfHeal(
+      { deviceId, transport: httpTransport, saveKey: saveHealedKey, regenerate: regenerateDevice },
+      (id) => fetchInviteProfile(id, httpTransport)
+    )
     if (!alive.current) {
       return
     }
+    if (outcome.deviceId !== deviceId) {
+      setDeviceId(outcome.deviceId)
+    }
     setBalance(
-      result.kind === 'ok'
-        ? { status: 'ok', profile: result.profile }
-        : { status: 'error', messageKey: result.messageKey }
+      outcome.kind === 'ok'
+        ? { status: 'ok', profile: outcome.value.profile }
+        : { status: 'error', messageKey: outcome.messageKey }
     )
   }
 
@@ -371,29 +405,44 @@ const OursServicesDialog = ({ onClose }: { onClose: () => void }) => {
   const submitRedeem = async (card: string) => {
     const trimmed = card.trim()
     if (trimmed === '') {
-      setRedeem({ kind: 'error', code: 'CARD_MISSING', messageKey: 'oursErrCardMissing', cardTail: '', retryable: false })
+      setRedeem({ kind: 'error', code: 'card_missing', messageKey: 'oursErrCardMissing', cardTail: '', retryable: false, via: 'pool' })
       return
     }
     if (apiKey.trim() === '') {
-      setRedeem({ kind: 'error', code: 'API_KEY_MISSING', messageKey: 'oursErrKeyMissing', cardTail: '', retryable: false })
+      setRedeem({ kind: 'error', code: 'api_key_missing', messageKey: 'oursErrKeyMissing', cardTail: '', retryable: false, via: 'pool' })
       return
     }
     setRedeemBusy(true)
-    // request_id 就是卡密：重试（含「重试」按钮）天然复用同一个
-    const result = await redeemCard(
-      { cardNo: trimmed, apiKey, requestId: requestIdForCard(trimmed) },
-      httpTransport
+    // 打本机池（62.106:60013/redeem-card），池整条链路不通才兜底旧 /api/redeem；
+    // device_not_found / invalid_device 由 runWithDeviceSelfHeal 自愈一次，绝不循环。
+    const outcome = await runWithDeviceSelfHeal(
+      { deviceId, transport: httpTransport, saveKey: saveHealedKey, regenerate: regenerateDevice },
+      () => redeemCardMigrated({ cardNo: trimmed, apiKey }, httpTransport)
     )
     if (!alive.current) {
       return
     }
     setRedeemBusy(false)
-    setRedeem(result)
-    if (result.kind !== 'error') {
-      setCardNo('')
-      orderCardRef.current = ''
-      void refreshBalance()
+    if (outcome.deviceId !== deviceId) {
+      setDeviceId(outcome.deviceId)
     }
+    if (outcome.kind === 'error') {
+      setRedeem({
+        kind: 'error',
+        code: outcome.code,
+        messageKey: outcome.messageKey as OursMessageKey,
+        cardTail: trimmed.slice(-4),
+        retryable: outcome.code === 'NETWORK' || outcome.code === 'TIMEOUT',
+        via: 'pool',
+      })
+      return
+    }
+    // 走到这里只可能是 success / pending（错误已在上面 return）：202 也按「收下了」处理，
+    // 所以清空输入并刷新一次额度（pending 时服务端稍后才入账，用户可点「刷新额度」再看）
+    setRedeem(outcome.value)
+    setCardNo('')
+    orderCardRef.current = ''
+    void refreshBalance()
   }
 
   const submitInvite = async () => {
@@ -463,6 +512,19 @@ const OursServicesDialog = ({ onClose }: { onClose: () => void }) => {
             {deviceId}
           </code>
           <div className={styles.hint}>{t('oursDeviceDescription')}</div>
+          {showBackupHint ? (
+            <div className={styles.hint} data-testid="ours-device-backup-hint">
+              {t('oursDeviceBackupHint')}{' '}
+              <Button
+                variant="outlined"
+                size="s"
+                data-testid="ours-device-backup-hint-ok"
+                onClick={acknowledgeBackupHint}
+              >
+                {t('oursDeviceBackupHintOk')}
+              </Button>
+            </div>
+          ) : null}
 
           <div className={styles.actions}>
             <Button
@@ -807,12 +869,31 @@ const OursServicesDialog = ({ onClose }: { onClose: () => void }) => {
               {redeem.kind === 'error'
                 ? t(redeem.messageKey)
                 : redeem.kind === 'pending'
-                  ? t('oursRedeemPending')
-                  : t('oursRedeemSuccess', {
-                      points: formatPoints(redeem.points),
-                      yuan: formatYuan(redeem.points),
-                    })}
+                  ? // 202（CREDIT_PENDING / VERIFY_PENDING）只有一种说法：处理中，稍后自动到账
+                    t('oursRedeemProcessing')
+                  : redeem.messageKey === 'oursRedeemDuplicate'
+                    ? t('oursRedeemDuplicate', {
+                        points: formatPoints(redeem.points),
+                        yuan: formatYuan(redeem.points),
+                      })
+                    : t('oursRedeemSuccess', {
+                        points: formatPoints(redeem.points),
+                        yuan: formatYuan(redeem.points),
+                      })}
               {redeem.cardTail === '' ? '' : `（${redeem.cardTail}）`}
+            </div>
+          ) : null}
+          {redeem !== null && redeem.kind === 'pending' ? (
+            <div className={styles.actions}>
+              <Button
+                variant="outlined"
+                size="s"
+                data-testid="ours-redeem-refresh"
+                disabled={balance.status === 'loading'}
+                onClick={() => void refreshBalance()}
+              >
+                {t('oursRedeemRefreshBalance')}
+              </Button>
             </div>
           ) : null}
           {redeem !== null && redeem.kind === 'error' && redeem.retryable ? (
