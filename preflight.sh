@@ -319,6 +319,9 @@ else
     elif [[ -z ${E2E_API_KEY:-} ]]; then
       verdict FAIL "缺 E2E_API_KEY：真实模型上游 e2e 无证据（反馈上传 e2e ${RAN_UPLOAD# } 已通过）" \
         'export E2E_API_KEY=sk-xxx 后重跑；若明确接受“发布后补测”，用 --skip-upstream-e2e（会留痕），不要用 --skip-tests'
+    elif ! ls ${E2E_DIR}/*"${E2E_UPSTREAM_MATCH}"*.test.mjs >/dev/null 2>&1; then
+      verdict FAIL "找不到真实模型上游用例（${E2E_DIR}/*${E2E_UPSTREAM_MATCH}*.test.mjs）" \
+        '确认用例仍在 tests/e2e/ 下；run-layer 的 --only 匹配不到时会静默 exit 0，这里必须显式拦截'
     else
       if run_logged e2e_upstream "e2e --only ${E2E_UPSTREAM_MATCH}" bash -c "node tests/run-layer.mjs e2e --only '${E2E_UPSTREAM_MATCH}'"; then
         verdict PASS "上传类 e2e（${RAN_UPLOAD# }）+ 真实模型上游 e2e 全部通过"
