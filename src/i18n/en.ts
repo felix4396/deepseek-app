@@ -623,4 +623,10 @@ export const en = {
   settingDialogReadingLineCompact: 'Compact',
   settingDialogReadingLineStandard: 'Standard',
   settingDialogReadingLineRelaxed: 'Relaxed',
+  settingDialogEnterKeyMode: 'Enter key behavior',
+  settingDialogEnterKeyModeDescription:
+    'Send on Enter, or insert a line break and use the send button — the soft-keyboard Enter key follows your choice.',
+  settingDialogEnterKeySend: 'Enter sends (Shift + Enter for a new line)',
+  settingDialogEnterKeyModifierSend: 'Ctrl / ⌘ + Enter sends (Enter for a new line)',
+  settingDialogEnterKeyButtonOnly: 'Enter only adds a new line (use the send button)',
 } satisfies Record<keyof typeof zh, string>

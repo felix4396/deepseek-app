@@ -26,6 +26,7 @@ import { stopReadAloud } from '../../services/speech/readAloud.js'
 import { IconButton } from '../base/IconButton.js'
 import { Tooltip } from '../base/Tooltip.js'
 import { ensureApiKey } from '../settings/settingsDialogState.js'
+import { enterKeyHintFor, resolveEnterKeyAction } from './enterKey.js'
 import { DragMask, useFileDrop } from './DragMask.js'
 import { showToast } from '../base/toastState.js'
 import { ACCEPT, useUploads } from '../../services/attachments.js'
@@ -55,6 +56,8 @@ const Input = ({ sessionId }: { sessionId: string | null }) => {
   const importingHistory = useChatStore((state) => state.importingHistory)
   const isMobile = useIsMobile()
   const search = useSettings((state) => state.search)
+  // 回车键行为（issue #108）：默认 enter-send 等于改造前的写死行为
+  const enterKeyMode = useSettings((state) => state.enterKeyMode)
   // 能力开关来自当前服务类型的 spec：不支持的入口直接不渲染
   const caps = getSpec(useApiConfig((state) => state.kind)).caps
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -189,8 +192,22 @@ const Input = ({ sessionId }: { sessionId: string | null }) => {
               event.currentTarget.focus({ preventScroll: true })
             }
           }}
+          // 软键盘回车键文案跟档位走：换行档不能还写着「发送」
+          enterKeyHint={enterKeyHintFor(enterKeyMode)}
           onKeyDown={(event) => {
-            if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) {
+            // 合成期（isComposing / keyCode 229）在 resolveEnterKeyAction 里一律判成换行，不发送
+            const action = resolveEnterKeyAction(
+              {
+                key: event.key,
+                shiftKey: event.shiftKey,
+                ctrlKey: event.ctrlKey,
+                metaKey: event.metaKey,
+                isComposing: event.nativeEvent.isComposing,
+                keyCode: event.keyCode,
+              },
+              enterKeyMode
+            )
+            if (action === 'send') {
               event.preventDefault()
               send()
             }
