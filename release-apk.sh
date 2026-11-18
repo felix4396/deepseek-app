@@ -117,6 +117,7 @@ USAGE
 
 # ---------------------------------------------------------------- 参数
 SKIP_TESTS=0; SKIP_UPSTREAM_E2E=0; DRY_RUN=0; NO_PUSH=0; WAIT_RELEASE=0; BUILD_TYPE=''
+INTERNAL_NOTES=()          # 内部验收记录：只进 CHANGELOG，绝不进 dl 的 changes / Release notes
 ARGS=()
 set -- "$@"
 while (( $# )); do
@@ -125,6 +126,7 @@ while (( $# )); do
     --standard) BUILD_TYPE=standard ;;
     --skip-tests) SKIP_TESTS=1 ;;
     --skip-upstream-e2e) SKIP_UPSTREAM_E2E=1 ;;
+    --internal-note) shift; [[ -n ${1:-} ]] || die '--internal-note 需要文本'; INTERNAL_NOTES+=("$1") ;;
     --dry-run) DRY_RUN=1 ;;
     --no-push|--no-github) NO_PUSH=1 ;;
     --wait-release) WAIT_RELEASE=90
@@ -145,13 +147,17 @@ if [[ -z ${BUILD_TYPE} ]]; then BUILD_TYPE=standard; warn '  ! 未指定 --inter
 [[ -x ${PREFLIGHT} ]] || die "门禁脚本不可执行: ${PREFLIGHT}（chmod +x preflight.sh）"
 [[ -f ${GRADLE} ]] || die "找不到 ${GRADLE}"
 TAG="${TAG_PREFIX}${VER}"
+# APK 变体：必须与 web 构建同源（--internal ↔ pnpm build:internal ↔ -PartifactVariant=internal）
+ARTIFACT_VARIANT=${ARTIFACT_VARIANT:-${BUILD_TYPE}}
+case ${ARTIFACT_VARIANT} in internal|standard) ;; *) die "ARTIFACT_VARIANT 只能是 internal|standard，收到 ${ARTIFACT_VARIANT}";; esac
 TITLE_SUFFIX=''
 if (( SKIP_TESTS )); then TITLE_SUFFIX=' [未过门禁]'; fi
 if (( SKIP_UPSTREAM_E2E )); then TITLE_SUFFIX="${TITLE_SUFFIX} [上游e2e待补测]"; fi
 if (( SKIP_TESTS && SKIP_UPSTREAM_E2E )); then die '--skip-tests 与 --skip-upstream-e2e 不能同时用：要发版就用 --skip-upstream-e2e'; fi
-UPSTREAM_NOTE='说明：真实模型上游测试待发布后补测（本次未跑真上游 e2e；unit/integration/反馈上传 e2e 均已跑）'
+# dl 的 changes 只放用户语；工程/验收信息走 INTERNAL_NOTES（只写 CHANGELOG）
+if (( SKIP_UPSTREAM_E2E )); then INTERNAL_NOTES+=('真实模型上游 e2e 未跑（--skip-upstream-e2e），发布后补测'); fi
+if (( SKIP_TESTS )); then INTERNAL_NOTES+=('本次 --skip-tests：只跑了本次 focused 验收，全量测试套件未跑'); fi
 CHANGES_ALL=("${CHANGES[@]}")
-if (( SKIP_UPSTREAM_E2E )); then CHANGES_ALL+=("${UPSTREAM_NOTE}"); fi
 DATE_STR=$(TZ=Asia/Shanghai date +%F)
 STATE_FILE="${DL_STATE_DIR}/${VER}.json"
 
@@ -181,6 +187,21 @@ apk_meta(){  # <apk> → "vc vn"
   printf '%s %s\n' "${vc}" "${vn}"
 }
 file_md5(){ if command -v md5sum >/dev/null 2>&1; then md5sum "$1" | cut -d' ' -f1; else md5 -q "$1"; fi; }
+file_sha256(){ sha256sum "$1" | cut -d' ' -f1; }
+# APK 内的构建变体标记：aapt2 dump badging 不输出 meta-data，必须解析 xmltree
+apk_variant(){
+  "${AAPT2}" dump xmltree "$1" --file AndroidManifest.xml 2>/dev/null | python3 - <<'PYV' 2>/dev/null || true
+import re, sys
+txt = sys.stdin.read()
+best = ''
+for block in txt.split('E: meta-data'):
+    if 'ARTIFACT_VARIANT' in block:
+        m = re.search(r'android:value\(0x[0-9a-f]+\)="([^"]*)"', block)
+        if m:
+            best = m.group(1)
+print(best)
+PYV
+}
 
 # 状态文件（JSON）
 write_state(){
@@ -188,11 +209,14 @@ write_state(){
   mkdir -p "${DL_STATE_DIR}"
   python3 - "${STATE_FILE}" "${VER}" "${NEW_VC:-0}" "${COMMIT_SHA:-}" "${APK_MD5:-}" "${APK_SIZE:-0}" \
            "${DL_STATUS:-none}" "${DL_URL:-}" "${DL_MD5:-}" "${TAG_STATUS:-none}" "${GH_STATUS:-none}" \
+           "${APK_SHA256:-}" "${ARTIFACT_VARIANT:-}" "$(IFS='|'; printf '%s' "${INTERNAL_NOTES[*]:-}")" \
            "${phase}" "${SKIP_TESTS}" "${SKIP_UPSTREAM_E2E}" <<'PY'
 import json,sys,datetime
-(p,ver,vc,sha,md5,size,dl,url,dlmd5,tag,gh,phase,skip,skipup)=sys.argv[1:]
+(p,ver,vc,sha,md5,size,dl,url,dlmd5,tag,gh,apksha,variant,notes,phase,skip,skipup)=sys.argv[1:]
 d={"version":ver,"versionCode":int(vc or 0),"commit":sha or "","apk":{"md5":md5 or "","size":int(size or 0)},
    "dl":{"status":dl,"url":url or "","md5":dlmd5 or "","endpoint":"api/v1/release"},
+   "artifact":{"sha256":apksha or "","variant":variant or ""},
+   "internalNotes":[n for n in (notes or "").split("|") if n],
    "tag":{"status":tag},"githubRelease":{"status":gh},"skipTests":bool(int(skip)),
    "skipUpstreamE2E":bool(int(skipup)),
    "phase":phase,"updatedAt":datetime.datetime.now().astimezone().isoformat(timespec="seconds")}
@@ -350,16 +374,21 @@ info "versionCode ${VC_DESC}；versionName ${NEW_VN_DESC}"
 
 # ---------------------------------------------------------------- 4) CHANGELOG
 step "4/9 写 ${CHANGELOG_REL}"
-if ! python3 - "${CHANGELOG}" "${VER}" "${DATE_STR}" "${TITLE_SUFFIX}" "${CHANGES_ALL[@]}" <<'PY'
+if ! python3 - "${CHANGELOG}" "${VER}" "${DATE_STR}" "${TITLE_SUFFIX}" "${CHANGES_ALL[@]}" -- "${INTERNAL_NOTES[@]+${INTERNAL_NOTES[@]}}" <<'PY'
 import re,sys
 path,ver,date,suffix=sys.argv[1],sys.argv[2],sys.argv[3],sys.argv[4]
-changes=sys.argv[5:]
+rest=sys.argv[5:]
+sep=rest.index('--') if '--' in rest else len(rest)
+changes=rest[:sep]; internal=rest[sep+1:] if sep<len(rest) else []
 text=open(path,encoding="utf-8").read()
 if re.search(r"(?m)^##[ \t]+"+re.escape(ver)+r"([ \t(]|$)",text):
     print("EXISTS"); raise SystemExit(0)
 short=re.sub(r"^\s*(新增|修复|优化|变更|调整|移除|删除|文档|重构|测试|性能)[：:]\s*","",changes[0])
 short=re.split(r"[。；;，,]",short)[0].strip()[:20]
-block=["## %s (%s) — %s%s"%(ver,date,short,suffix),""]+["- %s"%c for c in changes]+[""]
+block=["## %s (%s) — %s%s"%(ver,date,short,suffix),""]+["- %s"%c for c in changes]
+if internal:
+    block+=["","> 内部验收记录（不进 dl 用户说明）："]+["  - %s"%c for c in internal]
+block+=[""]
 lines=text.split("\n"); idx=None
 for i,l in enumerate(lines):
     if l.startswith("## "): idx=i; break
@@ -414,8 +443,8 @@ else
   fi
   info 'npx cap sync android'
   if ! ( cd "${ROOT_DIR}" && npx cap sync android ); then die 'npx cap sync android 失败'; fi
-  info '(cd android && heavy-run ./gradlew assembleDebug)'
-  if ! ( cd "${ROOT_DIR}/android" && heavy-run ./gradlew assembleDebug ); then die 'gradlew assembleDebug 失败'; fi
+  info "(cd android && heavy-run ./gradlew assembleDebug -PartifactVariant=${ARTIFACT_VARIANT})"
+  if ! ( cd "${ROOT_DIR}/android" && heavy-run ./gradlew assembleDebug "-PartifactVariant=${ARTIFACT_VARIANT}" ); then die 'gradlew assembleDebug 失败'; fi
 fi
 [[ -s ${APK_SRC} ]] || die "APK 不存在或为空: ${APK_SRC}"
 # 构建后强校验：旧 APK 绝不允许被当作新版本发布（构建前不阻断，构建后必须一致）
@@ -424,8 +453,31 @@ AVC=${M%% *}; AVN=${M##* }
 if [[ ${AVC} != "${NEW_VC}" || ${AVN} != "${VER}" ]]; then
   die "构建产物与目标版本不一致：APK=${AVN}/${AVC}，期望 ${VER}/${NEW_VC}（可能 cap sync 未刷新或 gradle 缓存）"
 fi
-APK_MD5=$(file_md5 "${APK_SRC}"); APK_SIZE=$(stat -c%s "${APK_SRC}")
-info "APK ${AVN}(${AVC})  ${APK_SIZE} B  md5 ${APK_MD5}"
+APK_MD5=$(file_md5 "${APK_SRC}"); APK_SHA256=$(file_sha256 "${APK_SRC}"); APK_SIZE=$(stat -c%s "${APK_SRC}")
+LOCAL_VARIANT=$(apk_variant "${APK_SRC}")
+if [[ ${LOCAL_VARIANT} == "${ARTIFACT_VARIANT}" ]]; then
+  info "APK 变体标记 ARTIFACT_VARIANT=${LOCAL_VARIANT}（与 --${BUILD_TYPE} 同源）"
+elif [[ -z ${LOCAL_VARIANT} ]]; then
+  warn "  ! APK 里没有 ARTIFACT_VARIANT 标记（build.gradle 还没有 manifestPlaceholders？）：服务端只能靠 sha256 白名单判变体，App 侧无法据此自动更新"
+else
+  die "APK 变体标记=${LOCAL_VARIANT} 与本次构建 ${ARTIFACT_VARIANT} 不一致，拒绝发布"
+fi
+info "APK ${AVN}(${AVC})  ${APK_SIZE} B  md5 ${APK_MD5}  sha256 ${APK_SHA256:0:16}…"
+# 签名身份必须与线上已装版本一致（否则无法覆盖安装）：默认 debug 证书 e7c5baee…
+APKSIGNER=${APKSIGNER:-${ANDROID_HOME}/build-tools/35.0.0/apksigner}
+EXPECTED_CERT_SHA256=${EXPECTED_CERT_SHA256:-e7c5baee517ca2b2258950e934521f2fad448d00f72f2ff7297bdf4fa00aa8a1}
+if [[ -x ${APKSIGNER} ]]; then
+  CERT=$( "${APKSIGNER}" verify --print-certs "${APK_SRC}" 2>/dev/null | sed -n 's/.*SHA-256 digest: //p' | head -1 | tr -d ':' | tr 'A-F' 'a-f' )
+  if [[ -z ${CERT} ]]; then
+    warn "  ! 读不到 APK 签名证书（apksigner 失败）：跳过指纹校验，发布后请人工核对"
+  elif [[ ${CERT} != "${EXPECTED_CERT_SHA256}" ]]; then
+    die "签名证书指纹不符：APK=${CERT} 期望=${EXPECTED_CERT_SHA256}。这会与已安装版本不兼容（无法覆盖升级），必须停止，不得切换签名身份"
+  else
+    info "签名证书 SHA-256 与已发布版本一致（${CERT:0:16}…）"
+  fi
+else
+  warn "  ! 没有 apksigner（${APKSIGNER}）：跳过证书指纹校验"
+fi
 
 # ---------------------------------------------------------------- 7) 上传 dl
 step "7/9 上传 dl.rose7.cn"
@@ -471,10 +523,11 @@ PY
     *)   die "上传失败 HTTP ${HTTP}：$(cat "${TMPD}/resp.json" 2>/dev/null)";;
   esac
   # 核对服务端回报的 md5 / version（服务端自己算的 md5 才算数）
-  if ! read -r OK_FLAG S_MD5 S_LATEST S_URL <<<"$(python3 - "${TMPD}/resp.json" <<'PY'
+  if ! read -r OK_FLAG S_MD5 S_LATEST S_URL S_SHA256 S_VARIANT S_VSRC <<<"$(python3 - "${TMPD}/resp.json" <<'PY'
 import json,sys
 d=json.load(open(sys.argv[1],encoding="utf-8"))
-print(int(bool(d.get("ok"))), d.get("md5") or "-", d.get("latest") or "-", d.get("url") or "-")
+print(int(bool(d.get("ok"))), d.get("md5") or "-", d.get("latest") or "-", d.get("url") or "-",
+      d.get("sha256") or "-", d.get("artifactVariant") or "-", d.get("artifactVariantSource") or "-")
 PY
 )"; then die '上传响应不是合法 JSON'; fi
   if [[ ${OK_FLAG} != 1 ]]; then die "上传响应 ok!=true：$(cat "${TMPD}/resp.json" 2>/dev/null)"; fi
@@ -486,9 +539,24 @@ PY
     DL_STATUS=mismatch
     die "服务端 latest=${S_LATEST} ≠ 期望 ${VER}：APK 内 versionName 与目标不符"
   fi
-  DL_STATUS=ok; DL_URL=${S_URL}; DL_MD5=${S_MD5}; DL_DONE=1
+  # 新契约：sha256 必须与本地一致；artifactVariant 必须与本次构建同源
+  if [[ ${S_SHA256} == '-' ]]; then
+    warn '  ! 响应里没有 sha256（服务端契约是旧版本？）'
+  elif [[ ${S_SHA256} != "${APK_SHA256}" ]]; then
+    DL_STATUS=mismatch
+    die "服务端 sha256 ${S_SHA256:0:16}… ≠ 本地 ${APK_SHA256:0:16}…：产物不一致（服务端已写入，需人工核对后重发）"
+  fi
+  if [[ ${S_VARIANT} == '-' ]]; then
+    warn '  ! 响应里没有 artifactVariant：App 侧不会据此自动更新（检查 APK 是否带 ARTIFACT_VARIANT 标记）'
+  elif [[ ${S_VARIANT} != "${ARTIFACT_VARIANT}" ]]; then
+    DL_STATUS=mismatch
+    die "服务端判定变体=${S_VARIANT} 与本次构建 ${ARTIFACT_VARIANT} 不一致（来源 ${S_VSRC}）：拒绝当作发布成功"
+  fi
+  DL_STATUS=ok; DL_URL=${S_URL}; DL_MD5=${S_MD5}; DL_SHA256=${S_SHA256}; DL_VARIANT=${S_VARIANT}; DL_DONE=1
   info "dl OK：${DL_URL}"
   info "服务端 md5 ${S_MD5} == 本地 md5（已核对）"
+  info "服务端 sha256 已核对（${APK_SHA256:0:16}…）"
+  info "服务端变体 ${S_VARIANT}（来源 ${S_VSRC}）与本次构建一致"
 fi
 write_state dl_done
 

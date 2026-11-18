@@ -73,8 +73,12 @@ case "$url" in
       200)
         md5=${MOCK_MD5_OVERRIDE:-$(md5sum "${src}" | cut -d' ' -f1)}
         ver=${MOCK_VERSION_OVERRIDE:-$(printf '%s' "${meta}" | python3 -c 'import json,sys;print(json.load(sys.stdin)["version"])')}
-        printf '{"ok":true,"url":"https://dl.rose7.cn/apk/deepseek-chat-%s.apk","latest":"%s","md5":"%s"}' \
-          "${ver}" "${ver}" "${md5}" >"${out}"
+        sha=${MOCK_SHA256_OVERRIDE:-$(sha256sum "${src}" | cut -d' ' -f1)}
+        variant=${MOCK_VARIANT:-internal}
+        vsrc=${MOCK_VSRC:-apk-manifest}
+        printf '%s' "${meta}" > "${MOCK_LOG}.meta"
+        printf '{"ok":true,"url":"https://dl.rose7.cn/apk/deepseek-chat-%s.apk","latest":"%s","md5":"%s","sha256":"%s","artifactVariant":"%s","artifactVariantSource":"%s"}' \
+          "${ver}" "${ver}" "${md5}" "${sha}" "${variant}" "${vsrc}" >"${out}"
         printf '%s' 200;;
       429) printf '{"ok":false,"error":{"code":"RATE_LIMITED","message":"slow down"}}' >"${out}"; printf 429;;
       401) printf '{"ok":false,"error":{"code":"UNAUTHORIZED","message":"bad token"}}' >"${out}"; printf 401;;
@@ -145,6 +149,9 @@ run_rel(){  # <repo> <args...>
     MOCK_HTTP="${MOCK_HTTP:-200}" \
     MOCK_NET="${MOCK_NET:-ok}" \
     MOCK_MD5_OVERRIDE="${MOCK_MD5_OVERRIDE:-}" \
+    MOCK_SHA256_OVERRIDE="${MOCK_SHA256_OVERRIDE:-}" \
+    MOCK_VARIANT="${MOCK_VARIANT:-internal}" \
+    MOCK_VSRC="${MOCK_VSRC:-apk-manifest}" \
     MOCK_VERSION_OVERRIDE="${MOCK_VERSION_OVERRIDE:-}" \
     MOCK_GH_RELEASE="${MOCK_GH_RELEASE:-missing}" \
     MOCK_RELEASES_JSON="${MOCK_RELEASES_JSON:-{\"latest\":\"\",\"releases\":[]}}" \
@@ -268,7 +275,8 @@ OUT=$(run_rel "$R11" 1.5.0 --internal "精细开关" --skip-upstream-e2e 2>&1); 
 assert_eq '带开关可发布' "$rc" 0
 assert_contains '门禁收到 --skip-upstream-e2e' "$(cat "${WORK}/preflight.args")" '--skip-upstream-e2e'
 assert_contains 'CHANGELOG 标题留痕' "$(cat "$R11/CHANGELOG.md")" '[上游e2e待补测]'
-assert_contains 'CHANGELOG 写明待补测' "$(cat "$R11/CHANGELOG.md")" '真实模型上游测试待发布后补测'
+assert_contains 'CHANGELOG 内部块记录待补测' "$(cat "$R11/CHANGELOG.md")" '内部验收记录'
+assert_contains 'CHANGELOG 内部块含上游未跑' "$(cat "$R11/CHANGELOG.md")" '真实模型上游 e2e 未跑'
 assert_eq '状态文件记录 skipUpstreamE2E' \
   "$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["skipUpstreamE2E"])' "$R11/state/1.5.0.json")" True
 assert_contains '汇总提示延后补测' "$OUT" '真实模型上游 e2e 延后补测'
@@ -302,6 +310,27 @@ assert_eq '无 key 时不跑上游用例' "$(count_in x real-upstream "${WORK}/r
 OUT=$(pf_run '' 'dummy-key-for-routing-only'); rc=$?
 assert_eq '有 key 时照跑上游 e2e' "$(count_in x real-upstream "${WORK}/rl.log")" 1
 assert_contains '有 key 时通过' "$OUT" '真实模型上游 e2e 全部通过'
+
+# ---------------------------------------------------------------- 9. 变体/sha256/用户向 changes
+printf '\n[9] artifactVariant + sha256 契约与用户向 changes\n'
+R12="${WORK}/r12"; new_repo "$R12"
+OUT=$(run_rel "$R12" 1.5.0 --internal "新增：检查更新入口" --internal-note "集成测试全量未跑，仅 focused" 2>&1); rc=$?
+assert_eq 'variant/sha256 一致时发布成功' "$rc" 0
+assert_contains '服务端变体核对通过' "$OUT" '与本次构建一致'
+assert_contains 'sha256 已核对' "$OUT" 'sha256 已核对'
+assert_eq 'dl changes 不含工程词' "$(count_in x '内部验收\|门禁\|focused' "${MOCK_LOG}.meta")" 0
+assert_contains 'dl changes 含用户语' "$(cat "${MOCK_LOG}.meta")" '检查更新入口'
+assert_contains 'CHANGELOG 存内部记录' "$(cat "$R12/CHANGELOG.md")" '内部验收记录'
+assert_contains 'CHANGELOG 存内部 note 原文' "$(cat "$R12/CHANGELOG.md")" '集成测试全量未跑，仅 focused'
+R13="${WORK}/r13"; new_repo "$R13"
+OUT=$(MOCK_SHA256_OVERRIDE='deadbeef' run_rel "$R13" 1.5.0 --internal "x" 2>&1); rc=$?
+assert_eq 'sha256 不符 → 阻断' "$rc" 1
+assert_contains 'sha256 不符提示' "$OUT" 'sha256'
+R14="${WORK}/r14"; new_repo "$R14"
+OUT=$(MOCK_VARIANT=standard run_rel "$R14" 1.5.0 --internal "x" 2>&1); rc=$?
+assert_eq '变体不符 → 阻断' "$rc" 1
+assert_contains '变体不符提示' "$OUT" '变体'
+assert_contains 'gradle 传 -PartifactVariant' "$(cat "${ROOT}/release-apk.sh")" 'gradlew assembleDebug "-PartifactVariant=${ARTIFACT_VARIANT}"'
 
 printf '\n=== 结果：通过 %d，失败 %d ===\n' "${PASS}" "${FAIL}"
 if (( FAIL )); then
