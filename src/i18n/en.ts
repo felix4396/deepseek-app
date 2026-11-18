@@ -399,6 +399,12 @@ export const en = {
   oursClaimAction: 'Claim / re-claim',
   oursClaimBusy: 'Claiming…',
   oursClaimAuto: 'First use: claiming automatically…',
+  // #100: opening the dialog is read-only, so the user picks where the key comes from
+  oursOpenChoiceTitle: 'Choose how to start',
+  oursOpenChoiceHint:
+    'This device has no key yet. Claim a new one from the server, or bind the key you already use elsewhere.',
+  oursOpenChoiceClaim: 'Claim a new key',
+  oursOpenChoiceBind: 'I already have a key',
   oursClaimOk: 'Claimed. {points} left',
   oursClaimOkExisting: 'Already claimed earlier, same Key stays in use',
   oursClaimKeyTail: 'Current Key {tail}',
@@ -412,6 +418,7 @@ export const en = {
   oursQuotaLoading: 'Checking…',
   oursQuotaZeroHint: 'Quota used up — buy a plan or redeem a card code',
   oursQuotaNeedsClaim: 'Not claimed yet: tap “Claim / re-claim” above to see quota',
+  oursQuotaNeedsBind: 'This device is not bound yet: claim a new key or bind an existing one',
   oursInviteTitle: 'Invites',
   oursInviteOwnLabel: 'My invite code',
   oursInviteCopy: 'Copy invite code',

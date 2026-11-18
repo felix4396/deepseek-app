@@ -502,6 +502,8 @@ export const redeemCardMigrated = async (
  * 服务端「这个 device_id 我这儿没有」的两个码：
  *  - device_not_found（404）：这台设备的记录没了 → POST /apply 重新领取（幂等）并保存 key，再重试原请求
  *  - invalid_device（400）：本地存的 device_id 服务端不认 → 重新生成一个再重试
+ *    实测（2026-11-19 curl 探针）：格式不合法的 device_id 服务端回的是 `bad_device_id`（400），
+ *    不是文档/issue 里写的 `invalid_device`；两个码都认，处理与文案一致。
  *
  * 重试**只做一次**：第二次还失败就如实报错交给用户，绝不循环（避免把账号打爆 / 死循环）。
  * /me 本身是只读的、服务端不会自动建账，所以自愈只能在客户端做。
