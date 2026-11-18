@@ -155,6 +155,29 @@ if (System.getenv('INTERNAL_BUILD') != null && updateVariant != (System.getenv('
     throw new GradleException('artifactVariant conflicts with INTERNAL_BUILD')
 }
 
+// ---------------------------------------------------------------------------
+// 发布完整性防呆：debug 变体 + internal 变体标记 = 曾长期被当成发布包的那条路径。
+// debug 变体编译进 android:debuggable="true"，包可被 adb / run-as 读取私有数据
+// （1.0.0～1.4.0-beta.8 共 15 个已发布包都是这么出的，Issue #60）。
+//
+// 这里只打印告警，不改产物、不阻断构建：
+//   - debug 变体仍是本地联调 / 模拟器烟测的合法产物，硬失败会打断现有开发流程；
+//   - 上传前的硬门禁在 docs/RELEASE-MANUAL.md §4.5（aapt2 校验 debuggable 必须为 0）。
+// 判据只看命令行里显式的 debug 任务，认不出时不打扰（例如 gradlew 默认任务 / IDE 同步）。
+// ---------------------------------------------------------------------------
+def debugVariantTaskRequested = gradle.startParameter.taskNames.any { t ->
+    t.toLowerCase().tokenize(':').last().contains('debug')
+}
+if (debugVariantTaskRequested && updateVariant == 'internal') {
+    logger.warn("""
+[发布完整性] 本次构建：debug 变体 + artifactVariant=internal。
+[发布完整性] 产物含 android:debuggable="true"（可被 adb / run-as 读取私有数据），不是发布包，禁止上传 dl。
+[发布完整性] 发布请用：./gradlew assembleRelease -PartifactVariant=internal
+[发布完整性] 上传前硬门禁：aapt2 dump badging <apk> | grep -c application-debuggable → 必须输出 0
+[发布完整性] 背景：1.0.0～1.4.0-beta.8 的历史发布包正是这条路径产出的，见 Issue #60。
+""".stripIndent())
+}
+
 android {
     namespace = "com.example.deepseekchat"
     compileSdk = rootProject.ext.compileSdkVersion
