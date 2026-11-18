@@ -1,0 +1,175 @@
+name: Release
+
+# tag 触发：v1.4.0-beta.4 → 从 dl.rose7.cn 拉已经发布好的 APK，创建 GitHub Release。
+# 这里【不构建 APK】：keystore 永不离开构建机，Release 只是把已发布的产物镜像到 GitHub。
+# 用的是内置 GITHUB_TOKEN（permissions.contents: write），不需要任何 PAT。
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: 创建 Release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      TAG: ${{ github.ref_name }}
+      SHA: ${{ github.sha }}
+    steps:
+      - name: Checkout（取 tag 指向的 commit）
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      # v1.4.0-beta.4 → 1.4.0-beta.4；含 -beta/-rc 时标记为 prerelease
+      - name: 解析 tag 得到版本号
+        id: ver
+        run: |
+          set -euo pipefail
+          tag="$TAG"
+          if [[ ! "$tag" =~ ^v[0-9][0-9A-Za-z.+-]*$ ]]; then
+            echo "::error::tag '$tag' 不符合 v<version> 约定（例：v1.4.0-beta.4）"
+            exit 1
+          fi
+          version="${tag#v}"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          if [[ "$version" == *-beta* || "$version" == *-rc* ]]; then
+            echo "prerelease=--prerelease" >> "$GITHUB_OUTPUT"
+            echo "is_prerelease=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "prerelease=" >> "$GITHUB_OUTPUT"
+            echo "is_prerelease=false" >> "$GITHUB_OUTPUT"
+          fi
+          echo "版本号: $version（prerelease=$([[ "$version" == *-beta* || "$version" == *-rc* ]] && echo true || echo false)）"
+
+      # 版本是否真的已经发布到 dl —— releases.json 是唯一权威
+      - name: 从 dl.rose7.cn/releases.json 查该版本
+        id: meta
+        run: |
+          set -euo pipefail
+          version="${{ steps.ver.outputs.version }}"
+          if ! curl -fsSL --retry 3 --retry-delay 2 --max-time 30 \
+              https://dl.rose7.cn/releases.json -o releases.json; then
+            echo "::error::下载 https://dl.rose7.cn/releases.json 失败（站点不可达？）"
+            exit 1
+          fi
+          python3 - "$version" >> "$GITHUB_OUTPUT" <<'PY'
+          import json, sys
+          version = sys.argv[1]
+          data = json.load(open("releases.json", encoding="utf-8"))
+          releases = data.get("releases") or []
+          hit = [r for r in releases if r.get("version") == version]
+          if not hit:
+              known = ", ".join(r.get("version", "?") for r in releases[:8])
+              print(f"::error::releases.json 里没有版本 {version}；已发布版本: {known}")
+              sys.exit(1)
+          r = hit[0]
+          md5 = (r.get("md5") or "").strip()
+          if len(md5) != 32:
+              print(f"::error::releases.json 中 {version} 的 md5 缺失或格式非法: {md5!r}")
+              sys.exit(1)
+          print(f"file={r.get('file') or f'apk/deepseek-chat-{version}.apk'}")
+          print(f"md5={md5}")
+          print(f"size={r.get('size') or 0}")
+          print(f"version_code={r.get('versionCode') or ''}")
+          print(f"released_at={r.get('releasedAt') or ''}")
+          print(f"latest={data.get('latest') or ''}")
+          PY
+          echo "  file=${{ steps.meta.outputs.file }} md5=${{ steps.meta.outputs.md5 }}"
+
+      # notes 完全由 releases.json 的 changes 生成，不手写
+      - name: 生成 Release Notes
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          data = json.load(open("releases.json", encoding="utf-8"))
+          version = "${{ steps.ver.outputs.version }}"
+          r = [x for x in (data.get("releases") or []) if x.get("version") == version][0]
+          changes = r.get("changes") or []
+          out = [f"## deepseek-chat {version}", ""]
+          out.append(f"- versionCode: `{r.get('versionCode')}`")
+          out.append(f"- 发布站点: https://dl.rose7.cn/")
+          out.append(f"- APK: `{r.get('file')}`")
+          out.append(f"- MD5: `{r.get('md5')}`")
+          out.append(f"- size: {r.get('size')} bytes")
+          if r.get("breaking"):
+              out += ["", "> **BREAKING**: 本版本包含不兼容变更"]
+          out += ["", "### 变更", ""]
+          out += [f"- {c}" for c in changes] if changes else ["- （无变更记录）"]
+          out += ["", "---", "", f"构建产物由 dl.rose7.cn 分发；本 Release 仅做镜像，未在 CI 中重新构建。"]
+          open("notes.md", "w", encoding="utf-8").write("\n".join(out) + "\n")
+          print(open("notes.md", encoding="utf-8").read())
+          PY
+
+      - name: 下载 APK 并校验 MD5
+        run: |
+          set -euo pipefail
+          version="${{ steps.ver.outputs.version }}"
+          path="${{ steps.meta.outputs.file }}"
+          expect="${{ steps.meta.outputs.md5 }}"
+          url="https://dl.rose7.cn/${path}"
+          echo "下载: $url"
+          if ! curl -fsSL --retry 3 --retry-delay 3 --max-time 600 -o artifact.apk "$url"; then
+            echo "::error::下载 $url 失败；若是 404，说明该版本的 APK 还没有通过发布接口上传到 dl.rose7.cn"
+            exit 1
+          fi
+          actual=$(md5sum artifact.apk | awk '{print $1}')
+          echo "  期望 md5: $expect"
+          echo "  实际 md5: $actual"
+          if [ "$actual" != "$expect" ]; then
+            echo "::error::MD5 不一致（期望 $expect，实际 $actual）；APK 可能损坏、被替换，或 releases.json 记录过期"
+            exit 1
+          fi
+          size=$(stat -c%s artifact.apk)
+          echo "  size: $size bytes（releases.json 记录 ${{ steps.meta.outputs.size }}）"
+          ren="./deepseek-chat-${version}.apk"
+          mv artifact.apk "$ren"
+          echo "asset=$ren" >> "$GITHUB_ENV"
+          echo "MD5 校验通过"
+
+      - name: 创建或更新 Release
+        run: |
+          set -euo pipefail
+          notes_args=(--notes-file notes.md)
+          pre="${{ steps.ver.outputs.prerelease }}"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "Release $TAG 已存在 → 覆盖资产并更新说明"
+            gh release upload "$TAG" "$asset" --clobber
+            gh release edit "$TAG" --title "$TAG" "${notes_args[@]}" $pre
+            action=updated
+          else
+            echo "创建 Release $TAG（target=$SHA, prerelease=${{ steps.ver.outputs.is_prerelease }}）"
+            gh release create "$TAG" "$asset" \
+              --target "$SHA" \
+              --title "$TAG" \
+              --notes-file notes.md \
+              $pre
+            action=created
+          fi
+          echo "action=$action" >> "$GITHUB_ENV"
+
+      - name: 结果摘要
+        if: always()
+        run: |
+          {
+            echo "### Release ${TAG}"
+            echo ""
+            echo "- 版本: \`${{ steps.ver.outputs.version }}\`"
+            echo "- 资产: \`${{ steps.meta.outputs.file }}\`"
+            echo "- MD5: \`${{ steps.meta.outputs.md5 }}\`"
+            echo "- prerelease: ${{ steps.ver.outputs.is_prerelease }}"
+            echo "- 结果: ${action:-见上方步骤日志}"
+          } >> "$GITHUB_STEP_SUMMARY"
