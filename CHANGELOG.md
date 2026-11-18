@@ -2,6 +2,18 @@
 
 本文件记录 deepseek-app 的重要变更，版本倒序排列。
 
+## 1.4.0-beta.7 (2026-11-18) — 网络不可用时 [未过门禁]
+
+- 网络不可用时，也可把反馈日志保存到手机，再把文件发给我们
+- 内测版本，建议保留重要聊天记录；遇到问题请通过反馈入口提交
+
+> 内部验收记录（不进 dl 用户说明）：
+  - 源码范围：beta6(21987ea) + 离线日志导出(3076785) + 发布解析器修复(7830304) + updateManifest 旧 WebView 兼容(7c66393) + toLocal/store 两处兼容(18e6172，仅 src，不带导入链)
+  - Android gate（日志 owner 执行、父代理看图）：Android14/SDK34/WebView113；断网 network 失败 → SAF 取消并保留表单 → 再次 SAVE，读回 JSON 15964B、sha256 a93ca8f3de6e9b2615f559c62babde1749a32158d58bd9a94a4657bee76336af；日志非空/含失败信息/脱敏通过
+  - focused：tsc 0 错、oxlint 0 警 0 错、unit 8/8（标准 runner）；legacy-webview-compat 另以 --experimental-transform-types 实跑 3/3 真实路径通过（标准 runner 下 2 项显式 SKIP，不计动态通过）
+  - 边界：旧 Android 未实测、写失败仅 mock 边界；未跑整仓 20 套；真模型上游 e2e 延后；minSdk24/targetSdk36/web target chrome>=105 不等于 WebView92 全功能支持
+  - 本次 --skip-tests：只跑了本次 focused 验收，全量测试套件未跑
+
 ## 1.4.0-beta.6 (2026-11-18) — 新增会话置顶：常用会话可置顶 [未过门禁]
 
 - 新增会话置顶：常用会话可置顶，置顶状态会保留
