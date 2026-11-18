@@ -389,10 +389,46 @@ const fetchChunk = async (
   for (let attempt = 0; attempt <= CHUNK_RETRIES; attempt += 1) {
     // 重试时指数缩小块（4KB → 2KB → 1KB）：极差链路上也能一点点往前推，而不是整包重来
     const span = Math.max(MIN_CHUNK_BYTES / 4, Math.floor((to - from + 1) / 2 ** attempt))
+    const attemptStartedAt = Date.now()
+    // 阶段埋点（只记录，不改行为）：把「原生请求是否返回」与「主线程是否停摆」分开。
+    recordEvent('import_stage', 'import: native request begin', {
+      stage: 'download',
+      'request.from': from,
+      'request.span': span,
+      attempt,
+    })
+    // 静默看门狗：原生层若吞掉超时不 resolve，JS 也要在日志里留下痕迹（15s 一次，不中止请求）
+    const silentTimer = setTimeout(() => {
+      recordEvent('import_stage', 'import: native request silent >15s', {
+        stage: 'download',
+        'request.from': from,
+        'request.span': span,
+        attempt,
+        elapsedMs: Date.now() - attemptStartedAt,
+      })
+    }, 15_000)
     try {
       const response = await requestRange(url, from, from + span - 1)
+      clearTimeout(silentTimer)
+      recordEvent('import_stage', 'import: native response', {
+        stage: 'download',
+        'request.from': from,
+        'request.span': span,
+        attempt,
+        'http.status': response.status,
+        elapsedMs: Date.now() - attemptStartedAt,
+      })
       return { response, requested: span }
     } catch (error) {
+      clearTimeout(silentTimer)
+      recordEvent('import_stage', 'import: native request error', {
+        stage: 'download',
+        'request.from': from,
+        'request.span': span,
+        attempt,
+        elapsedMs: Date.now() - attemptStartedAt,
+        ...errorMeta(error),
+      })
       lastError = error
       // 弱网会在块中途丢流：同一起点更小的块重试即可续上
       if (attempt < CHUNK_RETRIES) {
