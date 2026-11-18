@@ -29,6 +29,7 @@ import {
   type RedeemCardResult,
   type InviteProfile,
 } from '../../services/invite/api.js'
+import { bindExistingKey, bindSuccessKey, resolveBindDeviceId, type BindMessageKey } from '../../services/invite/bind.js'
 import {
   createDeviceId,
   ensureDeviceId,
@@ -42,7 +43,7 @@ import { httpTransport, isNativePlatform, navigateTopLevel, openCheckout } from 
 import { copyText } from '../../utils/clipboard.js'
 import { Button } from '../base/Button.js'
 import { Modal } from '../base/Modal.js'
-import { setOursServicesOpen, useSettingsDialog } from './settingsDialogState.js'
+import { closeSettings, setOursServicesOpen, useSettingsDialog } from './settingsDialogState.js'
 import styles from './OursServices.module.css'
 
 /**
@@ -143,6 +144,19 @@ const OursServicesDialog = ({ onClose }: { onClose: () => void }) => {
   const [redeemBusy, setRedeemBusy] = useState(false)
   const [redeem, setRedeem] = useState<RedeemCardResult | null>(null)
   const [copied, setCopied] = useState<'device' | 'invite' | 'card' | null>(null)
+  /** 「我已经有 Key」：入口收起 → 展开粘贴框 → 绑定结果（Issue #86） */
+  const [bindOpen, setBindOpen] = useState(false)
+  const [bindInput, setBindInput] = useState('')
+  const [bindBusy, setBindBusy] = useState(false)
+  const [bindResult, setBindResult] = useState<
+    { kind: 'ok'; alreadyBound: boolean } | { kind: 'error'; messageKey: BindMessageKey } | null
+  >(null)
+  /**
+   * 当前档案是从哪儿来的：
+   *  - 'apply' = 刚才自动领了一把**新的**设备 Key（#72 首次使用），用户自己的 Key 还没绑
+   *  - 'me'    = /me 读到了已有绑定 —— 这就是「本机已绑过」（#86 条件 5），入口该收起来
+   */
+  const [profileFrom, setProfileFrom] = useState<'apply' | 'me' | null>(null)
 
   /** 完整卡密只留内存（「一键兑换」要用）：不进 localStorage、不进日志、不进文案 */
   const orderCardRef = useRef('')
@@ -191,6 +205,7 @@ const OursServicesDialog = ({ onClose }: { onClose: () => void }) => {
     if (outcome.deviceId !== deviceId) {
       setDeviceId(outcome.deviceId)
     }
+    setProfileFrom(outcome.kind === 'ok' ? 'me' : null)
     setBalance(
       outcome.kind === 'ok'
         ? { status: 'ok', profile: outcome.value.profile }
@@ -213,6 +228,7 @@ const OursServicesDialog = ({ onClose }: { onClose: () => void }) => {
       setClaim({ status: 'error', messageKey: result.messageKey })
       return
     }
+    setProfileFrom('apply')
     setBalance({ status: 'ok', profile: result.profile })
     setClaim({ status: 'ok', firstTime: result.firstTime, points: result.profile.remainingPoints })
     const current = useApiConfig.getState().apiKey.trim()
@@ -299,6 +315,47 @@ const OursServicesDialog = ({ onClose }: { onClose: () => void }) => {
       return
     }
     await runPoll(order.outTradeNo, order.orderToken)
+  }
+
+  // ---------------------------------------------------------------- 绑定已有 Key（#86）
+
+  /**
+   * 把用户已有的 Key 绑到本机设备码，成功后走的**就是**「领取成功」那条路：
+   * 保存返回的 Key → 刷新 /me → 关弹层回主页。adopted_points 是服务端内部折算值，
+   * 全程不显示（见 services/invite/bind.ts）。重复提交（already_bound）也算成功。
+   */
+  const submitBind = async () => {
+    const key = bindInput.trim()
+    if (key === '' || bindBusy) {
+      return
+    }
+    setBindBusy(true)
+    setBindResult(null)
+    // 设备码与 /apply、/me 共用同一份本地存储：缺了就按 #72 的规则生成并落盘
+    const device = resolveBindDeviceId(localStorageDeviceIdStorage())
+    if (device.deviceId !== deviceId) {
+      setDeviceId(device.deviceId)
+    }
+    const result = await bindExistingKey({ deviceId: device.deviceId, apiKey: key }, httpTransport)
+    if (!alive.current) {
+      return
+    }
+    setBindBusy(false)
+    if (result.kind === 'error') {
+      setBindResult({ kind: 'error', messageKey: result.messageKey })
+      return
+    }
+    setApiKey(result.apiKey)
+    setPendingKey('')
+    setBindInput('')
+    setBindResult({ kind: 'ok', alreadyBound: result.alreadyBound })
+    // 与兑换 / 领取成功后一致：刷新额度（内部走 runWithDeviceSelfHeal）
+    await refreshBalance()
+    if (!alive.current) {
+      return
+    }
+    onClose()
+    closeSettings()
   }
 
   // ---------------------------------------------------------------- 套餐 / 挂载
@@ -475,6 +532,8 @@ const OursServicesDialog = ({ onClose }: { onClose: () => void }) => {
   // ---------------------------------------------------------------- 渲染
 
   const profile = balance.status === 'ok' ? balance.profile : null
+  /** 「我已经有 Key」只在**还没读到已有绑定**时出现（一台设备一把 Key，#86 条件 5） */
+  const canBindKey = profileFrom !== 'me'
   const hasKey = apiKey.trim() !== ''
   const orderStatusText = (current: OrderView): string => {
     if (current.errorKey !== null) {
@@ -585,6 +644,66 @@ const OursServicesDialog = ({ onClose }: { onClose: () => void }) => {
             </div>
           ) : null}
         </section>
+
+        {/* 1b. 我已经有 Key：把已有 Key 绑到本机设备码（#86）。
+            本机已经绑过（/me 读得到档案）就不再显示这个入口：一台设备只留一把 Key。 */}
+        {canBindKey ? (
+          <section className={styles.section} data-testid="ours-bind">
+            <div className={styles.sectionHead}>
+              <h3 className={styles.sectionTitle}>{t('oursBindTitle')}</h3>
+              {bindOpen ? null : (
+                <Button
+                  variant="outlined"
+                  size="s"
+                  className={styles.sectionAction}
+                  data-testid="ours-bind-open"
+                  onClick={() => setBindOpen(true)}
+                >
+                  {t('oursBindEntryAction')}
+                </Button>
+              )}
+            </div>
+            <div className={styles.hint}>{t('oursBindDescription')}</div>
+            {bindOpen ? (
+              <div className={styles.redeemForm}>
+                <input
+                  className={styles.input}
+                  type="password"
+                  autoComplete="off"
+                  spellCheck={false}
+                  data-testid="ours-bind-input"
+                  aria-label={t('oursBindInputPlaceholder')}
+                  placeholder={t('oursBindInputPlaceholder')}
+                  value={bindInput}
+                  disabled={bindBusy}
+                  onChange={(event) => setBindInput(event.target.value)}
+                />
+                <Button
+                  size="m"
+                  data-testid="ours-bind-submit"
+                  disabled={bindBusy || bindInput.trim() === ''}
+                  onClick={() => void submitBind()}
+                >
+                  {bindBusy ? t('oursBindBusy') : t('oursBindAction')}
+                </Button>
+              </div>
+            ) : null}
+            {bindResult !== null ? (
+              <div
+                role="status"
+                data-testid="ours-bind-result"
+                className={clsx(
+                  styles.value,
+                  bindResult.kind === 'error' ? styles.valueError : styles.valueSuccess
+                )}
+              >
+                {bindResult.kind === 'error'
+                  ? t(bindResult.messageKey)
+                  : t(bindSuccessKey({ alreadyBound: bindResult.alreadyBound }))}
+              </div>
+            ) : null}
+          </section>
+        ) : null}
 
         {/* 2. 额度：只认邀请服务的 remaining_points；1 元 = 100 积分 */}
         <section className={styles.section} data-testid="ours-quota">
