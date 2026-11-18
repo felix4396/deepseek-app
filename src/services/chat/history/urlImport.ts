@@ -1,5 +1,5 @@
 import { Capacitor, CapacitorHttp, type HttpResponse } from '@capacitor/core'
-import { errorMeta, record, recordAction, recordEvent, redactUrl } from '../../diagnostics/collector.js'
+import { errorMeta, record, recordAction, recordEvent } from '../../diagnostics/collector.js'
 import { importHistory } from '../backup.js'
 import { BackupError, fail } from './errors.js'
 
@@ -282,14 +282,13 @@ const isStreamBroken = (error: unknown): boolean =>
 /** 下载失败必录：阶段 + 已下载字节 + 耗时 + 错误原文（回查「导入没反应」靠这条）。 */
 const recordDownloadFailure = (
   reason: string,
-  url: string,
+  _url: string,
   startedAt: number,
   extra: Record<string, string | number> = {},
   error?: unknown
 ) =>
   record('import_error', 'error', `import download failed: ${reason}`, {
     stage: 'download',
-    'url.path': redactUrl(url),
     durationMs: Date.now() - startedAt,
     reason,
     ...extra,
@@ -441,7 +440,6 @@ const downloadArchive = async (
   const startedAt = Date.now()
   recordEvent('import_stage', 'import: download archive', {
     stage: 'download',
-    'url.path': redactUrl(url),
   })
   const chunks: Uint8Array<ArrayBuffer>[] = []
   let downloaded = 0
@@ -539,6 +537,15 @@ const downloadArchive = async (
  * 直链导入：校验 URL → 分块下载（实时进度，可取消）→ 校验 ZIP → 解析 → 逐会话导入（进度 n/总数）。
  * 取消：下载期间不发新块并丢弃已下载内容；导入期间在条目边界中断，暂存被清空、正式数据不变。
  */
+/** 埋点关联 id：短随机串，不含任何用户内容 */
+const newCorrelationId = (): string => {
+  try {
+    return crypto.randomUUID().slice(0, 12)
+  } catch {
+    return Math.random().toString(36).slice(2, 14)
+  }
+}
+
 export const importHistoryFromUrl = async (
   url: string,
   options: UrlImportOptions = {}
@@ -554,12 +561,13 @@ export const importHistoryFromUrl = async (
   if (!/^https?:\/\/\S+$/i.test(link)) {
     record('import_error', 'error', 'import rejected: invalid url', {
       stage: 'validate',
-      'url.path': redactUrl(link),
       'error.msg': 'invalid http(s) url',
     })
     fail('historyImportUrlInvalid')
   }
-  recordAction('import_start', 'import-history-url', { source: 'url', 'url.path': redactUrl(link) })
+  // 关联 id：导入链路的埋点靠它串起来（来自 coverage 分支的 correlation 埋点）
+  const correlationId = newCorrelationId()
+  recordAction('import_start', 'import-history-url', { correlationId, source: 'url' })
   const startedAt = Date.now()
   const trace = options.onTrace
   const emit = (entry: Omit<ImportTraceEntry, 'at'>) => trace?.({ at: Date.now() - startedAt, ...entry })
@@ -613,8 +621,7 @@ export const importHistoryFromUrl = async (
       // 取消不是失败：单独记一条，便于区分「用户取消」与「链路失败」。
       record('warning', 'warn', 'import cancelled by user', {
         stage: 'url-import',
-        'url.path': redactUrl(link),
-      })
+        })
       emit({ kind: 'cancel' })
       throw error instanceof UrlImportCancelled ? error : new UrlImportCancelled()
     }
